@@ -1,0 +1,115 @@
+/*
+ * SafeFare AI design tokens — Vertix-inspired direction.
+ * Sampled from references/Screen Recording 2026-10-23 153433.mp4: pale lavender-gray
+ * canvas, white rounded surfaces with nested muted panels, charcoal ink, a single
+ * coral-orange brand accent (soft coral wash on the one featured tile), black pill selection.
+ * Every component reads these through Tailwind theme utilities
+ * (bg-canvas, text-ink-muted, bg-brand, ...) — never hard-coded hex.
+ */
+:root {
+  /* Canvas, surfaces & ink */
+  --dv-canvas: #f0eff5;
+  --dv-surface: #ffffff;
+  --dv-surface-muted: #f6f5f9;
+  --dv-surface-sunken: #efeef4;
+  --dv-ink: #1f1e26;
+  --dv-ink-muted: #6f6c7b;
+  --dv-ink-subtle: #a19fac;
+  --dv-border: #e8e6ee;
+  --dv-border-strong: #d9d6e2;
+
+  /* Brand accent — coral-orange (reference "featured" card and highlights) */
+  --dv-brand: #e8644a;
+  --dv-brand-deep: #c9432b;
+  --dv-brand-soft: #fbe4dd;
+  --dv-brand-tint: #fdf1ed;
+  --dv-brand-from: #f08a6b;
+  --dv-brand-to: #d9442a;
+
+  /* Supporting pastel surfaces (used sparingly, mostly as icon chips) */
+  --dv-mint: #ddefe4;
+  --dv-sky: #dce9f7;
+  --dv-peach: #f6ddd6;
+  --dv-lavender: #e7e3f1;
+  --dv-butter: #f5ecd3;
+  --dv-rose: #f5dfe6;
+
+  /* Semantic status (always paired with an icon + label) */
+  --dv-success: #2f7d55;
+  --dv-success-soft: #dcf0e3;
+  --dv-warning: #a86e0c;
+  --dv-warning-soft: #f8edd4;
+  --dv-serious: #c2541f;
+  --dv-serious-soft: #f9e2d6;
+  --dv-danger: #c23f3f;
+  --dv-danger-soft: #f8dfdf;
+  --dv-info: #2f6db0;
+  --dv-info-soft: #dce9f7;
+
+  /* Chart categorical slots — deep indigo + coral lead (the reference's dark/coral bar pair,
+     with chroma so it passes the dataviz validator), then teal, violet. Validated light: all checks pass. */
+  --dv-series-1: #4c46b0;
+  --dv-series-2: #e8644a;
+  --dv-series-3: #2a9d8f;
+  --dv-series-4: #9b6ad1;
+
+  /* Illustrative map — cool neutral land so coral/status markers stand out */
+  --dv-map-land: #f1f0f5;
+  --dv-map-block: #e8e7ef;
+  --dv-map-water: #d3e2f1;
+  --dv-map-park: #dcebe1;
+  --dv-map-road: #ffffff;
+  --dv-map-road-edge: #dcdae4;
+  --dv-map-arterial: #fbe9e2;
+  --dv-map-arterial-edge: #efcfc3;
+  --dv-map-label: #8c8a98;
+
+  /* AI assistant accent (lavender → coral) */
+  --dv-ai-from: #c9bff3;
+  --dv-ai-to: #e98975;
+  --dv-ai-ink: #5d4bb8;
+
+  /* Radii & elevation — one card radius, one inner-panel radius, one control radius */
+  --dv-radius-card: 22px;
+  --dv-radius-inner: 16px;
+  --dv-radius-control: 12px;
+  --dv-shadow-card: 0 1px 2px rgb(31 30 38 / 0.03), 0 6px 20px -14px rgb(31 30 38 / 0.12);
+  --dv-shadow-hover: 0 2px 4px rgb(31 30 38 / 0.04), 0 18px 36px -18px rgb(31 30 38 / 0.22);
+  --dv-shadow-pop: 0 18px 48px -16px rgb(31 30 38 / 0.26), 0 2px 6px rgb(31 30 38 / 0.06);
+  --dv-shadow-brand: 0 14px 30px -14px rgb(217 68 42 / 0.55);
+  /* Softer coral elevation for the featured KPI tile (white-led, coral accents) */
+  --dv-shadow-brand-soft: 0 1px 2px rgb(217 68 42 / 0.06), 0 10px 24px -16px rgb(217 68 42 / 0.4);
+  /* Featured KPI surface — a light coral wash instead of the saturated gradient */
+  --dv-brand-wash-from: #fff7f4;
+  --dv-brand-wash-to: #fde9e2;
+  --dv-brand-line: #f6cfc3;
+
+  /* Modal / drawer scrim — one value for every overlay */
+  --dv-overlay: rgb(31 30 38 / 0.22);
+
+  /* Motion — routine interactions vs. larger panels (Framer values live in shared/motion.ts) */
+  --dv-dur-fast: 140ms;
+  --dv-dur-base: 200ms;
+  --dv-dur-panel: 260ms;
+
+  /* shadcn/ui semantic tokens mapped onto the SafeFare AI palette */
+  --radius: 0.75rem;
+  --background: var(--dv-canvas);
+  --foreground: var(--dv-ink);
+  --card: var(--dv-surface);
+  --card-foreground: var(--dv-ink);
+  --popover: var(--dv-surface);
+  --popover-foreground: var(--dv-ink);
+  --primary: var(--dv-ink);
+  --primary-foreground: #ffffff;
+  --secondary: var(--dv-surface-muted);
+  --secondary-foreground: var(--dv-ink);
+  --muted: var(--dv-surface-muted);
+  --muted-foreground: var(--dv-ink-muted);
+  --accent: var(--dv-surface-sunken);
+  --accent-foreground: var(--dv-ink);
+  --destructive: var(--dv-danger);
+  --border: var(--dv-border);
+  --input: var(--dv-border);
+  --ring: var(--dv-brand);
+}
