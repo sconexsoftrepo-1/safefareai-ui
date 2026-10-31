@@ -67,6 +67,13 @@ async function loadMenus() {
   }
 }
 
+/** Re-requests GET /me/menus after a failure (the error is cleared while it runs). */
+export function retryMenus(): Promise<void> {
+  if (state.status !== "authenticated") return Promise.resolve();
+  setState({ menusError: null });
+  return loadMenus();
+}
+
 async function loadProfile() {
   const user = await authService.me();
   setState({ status: "authenticated", user, bootError: null, endReason: null });

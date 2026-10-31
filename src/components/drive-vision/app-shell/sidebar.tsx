@@ -4,8 +4,7 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { FlaskConical, LifeBuoy, PanelLeftClose, PanelLeftOpen, ScanEye } from "lucide-react";
-import { toast } from "sonner";
+import { PanelLeftClose, PanelLeftOpen, ScanEye } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { updatePreferences, usePreferences } from "@/features/drive-vision/hooks/use-preferences";
@@ -98,17 +97,6 @@ export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => voi
         </div>
       ))}
     </nav>
-  );
-}
-
-export function DemoNotice() {
-  return (
-    <p className="flex items-start gap-2 rounded-2xl bg-lavender/70 px-3 py-2.5 text-[11.5px] leading-snug text-ai-ink">
-      <FlaskConical className="mt-px size-3.5 shrink-0" aria-hidden />
-      <span>
-        <span className="font-semibold">Demo workspace</span> · sample data, no live device connections
-      </span>
-    </p>
   );
 }
 
@@ -236,17 +224,6 @@ export function DriveVisionRail() {
           >
             {expanded ? <PanelLeftClose className="size-[17px] shrink-0" aria-hidden /> : <PanelLeftOpen className="size-[17px] shrink-0" aria-hidden />}
             {expanded ? <span className="text-[13px] font-medium whitespace-nowrap">Collapse</span> : null}
-          </button>
-        </RailTooltip>
-        <RailTooltip label="About this demo" enabled={!expanded}>
-          <button
-            type="button"
-            onClick={() => toast.info("SafeFare AI demo", { description: "This workspace uses sample data only. Support links will be added with backend integration." })}
-            aria-label="About this demo"
-            className={cn(RAIL_ITEM, "text-ink-muted hover:bg-surface-sunken hover:text-ink short:hidden", expanded ? "gap-3 px-2.5" : RAIL_ICON_ONLY)}
-          >
-            <LifeBuoy className="size-[17px] shrink-0" aria-hidden />
-            {expanded ? <span className="text-[13px] font-medium whitespace-nowrap">About this demo</span> : null}
           </button>
         </RailTooltip>
       </div>

@@ -22,7 +22,10 @@ import { toast } from "../shared/toast-provider";
 import { PHONE_PATTERN, type Errors } from "../settings/settings-model";
 import { EMPTY_LEAVE_FORM, leaveRequestBody, validateLeaveForm, windowAround, type LeaveField, type LeaveForm } from "./operations-model";
 import { LeaveFields } from "./workforce-page";
-import { countByStatus, groupByCategory, humanize } from "./my-work-model";
+import { TRIP_ACTIONS, countByStatus, groupByCategory, humanize, tripActionAvailability, withheldTripReason, type TripAction } from "./my-work-model";
+import { canPerform } from "@/features/drive-vision/access/access-policy";
+import { useAccess } from "@/features/drive-vision/access/use-access";
+import { PasswordPanel } from "../settings/settings-page";
 import { CountBars, DriverIdentity, EventRow, FieldGrid, LeaveRow, SectionTitle, ServerStatus, ShiftRow, StatTile, TOUCH, TripSummary, elapsedSince, when } from "./my-work-ui";
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+$/;
@@ -83,10 +86,14 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
 
+  const access = useAccess();
+  const canSelfService = canPerform(access, "driver.selfService");
+  const canChangePassword = canPerform(access, "account.password");
   const me = meQ.data;
   // GET /driver/me failed (e.g. 403 "not linked to a driver profile"): requests would fail the same way, so actions are off.
-  const noProfile = !!meQ.error && !me;
-  const noProfileTitle = noProfile ? "Unavailable: your driver profile couldn't be loaded" : undefined;
+  // Without the self-service action grant (access policy) the same controls are off too.
+  const noProfile = (!!meQ.error && !me) || !canSelfService;
+  const noProfileTitle = !canSelfService ? "Unavailable: your account can't make changes here" : noProfile ? "Unavailable: your driver profile couldn't be loaded" : undefined;
   const overview = assignQ.data;
   const shift = shiftQ.data;
   const vehicleId = overview?.currentVehicle?.deviceId;
@@ -132,22 +139,35 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             ? { title: "Cancel this leave request?", label: "Cancel request", description: `${pending.leave.leaveType ?? "Leave"} · ${pending.leave.startDate ?? "?"} – ${pending.leave.endDate ?? "?"}`, tone: "danger" as const }
             : null;
 
-  const tripActions = (d: DispatchDto, primaryOnly = false) => (
-    <div className="flex flex-wrap gap-1.5">
-      {(["accept", "start", "complete"] as const).map((a) => (
-        <Button key={a} size="sm" className={TOUCH} onClick={() => d.id !== undefined && setPending({ kind: "dispatch", dispatch: d, action: a })} disabled={noProfile} title={noProfileTitle}>
-          {DISPATCH_COPY[a].label}
-        </Button>
-      ))}
-      {primaryOnly
-        ? null
-        : (["decline", "swap"] as const).map((a) => (
-            <Button key={a} size="sm" variant="outline" className={TOUCH} onClick={() => d.id !== undefined && setPending({ kind: "dispatch", dispatch: d, action: a })} disabled={noProfile} title={noProfileTitle}>
-              {DISPATCH_COPY[a].label}
-            </Button>
-          ))}
-    </div>
-  );
+  // Only actions the trip's recorded state doesn't rule out are offered (tripActionAvailability); the server decides the rest.
+  const tripActions = (d: DispatchDto, primaryOnly = false) => {
+    const availability = tripActionAvailability(d);
+    const shown: readonly TripAction[] = primaryOnly ? TRIP_ACTIONS.filter((a) => a !== "decline" && a !== "swap") : TRIP_ACTIONS;
+    const offered = shown.filter((a) => availability[a] === null);
+    const withheld = withheldTripReason(availability, shown);
+    return (
+      <div className="flex flex-col gap-1.5">
+        {offered.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {offered.map((a) => (
+              <Button
+                key={a}
+                size="sm"
+                variant={a === "decline" || a === "swap" ? "outline" : "default"}
+                className={TOUCH}
+                onClick={() => d.id !== undefined && setPending({ kind: "dispatch", dispatch: d, action: a })}
+                disabled={noProfile}
+                title={noProfileTitle}
+              >
+                {DISPATCH_COPY[a].label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+        {withheld ? <p className="text-xs text-ink-muted">{withheld}</p> : null}
+      </div>
+    );
+  };
 
   const featured = overview?.activeTrip ?? overview?.nextTrip;
   const hours = hoursQ.data?.summary;
@@ -477,7 +497,7 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             title="Profile"
             description="Your record as held by the server. You can edit your contact details."
             action={
-              me ? (
+              me && canSelfService ? (
                 <Button variant="outline" className={TOUCH} onClick={() => setContactOpen(true)}>
                   <Pencil /> Edit contact details
                 </Button>
@@ -525,6 +545,11 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             <LoadingSkeleton variant="list" rows={4} />
           )}
         </Panel>
+      ) : null}
+      {on("profile") && canChangePassword ? (
+        <div className="mt-4">
+          <PasswordPanel />
+        </div>
       ) : null}
 
       <ConfirmDialog

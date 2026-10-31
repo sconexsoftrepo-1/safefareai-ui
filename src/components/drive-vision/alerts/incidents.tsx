@@ -20,6 +20,7 @@ import { FormField } from "../shared/form-field";
 import { SearchInput } from "../shared/filter-bar";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import { safeHttpUrl } from "../reports/reports-model";
 import { ALARM_PAGE_SIZE, alarmLabel, deviceLabel, incidentQuery, type AlertsView } from "./alerts-model";
 
@@ -160,6 +161,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
   const [pending, setPending] = useState<Pending | null>(null);
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<ResolveOutcome | "">("");
+  const canHandle = useCan("alerts.handle");
   const detail = updated && updated.id === id ? updated.data : detailQ.data;
   const alert = detail?.alert;
   const copy = pending ? ACTION_COPY[pending.kind] : null;
@@ -197,7 +199,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
         title={alert ? alarmLabel(alert, typeById) : id !== null ? `Alert ${id}` : ""}
         description={alert ? `${deviceLabel(alert)}${alert.alarmTime ? ` · ${formatDateTime(alert.alarmTime)}` : ""}` : undefined}
         footer={
-          alert ? (
+          alert && canHandle ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" onClick={() => setPending({ kind: "comment" })}>
                 <MessageSquarePlus /> Comment

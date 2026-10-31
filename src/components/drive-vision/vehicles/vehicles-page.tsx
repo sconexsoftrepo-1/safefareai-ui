@@ -159,9 +159,11 @@ export function VehiclesPage() {
             { value: "tree", label: "Asset tree" },
           ]}
         />
-        <FilterBar>
-          <SearchInput value={searchInput} onChange={setSearchInput} label="Search vehicles" placeholder="Name or device ID" />
+        {/* Below sm: full-width bar, search on its own row, the two selects share the next row (as on Users). */}
+        <FilterBar className="max-sm:w-full">
+          <SearchInput value={searchInput} onChange={setSearchInput} label="Search vehicles" placeholder="Name or device ID" className="max-sm:basis-full" />
           <FilterSelect
+            className="max-sm:flex-1"
             label="Group"
             value={groupId}
             onChange={(v) => {
@@ -171,6 +173,7 @@ export function VehiclesPage() {
             options={[{ value: "all", label: "All groups" }, ...ref.groups.map((g) => ({ value: String(g.id), label: g.name ?? `Group ${g.id}` }))]}
           />
           <FilterSelect
+            className="max-sm:flex-1"
             label="Service expiry"
             value={expiry}
             onChange={(v) => {

@@ -51,15 +51,51 @@ export const FLEET_SCREENS: readonly ScreenKey[] = ALL_SCREENS.filter((s) => !DR
 export type FeatureKey = "assistant" | "recordSearch";
 export const ALL_FEATURES: FeatureKey[] = ["assistant", "recordSearch"];
 
+/**
+ * State-changing actions (buttons, forms, destructive actions). Each lives on one screen and is
+ * offered only when the role grants the action *and* the user may open that screen, so widening a
+ * screen grant (e.g. a future Fleet Owner) never exposes its write actions by itself.
+ * `null` = shell-level (not tied to a screen).
+ */
+export const ACTION_SCREENS = {
+  /** Drivers: create / edit / delete, assign vehicle, end assignment. */
+  "drivers.manage": "drivers",
+  /** Dispatch: conflict check, create / edit, cancel, request swap. */
+  "dispatch.manage": "dispatch",
+  /** Dispatch: approve / reject swap requests. */
+  "swaps.decide": "dispatch",
+  /** Workforce: request leave for a driver, approve / reject leave. */
+  "leave.manage": "workforce",
+  /** Alerts: acknowledge, comment, resolve, dismiss, reopen incidents. */
+  "alerts.handle": "alerts",
+  "geofences.delete": "geofences",
+  "video.export": "video",
+  /** Users: create / edit, enable / disable, unlock, reset password. */
+  "users.manage": "users",
+  /** Profile edit and workspace preferences (PATCH /me, PUT /me/preferences). */
+  "settings.manage": "settings",
+  /** My Work: shift, trip, leave, checklist and contact changes (/driver/*). */
+  "driver.selfService": "myWork",
+  /** Own password (POST /me/password); offered in Settings and My Profile. */
+  "account.password": null,
+  /** Own notification read state (POST /notifications/*). */
+  "notifications.markRead": null,
+} as const satisfies Record<string, ScreenKey | null>;
+
+export type ActionKey = keyof typeof ACTION_SCREENS;
+export const ALL_ACTIONS = Object.keys(ACTION_SCREENS) as ActionKey[];
+
 export type AppRole = "admin" | "fleet-owner" | "driver" | "unknown";
 
 export interface AccessPolicy {
   /** Backend role code (exact, case-sensitive) → app role. Confirmed codes only. */
   roleCodes: Readonly<Record<string, AppRole>>;
-  /** Screens and features each app role opens without a per-screen permission. */
-  roleGrants: Readonly<Record<AppRole, { screens: readonly ScreenKey[]; features: readonly FeatureKey[] }>>;
+  /** Screens, features and actions each app role gets without a per-item permission. */
+  roleGrants: Readonly<Record<AppRole, { screens: readonly ScreenKey[]; features: readonly FeatureKey[]; actions?: readonly ActionKey[] }>>;
   /** Per-screen grants from `/me` permissions[] or a `/me/menus` routeKey. Confirmed values only. */
   screenGrants: Readonly<Partial<Record<ScreenKey, { permissions?: readonly string[]; menuRouteKeys?: readonly string[] }>>>;
+  /** Per-action grants from `/me` permissions[]. Confirmed codes only (none are documented yet). */
+  actionGrants?: Readonly<Partial<Record<ActionKey, { permissions?: readonly string[] }>>>;
 }
 
 /** Permission the BFF gives Driver logins for the driver app (/me permissions, /me/menus requiredPermissionCode). */
@@ -75,21 +111,29 @@ export const DRIVER_APP_PERMISSION = "driver.app";
  *   (see computeAccess). No fleet screen or shell feature is granted to drivers.
  * - Fleet Owner: no role code confirmed → no mapping, no grants.
  * - Menus never grant access on their own; they only shape navigation (see menuNavEntries).
+ * - Actions (2026-10-31): each role keeps exactly the actions it already had. Admin: every
+ *   fleet-screen action it was already shown. Driver: self-service, own password, own
+ *   notifications. Which permission code authorises each operation is undocumented (Admin's 21
+ *   codes weren't catalogued), so `actionGrants` is empty and nothing is inferred from codes. The
+ *   BFF still authorises every request.
  */
+const FLEET_ACTIONS: readonly ActionKey[] = ALL_ACTIONS.filter((a) => a !== "driver.selfService");
+
 export const ACCESS_POLICY: AccessPolicy = {
   roleCodes: {
     PLATFORM_ADMIN: "admin",
     DRIVER: "driver",
   },
   roleGrants: {
-    admin: { screens: FLEET_SCREENS, features: ALL_FEATURES },
-    "fleet-owner": { screens: [], features: [] },
-    driver: { screens: [], features: [] },
-    unknown: { screens: [], features: [] },
+    admin: { screens: FLEET_SCREENS, features: ALL_FEATURES, actions: FLEET_ACTIONS },
+    "fleet-owner": { screens: [], features: [], actions: [] },
+    driver: { screens: [], features: [], actions: ["driver.selfService", "account.password", "notifications.markRead"] },
+    unknown: { screens: [], features: [], actions: [] },
   },
   screenGrants: {
     myWork: { permissions: [DRIVER_APP_PERMISSION] },
   },
+  actionGrants: {},
 };
 
 export interface Access {
@@ -99,9 +143,10 @@ export interface Access {
   permissions: ReadonlySet<string>;
   screens: ReadonlySet<ScreenKey>;
   features: ReadonlySet<FeatureKey>;
+  actions: ReadonlySet<ActionKey>;
 }
 
-export const NO_ACCESS: Access = { role: "unknown", roleCode: null, permissions: new Set(), screens: new Set(), features: new Set() };
+export const NO_ACCESS: Access = { role: "unknown", roleCode: null, permissions: new Set(), screens: new Set(), features: new Set(), actions: new Set() };
 
 /** Role code from an untrusted `/me` payload, or null when missing or malformed. */
 export function readRoleCode(user: unknown): string | null {
@@ -155,7 +200,15 @@ export function computeAccess(user: CurrentUserDto | null | undefined, menus: Me
   }
   // Driver self-service is for driver logins only, whatever permissions or menus another role carries.
   if (role !== "driver") for (const s of DRIVER_SELF_SERVICE_SCREENS) screens.delete(s);
-  return { role, roleCode: readRoleCode(user), permissions, screens, features: new Set(grant.features) };
+
+  const actions = new Set<ActionKey>(grant.actions ?? []);
+  for (const action of ALL_ACTIONS) if (policy.actionGrants?.[action]?.permissions?.some((p) => permissions.has(p))) actions.add(action);
+  // An action is only offered on a screen the user can open.
+  for (const action of [...actions]) {
+    const screen = ACTION_SCREENS[action];
+    if (screen !== null && !screens.has(screen)) actions.delete(action);
+  }
+  return { role, roleCode: readRoleCode(user), permissions, screens, features: new Set(grant.features), actions };
 }
 
 /** The screen a pathname belongs to (longest route prefix on a segment boundary), or null. */
@@ -171,6 +224,22 @@ export function screenForPath(pathname: string): ScreenKey | null {
 
 export const canAccessScreen = (access: Access, screen: ScreenKey) => access.screens.has(screen);
 export const canUseFeature = (access: Access, feature: FeatureKey) => access.features.has(feature);
+export const canPerform = (access: Access, action: ActionKey) => access.actions.has(action);
+
+/** In-app link targets that are kept only when the user may open them (profile menu, notification footer). */
+export function reachableHref(access: Access, href: string | null): string | null {
+  return href !== null && canAccessPath(access, href) ? href : null;
+}
+
+/** Profile-menu shortcuts, in display order; each is shown only when its screen is allowed. */
+const PROFILE_MENU_LINKS = [
+  { screen: "settings", label: "Profile & preferences" },
+  { screen: "users", label: "Users & sub-accounts" },
+] as const satisfies readonly { screen: ScreenKey; label: string }[];
+
+export function profileMenuLinks(access: Access): { screen: ScreenKey; label: string; href: string }[] {
+  return PROFILE_MENU_LINKS.filter((l) => canAccessScreen(access, l.screen)).map((l) => ({ ...l, href: SCREEN_ROUTES[l.screen] }));
+}
 
 /** A path is reachable only when it belongs to a known screen the user may open. Unknown paths are denied. */
 export function canAccessPath(access: Access, pathname: string): boolean {
@@ -283,6 +352,19 @@ export function menuNavEntries(menus: unknown, access: Access, routes: Readonly<
   visit(menus, 0);
   found.sort((a, b) => a.sortOrder - b.sortOrder || a.index - b.index);
   return { items: found.map((e) => ({ routeKey: e.routeKey, title: e.title, href: e.href, sortOrder: e.sortOrder })), unmapped };
+}
+
+/**
+ * State of the `/me/menus` response for navigation. Only drivers' navigation is built from it
+ * ("not-used" otherwise). On "error" the caller shows a visible, retryable error and keeps only
+ * the policy-filtered static navigation: a failed menu never produces extra items.
+ */
+export type MenuNavStatus = "not-used" | "loading" | "ready" | "error";
+
+export function menuNavStatus(access: Access, menus: unknown, menusError: string | null): MenuNavStatus {
+  if (access.role !== "driver") return "not-used";
+  if (menusError !== null) return "error";
+  return menus === null || menus === undefined ? "loading" : "ready";
 }
 
 /**

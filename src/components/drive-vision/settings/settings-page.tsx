@@ -10,6 +10,7 @@ import { accountService } from "@/features/drive-vision/api/account-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
 import type { PreferencesDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import { DASHBOARD_MODULE_LABELS, updatePreferences, usePreferences, type DashboardModule } from "@/features/drive-vision/hooks/use-preferences";
 import { applyCurrentUser, useAuth } from "@/features/drive-vision/store/auth-store";
 import { formatDateTime } from "@/features/drive-vision/utils/format";
@@ -78,6 +79,7 @@ function ProfilePanel() {
   const [errors, setErrors] = useState<Errors<ProfileField>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const canEdit = useCan("settings.manage");
   const form = draft ?? original;
   const patch = profilePatch(original, form);
   const dirty = Object.keys(patch).length > 0;
@@ -87,7 +89,7 @@ function ProfilePanel() {
     const found = validateProfile(form);
     setErrors(found);
     setFailure(null);
-    if (Object.keys(found).length > 0 || !dirty) return;
+    if (Object.keys(found).length > 0 || !dirty || !canEdit) return;
     setSaving(true);
     try {
       const updated = await accountService.updateMe(patch);
@@ -131,7 +133,7 @@ function ProfilePanel() {
               Discard
             </Button>
           ) : null}
-          <Button type="submit" disabled={!dirty || saving}>
+          <Button type="submit" disabled={!canEdit || !dirty || saving}>
             {saving ? <Loader2 className="animate-spin" /> : null} Save profile
           </Button>
         </div>
@@ -149,7 +151,8 @@ function ProfilePanel() {
 
 const EMPTY_PASSWORD: PasswordForm = { currentPassword: "", newPassword: "", confirmPassword: "" };
 
-function PasswordPanel() {
+/** Own-password change. Also shown on the driver's My Profile (the Settings screen is fleet-only). Values live in component state only. */
+export function PasswordPanel() {
   const [form, setForm] = useState<PasswordForm>(EMPTY_PASSWORD);
   const [errors, setErrors] = useState<Errors<keyof PasswordForm>>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -210,6 +213,7 @@ const MODE_LABEL: Record<string, string> = { NONE: "Off", BADGE: "Badge", POPUP_
 
 function PreferencesPanel() {
   const q = useApiQuery("settings:preferences", () => accountService.preferences());
+  const canEdit = useCan("settings.manage");
   const [edits, setEdits] = useState<PreferencesDto>({});
   const [errors, setErrors] = useState<Errors<PreferenceField>>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -244,7 +248,7 @@ function PreferencesPanel() {
     const found = validatePreferences(view);
     setErrors(found);
     setFailure(null);
-    if (Object.keys(found).length > 0 || missing.length > 0) return;
+    if (Object.keys(found).length > 0 || missing.length > 0 || !canEdit) return;
     setSaving(true);
     try {
       const result = await accountService.savePreferences(preferencesBody(loaded!, edits));
@@ -331,7 +335,7 @@ function PreferencesPanel() {
               Discard
             </Button>
           ) : null}
-          <Button onClick={() => void onSave()} disabled={!dirty || saving || missing.length > 0}>
+          <Button onClick={() => void onSave()} disabled={!canEdit || !dirty || saving || missing.length > 0}>
             {saving ? <Loader2 className="animate-spin" /> : null} Save preferences
           </Button>
         </div>
@@ -350,7 +354,7 @@ function BrowserPanel() {
       <div className="grid gap-x-8 px-5 pb-2 md:grid-cols-2">
         <div className="divide-y divide-line">
           <ToggleRow id="d-motion" label="Reduce motion" description="Turns off transitions (the OS setting is also respected)" checked={prefs.reduceMotion} onChange={(v) => updatePreferences({ reduceMotion: v })} />
-          <ToggleRow id="d-assistant" label="Show AI assistant" description="Iris launcher (sample data; admins only)" checked={prefs.assistantEnabled} onChange={(v) => updatePreferences({ assistantEnabled: v })} />
+          <ToggleRow id="d-assistant" label="Show AI assistant" description="Iris launcher (admins only)" checked={prefs.assistantEnabled} onChange={(v) => updatePreferences({ assistantEnabled: v })} />
         </div>
         <div className="divide-y divide-line">
           {(Object.keys(DASHBOARD_MODULE_LABELS) as DashboardModule[]).map((m) => (
@@ -364,14 +368,17 @@ function BrowserPanel() {
 
 /** Settings on live BFF data: profile (PATCH /me), password (POST /me/password), preferences (GET/PUT /me/preferences). */
 export function SettingsPage() {
+  const canChangePassword = useCan("account.password");
   return (
     <div className="max-w-5xl">
       <PageHeader title="Settings" description="Profile, password and preferences for your SafeFare account" />
       <div className="grid gap-4 lg:grid-cols-2">
         <ProfilePanel />
-        <div className="space-y-4">
-          <PasswordPanel />
-        </div>
+        {canChangePassword ? (
+          <div className="space-y-4">
+            <PasswordPanel />
+          </div>
+        ) : null}
         <div className="lg:col-span-2">
           <PreferencesPanel />
         </div>

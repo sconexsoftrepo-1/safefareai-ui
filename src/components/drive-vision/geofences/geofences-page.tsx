@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import { Info, MapPinned, RefreshCw, Route, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
@@ -33,6 +34,7 @@ export function GeofencesPage() {
   const [shape, setShape] = useState<ShapeFilter>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GeofenceDto | null>(null);
+  const canDelete = useCan("geofences.delete");
   const listQ = useApiQuery(`geofences:${shape}`, () => fleetService.listGeofences(shape === "all" ? {} : { shape }));
   const groupsQ = useApiQuery("geofences:groups", () => fleetService.listGroups());
   const devicesQ = useApiQuery("geofences:devices", () => fleetService.listAllDevices());
@@ -143,9 +145,11 @@ export function GeofencesPage() {
                 title={selected.f.name ?? `Geofence ${selected.f.id}`}
                 description={selected.f.shape === "LINE" ? "Route line" : "Zone"}
                 action={
-                  <Button variant="outline" size="sm" onClick={() => setDeleteTarget(selected.f)}>
-                    <Trash2 /> Delete
-                  </Button>
+                  canDelete ? (
+                    <Button variant="outline" size="sm" onClick={() => setDeleteTarget(selected.f)}>
+                      <Trash2 /> Delete
+                    </Button>
+                  ) : undefined
                 }
               />
               <dl className="divide-y divide-line px-5 pb-4">

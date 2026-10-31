@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     default: "SafeFare AI",
     template: "%s · SafeFare AI",
   },
-  description: "SafeFare AI — AI-powered fleet intelligence and driver safety (demo with sample data).",
+  description: "SafeFare AI — AI-powered fleet intelligence and driver safety.",
 };
 
 export const viewport: Viewport = {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, LifeBuoy, LogOut, Settings, UsersRound } from "lucide-react";
+import { ChevronDown, LogOut, Settings, UsersRound } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,8 +11,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { signOut, useAuth } from "@/features/drive-vision/store/auth-store";
+import { useAccess } from "@/features/drive-vision/access/use-access";
+import { profileMenuLinks } from "@/features/drive-vision/access/access-policy";
 import { initials } from "@/features/drive-vision/utils/format";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { HEADER_PILL } from "./header-styles";
 
@@ -25,6 +26,8 @@ export function UserProfileMenu({ variant = "header" }: { variant?: "header" | "
   const user = useAuth((s) => s.user);
   const name = user?.displayName || user?.email || "Signed-in user";
   const roleLabel = user?.role?.description || user?.role?.code;
+  // Only screens this role may open (a driver gets neither link).
+  const links = profileMenuLinks(useAccess());
 
   return (
     <DropdownMenu>
@@ -64,20 +67,14 @@ export function UserProfileMenu({ variant = "header" }: { variant?: "header" | "
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/drive-vision/settings">
-            <Settings /> Profile & preferences
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/drive-vision/users">
-            <UsersRound /> Users & sub-accounts
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => toast.info("SafeFare AI demo", { description: "This workspace uses sample data only. Support links will be added with backend integration." })}>
-          <LifeBuoy /> About this demo
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {links.map((l) => (
+          <DropdownMenuItem key={l.screen} asChild>
+            <Link href={l.href}>
+              {l.screen === "settings" ? <Settings /> : <UsersRound />} {l.label}
+            </Link>
+          </DropdownMenuItem>
+        ))}
+        {links.length > 0 ? <DropdownMenuSeparator /> : null}
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut /> Sign out
         </DropdownMenuItem>

@@ -27,6 +27,7 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import type { Errors } from "../settings/settings-model";
 import {
   DRIVER_MAX,
@@ -87,6 +88,7 @@ const vehicleOf = (a?: AssignmentDto) => (a ? a.deviceName || a.terminalNo || (a
 export function DriversPage() {
   const params = useSearchParams();
   const [tab, setTab] = useState<Tab>(params.get("licence") ? "licences" : "drivers");
+  const canManage = useCan("drivers.manage");
   const [searchInput, setSearchInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<"all" | "ACTIVE" | "INACTIVE">("all");
@@ -148,9 +150,11 @@ export function DriversPage() {
             <Button variant="outline" onClick={activeQ.refetch} disabled={activeQ.loading}>
               <RefreshCw className={activeQ.refreshing ? "animate-spin" : undefined} /> Refresh
             </Button>
-            <Button onClick={() => setFormMode("create")}>
-              <Plus /> New driver
-            </Button>
+            {canManage ? (
+              <Button onClick={() => setFormMode("create")}>
+                <Plus /> New driver
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -278,6 +282,7 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
   const eventsQ = useApiQuery(id !== null ? `drivers:events:${id}:${scoreWindow.from}` : null, () => insightService.driverSafetyEvents(id!, { ...scoreWindow, pageNumber: 1, pageSize: 5 }));
   const [pending, setPending] = useState<Pending | null>(null);
   const [assign, setAssign] = useState<AssignForm>({ deviceId: "", from: "", replaceCurrent: false });
+  const canManage = useCan("drivers.manage");
   const devicesQ = useApiQuery(pending?.kind === "assign" ? "drivers:devices" : null, () => fleetService.listAllDevices());
   const driver = detailQ.data;
   const assignErrors = validateAssignForm(assign);
@@ -321,7 +326,7 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
         title={driver?.name ?? (id !== null ? `Driver ${id}` : "")}
         description={driver?.licence?.number ? `Licence ${driver.licence.number}` : undefined}
         footer={
-          driver ? (
+          driver && canManage ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" className="text-danger" onClick={() => setPending({ kind: "delete" })}>
                 <Trash2 /> Delete
@@ -440,7 +445,7 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
                         </span>
                       </span>
                       {a.active ? <StatusBadge size="sm" tone="success">Active</StatusBadge> : null}
-                      {a.active && a.id !== undefined ? (
+                      {a.active && a.id !== undefined && canManage ? (
                         <Button variant="ghost" size="sm" onClick={() => setPending({ kind: "end", assignment: a })}>
                           <Link2Off /> End
                         </Button>

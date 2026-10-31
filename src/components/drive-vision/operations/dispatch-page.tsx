@@ -24,6 +24,7 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import type { Errors } from "../settings/settings-model";
 import { DISPATCH_MAX, EMPTY_DISPATCH_FORM, dispatchFormFrom, dispatchRequestBody, validateDispatchForm, windowAround, type DispatchField, type DispatchForm } from "./operations-model";
 import { usePickers } from "./use-pickers";
@@ -78,6 +79,7 @@ export function DispatchPage() {
   const [now, setNow] = useState(() => new Date());
   const [openId, setOpenId] = useState<number | null>(linked);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
+  const canManage = useCan("dispatch.manage");
   const [version, setVersion] = useState(0);
   const range: { from?: string; to?: string } = win === "all" ? {} : windowAround(now, ...WINDOWS[win]);
   const listQ = useApiQuery(tab === "dispatches" ? `dispatch:list:${win}:${range.from ?? ""}:${page}:${version}` : null, () => operationsService.listDispatches({ ...range, pageNumber: page, pageSize: PAGE_SIZE }));
@@ -123,9 +125,11 @@ export function DispatchPage() {
             <Button variant="outline" onClick={() => (setNow(new Date()), changed())}>
               <RefreshCw className={listQ.refreshing ? "animate-spin" : undefined} /> Refresh
             </Button>
-            <Button onClick={() => setFormMode("create")}>
-              <Plus /> New dispatch
-            </Button>
+            {canManage ? (
+              <Button onClick={() => setFormMode("create")}>
+                <Plus /> New dispatch
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -226,6 +230,7 @@ function SwapsPanel({ version, onChanged }: { version: number; onChanged: () => 
   const [page, setPage] = useState(1);
   const q = useApiQuery(`dispatch:swaps:${page}:${version}`, () => operationsService.listSwaps({ pageNumber: page, pageSize: PAGE_SIZE }));
   const [pending, setPending] = useState<{ swap: SwapRequestDto; decision: "approve" | "reject" } | null>(null);
+  const canDecide = useCan("swaps.decide");
   const [note, setNote] = useState("");
 
   async function decide() {
@@ -254,6 +259,8 @@ function SwapsPanel({ version, onChanged }: { version: number; onChanged: () => 
       cell: (s) =>
         s.decidedAt ? (
           <span className="text-xs text-ink-muted">{time(s.decidedAt)}</span>
+        ) : !canDecide ? (
+          <span className="text-xs text-ink-muted">Pending</span>
         ) : (
           <span className="inline-flex gap-1">
             <Button size="sm" variant="outline" onClick={() => setPending({ swap: s, decision: "reject" })}>
@@ -314,6 +321,7 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
   const [pending, setPending] = useState<Pending | null>(null);
   const [reason, setReason] = useState("");
   const [toDriver, setToDriver] = useState("");
+  const canManage = useCan("dispatch.manage");
   const pickers = usePickers(pending?.kind === "swap");
   const d = detailQ.data;
 
@@ -345,7 +353,7 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
         title={d?.title ?? (id !== null ? `Dispatch ${id}` : "")}
         description={d ? `${time(d.scheduledStart)} → ${time(d.scheduledEnd)}` : undefined}
         footer={
-          d ? (
+          d && canManage ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" className="text-danger" onClick={() => setPending({ kind: "cancel" })}>
                 <CircleX /> Cancel dispatch

@@ -8,7 +8,7 @@ import { Locate, Map as MapIcon, Minus, Plus } from "lucide-react";
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 import type { LatLon } from "@/features/drive-vision/types";
 import { cn } from "@/lib/utils";
-import { baseMapSource, loadMapLibre } from "./base-map-config";
+import { attributionBottom, baseMapSource, loadMapLibre } from "./base-map-config";
 import { FleetMap, MapButton, type MapMarker, type MapPin, type MapRoute } from "./fleet-map";
 import type { GeoBounds } from "./projection";
 
@@ -101,6 +101,7 @@ function GeoCanvas({
 }: GeoMapProps & { styleUrl: string; provider: "maptiler" | "custom"; onFail: (reason: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const captionRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const [map, setMap] = useState<{ map: MapLibreMap; ml: Runtime } | null>(null);
   const [viewTick, setViewTick] = useState(0);
@@ -132,7 +133,8 @@ function GeoCanvas({
             center: [78.9, 20.6],
             zoom: 3,
             maxZoom: 19,
-            attributionControl: { compact: true },
+            // Full attribution, always: compact mode collapses it to an "i" button on the first drag.
+            attributionControl: { compact: false },
             dragRotate: false,
             pitchWithRotate: false,
             touchPitch: false,
@@ -142,9 +144,10 @@ function GeoCanvas({
           return;
         }
         const m = instance;
-        // Keep the provider attribution clear of the caption/legend row at the bottom.
+        // Keep the provider attribution clear of the caption/legend row at the bottom (one-line default until
+        // the row is measured; see the caption effect below).
         const attribution = m.getContainer().querySelector<HTMLElement>(".maplibregl-ctrl-bottom-right");
-        if (attribution) attribution.style.bottom = "40px";
+        if (attribution) attribution.style.bottom = `${attributionBottom(22)}px`;
         m.touchZoomRotate.disableRotation();
         m.keyboard.disableRotation();
         // Errors carry request URLs (with the key) — never log them.
@@ -216,6 +219,21 @@ function GeoCanvas({
       }
     }
   }, [map, fitSignature, focusSignature, focus, fit, padding, focusPadRight, reduceMotion]);
+
+  // Keep the attribution above the caption row at its real height: on narrow maps the row wraps to two
+  // lines, and a fixed offset let the MapTiler logo cover the OpenStreetMap credit.
+  useEffect(() => {
+    const caption = captionRef.current;
+    const attribution = map?.map.getContainer().querySelector<HTMLElement>(".maplibregl-ctrl-bottom-right");
+    if (!caption || !attribution) return;
+    const place = () => {
+      attribution.style.bottom = `${attributionBottom(caption.offsetHeight)}px`;
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(caption);
+    return () => observer.disconnect();
+  }, [map]);
 
   // Routes as GeoJSON line layers: a white casing, the full path, and the played part on top.
   useEffect(() => {
@@ -327,7 +345,7 @@ function GeoCanvas({
 
       {children}
 
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1.5">
+      <div ref={captionRef} className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1.5">
         {provider === "maptiler" ? (
           <a href="https://www.maptiler.com/" target="_blank" rel="noopener noreferrer" className="pointer-events-auto rounded-full border border-line bg-surface/95 px-2 py-1 text-[10.5px] font-semibold text-ink shadow-card">
             MapTiler

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { BrandMark, DemoNotice, SidebarNav } from "./sidebar";
+import { BrandMark, SidebarNav } from "./sidebar";
 import { transitions } from "../shared/motion";
 import { useReturnFocus } from "../shared/use-return-focus";
 
@@ -39,9 +39,6 @@ export function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange:
                 </div>
                 <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-3 pb-3">
                   <SidebarNav layoutGroup="mobile-nav" onNavigate={() => onOpenChange(false)} />
-                </div>
-                <div className="p-3 pt-0">
-                  <DemoNotice />
                 </div>
               </motion.div>
             </DialogPrimitive.Content>

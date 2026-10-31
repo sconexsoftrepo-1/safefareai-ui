@@ -15,7 +15,9 @@ import { ApiErrorState } from "../shared/api-states";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
 import { toast } from "../shared/toast-provider";
 import { HEADER_ICON } from "./header-styles";
-import { notificationHref } from "./search-model";
+import { canPerform, reachableHref } from "@/features/drive-vision/access/access-policy";
+import { useAccess } from "@/features/drive-vision/access/use-access";
+import { notificationLink } from "./search-model";
 
 const PAGE_SIZE = 20;
 
@@ -23,10 +25,15 @@ const PAGE_SIZE = 20;
  * Header bell on GET /notifications and /notifications/unread-count. The count is read once per
  * page load and again whenever the panel closes (no polling); the list loads only while the panel
  * is open. Read state changes are sent per item or with "Mark all read", and the list and count
- * are re-read from the server afterwards.
+ * are re-read from the server afterwards. Links follow the user's role (driver notifications open
+ * My Work screens) and are dropped when the user can't open the target; read-state buttons need the
+ * `notifications.markRead` action.
  */
 export function NotificationCenter() {
   const router = useRouter();
+  const access = useAccess();
+  const canMark = canPerform(access, "notifications.markRead");
+  const alertsHref = reachableHref(access, "/drive-vision/alerts?kind=incidents");
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState<number | "all" | null>(null);
@@ -37,7 +44,7 @@ export function NotificationCenter() {
   const refresh = () => setVersion((v) => v + 1);
 
   async function mark(n: NotificationDto, read: boolean) {
-    if (n.id === undefined || busy !== null) return;
+    if (!canMark || n.id === undefined || busy !== null) return;
     setBusy(n.id);
     try {
       await alertService.markNotification(n.id, read);
@@ -50,7 +57,7 @@ export function NotificationCenter() {
   }
 
   async function markAll() {
-    if (busy !== null) return;
+    if (!canMark || busy !== null) return;
     setBusy("all");
     try {
       await alertService.markAllRead();
@@ -63,7 +70,7 @@ export function NotificationCenter() {
   }
 
   function openItem(n: NotificationDto) {
-    const href = notificationHref(n.refType, n.refId);
+    const href = notificationLink(access, n.refType, n.refId);
     if (!href) return;
     if (!n.read) void mark(n, true);
     setOpen(false);
@@ -96,14 +103,16 @@ export function NotificationCenter() {
             Notifications
             {typeof unread === "number" ? <span className="ml-1.5 text-xs font-normal text-ink-muted">{unread} unread</span> : null}
           </p>
-          <button
-            type="button"
-            onClick={markAll}
-            disabled={busy !== null || !items.some((n) => !n.read)}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50"
-          >
-            {busy === "all" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <CheckCheck className="size-3.5" aria-hidden />} Mark all read
-          </button>
+          {canMark ? (
+            <button
+              type="button"
+              onClick={markAll}
+              disabled={busy !== null || !items.some((n) => !n.read)}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50"
+            >
+              {busy === "all" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <CheckCheck className="size-3.5" aria-hidden />} Mark all read
+            </button>
+          ) : null}
         </div>
         <div className="scrollbar-thin max-h-[60vh] overflow-y-auto">
           {listQ.error && !listQ.data ? (
@@ -115,20 +124,21 @@ export function NotificationCenter() {
           ) : (
             <ul className="divide-y divide-line">
               {items.map((n, i) => {
-                const href = notificationHref(n.refType, n.refId);
+                const href = notificationLink(access, n.refType, n.refId);
                 return (
                   <li key={n.id ?? i} className={cn("flex items-start gap-2 px-4 py-3", !n.read && "bg-brand-tint/40")}>
                     <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", n.read ? "bg-transparent" : "bg-brand")} aria-hidden />
-                    <button type="button" onClick={() => openItem(n)} disabled={!href} className="min-w-0 flex-1 text-left disabled:cursor-default">
-                      <span className="block text-[13px] font-medium text-ink">{n.title ?? n.type ?? "Notification"}</span>
-                      {n.body ? <span className="mt-0.5 block text-xs text-ink-muted">{n.body}</span> : null}
-                      {n.createdAt ? (
-                        <time dateTime={n.createdAt} title={formatDateTime(n.createdAt)} className="mt-0.5 block text-[11px] text-ink-subtle">
-                          {formatRelative(n.createdAt, new Date())}
-                        </time>
-                      ) : null}
-                      <span className="sr-only">{n.read ? "Read" : "Unread"}</span>
-                    </button>
+                    {/* Without a reachable destination the item is plain text, not a dead button. */}
+                    {href ? (
+                      <button type="button" onClick={() => openItem(n)} className="min-w-0 flex-1 text-left">
+                        <NotificationText n={n} />
+                      </button>
+                    ) : (
+                      <div className="min-w-0 flex-1">
+                        <NotificationText n={n} />
+                      </div>
+                    )}
+                    {canMark ? (
                     <button
                       type="button"
                       onClick={() => mark(n, !n.read)}
@@ -139,18 +149,36 @@ export function NotificationCenter() {
                     >
                       {busy === n.id ? <Loader2 className="size-3.5 animate-spin" /> : n.read ? <Mail className="size-3.5" /> : <MailOpen className="size-3.5" />}
                     </button>
+                    ) : null}
                   </li>
                 );
               })}
             </ul>
           )}
         </div>
-        <div className="border-t border-line p-1.5">
-          <Link href="/drive-vision/alerts?kind=incidents" onClick={() => setOpen(false)} className="flex items-center justify-between rounded-xl px-2.5 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
-            Open Alerts &amp; Events <ChevronRight className="size-4 text-ink-muted" aria-hidden />
-          </Link>
-        </div>
+        {alertsHref ? (
+          <div className="border-t border-line p-1.5">
+            <Link href={alertsHref} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-xl px-2.5 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
+              Open Alerts &amp; Events <ChevronRight className="size-4 text-ink-muted" aria-hidden />
+            </Link>
+          </div>
+        ) : null}
       </PopoverContent>
     </Popover>
+  );
+}
+
+function NotificationText({ n }: { n: NotificationDto }) {
+  return (
+    <>
+      <span className="block text-[13px] font-medium text-ink">{n.title ?? n.type ?? "Notification"}</span>
+      {n.body ? <span className="mt-0.5 block text-xs text-ink-muted">{n.body}</span> : null}
+      {n.createdAt ? (
+        <time dateTime={n.createdAt} title={formatDateTime(n.createdAt)} className="mt-0.5 block text-[11px] text-ink-subtle">
+          {formatRelative(n.createdAt, new Date())}
+        </time>
+      ) : null}
+      <span className="sr-only">{n.read ? "Read" : "Unread"}</span>
+    </>
   );
 }

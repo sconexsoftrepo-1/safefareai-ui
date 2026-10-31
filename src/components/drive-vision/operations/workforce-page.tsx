@@ -23,6 +23,7 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import type { Errors } from "../settings/settings-model";
 import { EMPTY_LEAVE_FORM, istDate, leaveRequestBody, validateLeaveForm, windowAround, type LeaveField, type LeaveForm } from "./operations-model";
 import { usePickers } from "./use-pickers";
@@ -197,6 +198,7 @@ function LeavePanel({ version }: { version: number }) {
   const [pending, setPending] = useState<{ leave: LeaveDto; decision: "approve" | "reject" } | null>(null);
   const [note, setNote] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const canManage = useCan("leave.manage");
   const refresh = () => setLocal((v) => v + 1);
 
   async function decide() {
@@ -245,6 +247,8 @@ function LeavePanel({ version }: { version: number }) {
           <span className="text-xs text-ink-muted">
             {l.decidedByName ?? "Decided"} · {time(l.decidedAt)}
           </span>
+        ) : !canManage ? (
+          <span className="text-xs text-ink-muted">Pending</span>
         ) : (
           <span className="inline-flex gap-1">
             <Button size="sm" variant="outline" onClick={() => setPending({ leave: l, decision: "reject" })}>
@@ -263,9 +267,11 @@ function LeavePanel({ version }: { version: number }) {
       <PanelHeader
         title="Leave requests"
         action={
-          <Button size="sm" onClick={() => setFormOpen(true)}>
-            <Plus /> Request leave for a driver
-          </Button>
+          canManage ? (
+            <Button size="sm" onClick={() => setFormOpen(true)}>
+              <Plus /> Request leave for a driver
+            </Button>
+          ) : undefined
         }
       />
       {q.error ? (

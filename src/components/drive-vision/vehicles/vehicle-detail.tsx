@@ -51,7 +51,7 @@ function NotFound({ message }: { message: string }) {
  */
 export function VehicleDetail({ vehicleId }: { vehicleId: string }) {
   const id = /^\d+$/.test(vehicleId) ? Number(vehicleId) : null;
-  if (id === null) return <NotFound message="This link doesn't point to a device record. Links from screens that still use sample data won't resolve here." />;
+  if (id === null) return <NotFound message="This link doesn't point to a device record." />;
   return <LiveVehicleDetail id={id} />;
 }
 

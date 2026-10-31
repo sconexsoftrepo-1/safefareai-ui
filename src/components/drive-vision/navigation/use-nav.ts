@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { CalendarOff, ClipboardCheck, Clock, ShieldCheck, UserRound, type LucideIcon } from "lucide-react";
-import { filterNavGroups, menuNavEntries, type Access } from "@/features/drive-vision/access/access-policy";
+import { filterNavGroups, menuNavEntries, menuNavStatus, type Access } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { useAuth } from "@/features/drive-vision/store/auth-store";
 import { ALL_NAV_ITEMS, NAV_GROUPS, type NavGroup } from "./nav-config";
@@ -25,12 +25,18 @@ export function driverMenuGroup(menus: unknown, access: Access): NavGroup | null
   };
 }
 
-/** Navigation groups the signed-in user may open (empty groups dropped). */
+/**
+ * Navigation groups the signed-in user may open (empty groups dropped). A driver's navigation waits
+ * for `/me/menus` (no static flash); if the menu fails, only the policy-allowed static entry is kept
+ * and MenuLoadError (app shell) shows the failure with Retry.
+ */
 export function useNavGroups(): NavGroup[] {
   const access = useAccess();
   const menus = useAuth((s) => s.menus);
+  const menusError = useAuth((s) => s.menusError);
   return useMemo(() => {
+    if (menuNavStatus(access, menus, menusError) === "loading") return [];
     const fromMenu = driverMenuGroup(menus, access);
     return fromMenu ? [fromMenu] : filterNavGroups(NAV_GROUPS, access);
-  }, [access, menus]);
+  }, [access, menus, menusError]);
 }

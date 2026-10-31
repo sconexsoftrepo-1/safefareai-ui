@@ -1,4 +1,5 @@
 import type { SearchHit } from "@/features/drive-vision/api/types";
+import { reachableHref, type Access } from "@/features/drive-vision/access/access-policy";
 
 /**
  * GET /search returns `{ [group]: Hit[] }`; neither the group keys nor `Hit.type` values are
@@ -47,11 +48,30 @@ export function groupLabel(group: string) {
   return s ? s[0].toUpperCase() + s.slice(1) : "Results";
 }
 
-/** Link for a notification's `refType`/`refId` (both undocumented), or null when there is no matching screen. */
-export function notificationHref(refType: string | undefined, refId: string | undefined): string | null {
+const LEAVE_REF = /^leave(_request)?s?$/i;
+const SWAP_REF = /^swap(_request)?s?$/i;
+const DISPATCH_REF = /^dispatch(es)?$/i;
+
+/**
+ * Link for a notification's `refType`/`refId` (both undocumented), or null when there is no matching
+ * screen. `driver` = the driver's own screens (My Work): their leave list, and their trips (where
+ * dispatches and swap requests are shown); anything else has no driver screen and stays unlinked.
+ * Callers still drop links the user can't open (reachableHref).
+ */
+export function notificationHref(refType: string | undefined, refId: string | undefined, audience: "fleet" | "driver" = "fleet"): string | null {
   if (!refType || !refId || !/^\d{1,15}$/.test(refId)) return null;
   const type = refType.trim();
-  if (/^leave(_request)?s?$/i.test(type)) return "/drive-vision/workforce?tab=leave";
-  if (/^swap(_request)?s?$/i.test(type)) return "/drive-vision/dispatch?tab=swaps";
+  if (audience === "driver") {
+    if (LEAVE_REF.test(type)) return "/drive-vision/my-work/leave";
+    if (SWAP_REF.test(type) || DISPATCH_REF.test(type)) return "/drive-vision/my-work";
+    return null;
+  }
+  if (LEAVE_REF.test(type)) return "/drive-vision/workforce?tab=leave";
+  if (SWAP_REF.test(type)) return "/drive-vision/dispatch?tab=swaps";
   return searchHitHref(type, { id: Number(refId), type });
+}
+
+/** The notification link this user may follow: driver screens for drivers, fleet screens otherwise; null when unreachable. */
+export function notificationLink(access: Access, refType: string | undefined, refId: string | undefined): string | null {
+  return reachableHref(access, notificationHref(refType, refId, access.role === "driver" ? "driver" : "fleet"));
 }
