@@ -1,19 +1,21 @@
-import type { AlarmDto, AlarmListQuery, AlarmTypeDto } from "@/features/drive-vision/api/types";
+import type { AlarmDto, AlarmListQuery, AlarmTypeDto, AlertListQuery } from "@/features/drive-vision/api/types";
 import type { DateRangeKey } from "@/features/drive-vision/types";
 import { resolveDateRange } from "@/features/drive-vision/utils/time";
 
 /**
- * URL state and pure derivations for the Alerts page (GET /alarms/ai, /alarms/routine).
- * The API filters by time window, alarm types and devices and pages the result; it has no
- * keyword, severity or handling-status filter and no sort, so the page offers none.
+ * URL state and pure derivations for the Alerts page: the raw alarm feeds (GET /alarms/ai,
+ * /alarms/routine — time window, alarm types, devices) and the incident workflow (GET /alerts,
+ * which adds open-only, status, severity and keyword filters and handling actions).
  */
 
 export type AlarmKind = "ai" | "routine";
+/** Page tab: one of the alarm feeds, or the handled-alert list. */
+export type AlertsTab = AlarmKind | "incidents";
 /** Spec default for both alarm lists (pageSize 1–100). */
 export const ALARM_PAGE_SIZE = 20;
 
 export interface AlertsView {
-  kind: AlarmKind;
+  kind: AlertsTab;
   range: DateRangeKey;
   deviceId: number | null;
   typeId: number | null;
@@ -29,7 +31,7 @@ const positiveInt = (v: string | null) => (v && /^\d{1,15}$/.test(v) && Number(v
 export function parseAlertsView(params: { get(name: string): string | null }): AlertsView {
   const range = params.get("range");
   return {
-    kind: params.get("kind") === "routine" ? "routine" : "ai",
+    kind: params.get("kind") === "routine" ? "routine" : params.get("kind") === "incidents" ? "incidents" : "ai",
     range: RANGES.includes(range as DateRangeKey) ? (range as DateRangeKey) : "7d",
     deviceId: positiveInt(params.get("device")),
     typeId: positiveInt(params.get("type")),
@@ -59,6 +61,21 @@ export function alarmQuery(view: AlertsView, now: Date): AlarmListQuery {
     to: r.to.toISOString(),
     alarmTypeIds: view.typeId !== null ? [view.typeId] : undefined,
     deviceIds: view.deviceId !== null ? [view.deviceId] : undefined,
+    pageNumber: view.page,
+    pageSize: ALARM_PAGE_SIZE,
+  };
+}
+
+/** The GET /alerts request for a view. `openOnly` and `keyword` are local to the Incidents tab. */
+export function incidentQuery(view: AlertsView, now: Date, opts: { openOnly: boolean; keyword: string }): AlertListQuery {
+  const r = resolveDateRange(view.range, now);
+  return {
+    from: r.from.toISOString(),
+    to: r.to.toISOString(),
+    alarmTypeIds: view.typeId !== null ? [view.typeId] : undefined,
+    deviceIds: view.deviceId !== null ? [view.deviceId] : undefined,
+    openOnly: opts.openOnly || undefined,
+    keyword: opts.keyword.trim() || undefined,
     pageNumber: view.page,
     pageSize: ALARM_PAGE_SIZE,
   };

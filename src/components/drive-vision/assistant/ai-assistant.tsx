@@ -5,12 +5,16 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { ArrowUp, Bell, CalendarClock, ChevronRight, Lock, RotateCcw, ShieldAlert, Sparkles, Truck, WifiOff, X, type LucideIcon } from "lucide-react";
+import { ArrowUp, Bell, CalendarClock, ChevronRight, CircleAlert, IdCard, Lock, RotateCcw, ShieldAlert, Sparkles, Truck, UsersRound, WifiOff, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { fleetStore, useFleet } from "@/features/drive-vision/store/fleet-store";
+import { assistantService } from "@/features/drive-vision/api/assistant-service";
+import { apiErrorMeta, describeApiError } from "@/features/drive-vision/api/errors";
+import type { AnswerDto, AssistantIntent } from "@/features/drive-vision/api/types";
+import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { usePreferences } from "@/features/drive-vision/hooks/use-preferences";
 import { useMediaQuery } from "@/features/drive-vision/hooks/use-media-query";
-import { answerQuestion, SUGGESTED_PROMPTS, type AssistantAnswer } from "./assistant-engine";
+import { useAccess } from "@/features/drive-vision/access/use-access";
+import { canAccessPath } from "@/features/drive-vision/access/access-policy";
 import { useShell } from "../app-shell/shell-context";
 import { EASE_OUT, transitions } from "../shared/motion";
 
@@ -18,10 +22,26 @@ interface Message {
   id: number;
   role: "user" | "assistant";
   text: string;
-  answer?: AssistantAnswer;
+  answer?: AnswerDto;
+  /** The request failed: `text` is the error, never a made-up answer. */
+  failed?: boolean;
+  meta?: string | null;
 }
 
-const PROMPT_ICONS: LucideIcon[] = [Sparkles, WifiOff, ShieldAlert, CalendarClock, Truck, Bell];
+/** Max question length (AskRequest.question). */
+const MAX_QUESTION = 500;
+
+const INTENT_META: Record<AssistantIntent, { icon: LucideIcon; link?: { label: string; href: string } }> = {
+  LICENCE_EXPIRY: { icon: IdCard, link: { label: "Open licence expiries", href: "/drive-vision/drivers?licence=expiring" } },
+  RISKY_DRIVERS: { icon: ShieldAlert, link: { label: "Open Safety Analytics", href: "/drive-vision/safety" } },
+  DRIVER_AVAILABILITY: { icon: UsersRound, link: { label: "Open availability", href: "/drive-vision/workforce?tab=availability" } },
+  ACTIVE_TRIPS: { icon: Truck, link: { label: "Open Trips", href: "/drive-vision/trips" } },
+  OPEN_ALERTS: { icon: Bell, link: { label: "Open incidents", href: "/drive-vision/alerts?kind=incidents" } },
+  DEVICE_HEALTH: { icon: WifiOff, link: { label: "Open Vehicles", href: "/drive-vision/vehicles" } },
+  FLEET_STATUS: { icon: CalendarClock, link: { label: "Open Live Monitoring", href: "/drive-vision/monitoring" } },
+  OVERVIEW: { icon: Sparkles, link: { label: "Open Fleet Overview", href: "/drive-vision/overview" } },
+  HELP: { icon: Sparkles },
+};
 
 /** Soft lavender → coral orb with two smiling eyes (brand-integrated, no perpetual animation). */
 function AssistantOrb({ size = 30, glow = false }: { size?: number; glow?: boolean }) {
@@ -45,7 +65,9 @@ function AssistantOrb({ size = 30, glow = false }: { size?: number; glow?: boole
 }
 
 /**
- * Iris — local, rule-based assistant. Docked beside the page on wide screens
+ * Iris — the fleet assistant on GET /assistant/prompts and POST /assistant/ask. Answers are the
+ * server's; a failed request is shown as an error, never replaced by a local answer. When the
+ * server marks an answer `simulated`, it is labelled so. Docked beside the page on wide screens
  * (non-modal; the page reflows), a modal sheet with overlay on smaller screens.
  * The launcher stays mounted so focus returns to it on close.
  */
@@ -58,40 +80,57 @@ export function DriveVisionAIAssistant() {
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
   const nextId = useRef(1);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inflight = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const pathname = usePathname();
+  const access = useAccess();
   // Map/video workspaces keep their bottom-right controls clear; Iris opens from the header there.
   const hideLauncherOnDesktop = /\/drive-vision\/(monitoring|video|trips|geofences)/.test(pathname);
-  const selectedVehicleId = useFleet((s) => s.selectedVehicleId);
-  const selectedVehicle = useFleet((s) => s.vehicles.find((v) => v.vehicleId === s.selectedVehicleId));
-  const prompts = SUGGESTED_PROMPTS.map((p, i) => ({ text: p, icon: PROMPT_ICONS[i] ?? Sparkles })).filter((p) => selectedVehicleId || !p.text.includes("selected"));
+  const promptsQ = useApiQuery(open ? "assistant:prompts" : null, () => assistantService.prompts());
+  const prompts = (promptsQ.data?.items ?? [])
+    .filter((p): p is typeof p & { text: string } => typeof p.text === "string" && p.text.trim() !== "")
+    .map((p) => ({ text: p.text, icon: (p.intent && INTENT_META[p.intent]?.icon) || Sparkles }));
+  const linkFor = (intent?: AssistantIntent) => {
+    const link = intent ? INTENT_META[intent]?.link : undefined;
+    return link && canAccessPath(access, link.href) ? link : null;
+  };
 
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    []
-  );
+  useEffect(() => () => inflight.current?.abort(), []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, thinking]);
 
-  function ask(question: string) {
-    const text = question.trim();
+  async function ask(question: string) {
+    const text = question.trim().slice(0, MAX_QUESTION);
     if (!text || thinking) return;
     setMessages((m) => [...m, { id: nextId.current++, role: "user", text }]);
     setDraft("");
     setThinking(true);
-    timer.current = setTimeout(() => {
-      const answer = answerQuestion(text, fleetStore.getState());
-      setMessages((m) => [...m, { id: nextId.current++, role: "assistant", text: answer.text, answer }]);
-      setThinking(false);
-    }, 450 + Math.min(400, text.length * 6));
+    const controller = new AbortController();
+    inflight.current = controller;
+    try {
+      const answer = await assistantService.ask({ question: text }, controller.signal);
+      if (controller.signal.aborted) return;
+      const reply = answer.answer?.trim();
+      setMessages((m) => [
+        ...m,
+        reply
+          ? { id: nextId.current++, role: "assistant", text: reply, answer }
+          : { id: nextId.current++, role: "assistant", text: "The server returned no answer text for this question.", answer, failed: true },
+      ]);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setMessages((m) => [...m, { id: nextId.current++, role: "assistant", text: `Couldn't get an answer: ${describeApiError(err)}`, failed: true, meta: apiErrorMeta(err) }]);
+    } finally {
+      if (inflight.current === controller) {
+        inflight.current = null;
+        setThinking(false);
+      }
+    }
   }
 
   // Contextual "Ask Iris about it" questions are sent once the panel has opened.
@@ -110,7 +149,8 @@ export function DriveVisionAIAssistant() {
   }, [open, pendingQuestion, clearPendingQuestion]);
 
   function reset() {
-    if (timer.current) clearTimeout(timer.current);
+    inflight.current?.abort();
+    inflight.current = null;
     setThinking(false);
     setMessages([]);
   }
@@ -194,7 +234,7 @@ export function DriveVisionAIAssistant() {
                   <div className="min-w-0 flex-1">
                     <DialogPrimitive.Title className="text-sm font-semibold text-ink">Iris AI</DialogPrimitive.Title>
                     <DialogPrimitive.Description className="flex items-center gap-1.5 text-[11.5px] text-ink-muted">
-                      <span className="size-1.5 rounded-full bg-success" aria-hidden /> Rule-based · 100% local
+                      <span className="size-1.5 rounded-full bg-success" aria-hidden /> Answers from the SafeFare server
                     </DialogPrimitive.Description>
                   </div>
                   <button type="button" onClick={reset} disabled={empty} className="grid size-8 place-items-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-surface-sunken hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none active:scale-95" aria-label="Clear conversation">
@@ -215,7 +255,8 @@ export function DriveVisionAIAssistant() {
                         <p className="mt-6 text-lg font-semibold tracking-tight text-ink">
                           Hi {firstName}, I&apos;m <span className="text-ai-ink">Iris</span>
                         </p>
-                        <p className="mt-1.5 max-w-[290px] text-[13px] leading-relaxed text-ink-muted">Ask about the fleet. I answer from the sample data in this browser — no internet, no API key.</p>
+                        <p className="mt-1.5 max-w-[290px] text-[13px] leading-relaxed text-ink-muted">Ask about the fleet. Your question is sent to the SafeFare server, which answers from your fleet data.</p>
+                        {promptsQ.error ? <p className="mt-4 text-xs text-ink-muted">Suggested prompts unavailable: {describeApiError(promptsQ.error)}</p> : null}
                         <ul className="mt-6 grid w-full grid-cols-2 gap-2 text-left">
                           {prompts.map((p) => (
                             <li key={p.text}>
@@ -237,38 +278,29 @@ export function DriveVisionAIAssistant() {
                       <motion.div key="thread" className="space-y-3 pt-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={transitions.fast}>
                         {messages.map((m) => (
                           <motion.div key={m.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={transitions.fast} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                            <div className={cn("max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed", m.role === "user" ? "rounded-br-md bg-ink text-white" : "rounded-bl-md bg-surface-muted text-ink")}>
-                              <p>{m.text}</p>
-                              {m.answer?.items && m.answer.items.length > 0 ? (
-                                <ul className="mt-2 space-y-1">
-                                  {m.answer.items.map((item, i) => {
-                                    const row = (
-                                      <span className="flex items-center gap-2 rounded-xl bg-surface px-2.5 py-1.5">
-                                        <span className="min-w-0 flex-1">
-                                          <span className="block truncate text-[12.5px] font-medium">{item.label}</span>
-                                          {item.sub ? <span className="block truncate text-[11.5px] text-ink-muted">{item.sub}</span> : null}
-                                        </span>
-                                        {item.href ? <ChevronRight className="size-3.5 shrink-0 text-ink-subtle" aria-hidden /> : null}
-                                      </span>
-                                    );
-                                    return (
-                                      <li key={i}>
-                                        {item.href ? (
-                                          <Link href={item.href} onClick={() => !wide && setOpen(false)} className="block rounded-xl transition-shadow duration-150 hover:ring-1 hover:ring-line">
-                                            {row}
-                                          </Link>
-                                        ) : (
-                                          row
-                                        )}
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              ) : null}
-                              {m.answer?.link ? (
-                                <Link href={m.answer.link.href} onClick={() => !wide && setOpen(false)} className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-ai-ink hover:underline">
-                                  {m.answer.link.label} <ChevronRight className="size-3.5" />
+                            <div className={cn("max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed", m.role === "user" ? "rounded-br-md bg-ink text-white" : m.failed ? "rounded-bl-md bg-danger-soft text-danger" : "rounded-bl-md bg-surface-muted text-ink")}>
+                              {m.failed ? (
+                                <p className="flex items-start gap-1.5">
+                                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {m.text}
+                                </p>
+                              ) : (
+                                <p className="whitespace-pre-line">{m.text}</p>
+                              )}
+                              {m.meta ? <p className="mt-1 font-mono text-[10.5px] opacity-75">{m.meta}</p> : null}
+                              {m.answer?.simulated ? <p className="mt-1.5 text-[11px] font-medium text-warning">The server marked this answer as simulated.</p> : null}
+                              {m.answer && !m.failed && linkFor(m.answer.intent) ? (
+                                <Link href={linkFor(m.answer.intent)!.href} onClick={() => !wide && setOpen(false)} className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-ai-ink hover:underline">
+                                  {linkFor(m.answer.intent)!.label} <ChevronRight className="size-3.5" />
                                 </Link>
+                              ) : null}
+                              {m.answer?.suggestions && m.answer.suggestions.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {m.answer.suggestions.slice(0, 4).map((s) => (
+                                    <button key={s} type="button" onClick={() => ask(s)} disabled={thinking} className="rounded-full border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink hover:bg-lavender/60 disabled:opacity-45">
+                                      {s}
+                                    </button>
+                                  ))}
+                                </div>
                               ) : null}
                             </div>
                           </motion.div>
@@ -303,11 +335,6 @@ export function DriveVisionAIAssistant() {
                       ))}
                     </div>
                   ) : null}
-                  {selectedVehicle ? (
-                    <p className="mb-2 flex items-center gap-1.5 text-[11.5px] text-ink-muted">
-                      <Sparkles className="size-3 text-ai-ink" aria-hidden /> Context: {selectedVehicle.vehicleName} · {selectedVehicle.plate}
-                    </p>
-                  ) : null}
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -322,14 +349,14 @@ export function DriveVisionAIAssistant() {
                       placeholder="Ask about vehicles, alerts, trips…"
                       className="h-9 min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-subtle"
                       aria-label="Message Iris"
-                      maxLength={240}
+                      maxLength={MAX_QUESTION}
                     />
                     <button type="submit" disabled={!draft.trim() || thinking} className="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-white transition-[opacity,transform,background-color] duration-150 ease-dv hover:bg-ink/85 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none active:scale-95 active:duration-75 disabled:pointer-events-none disabled:opacity-30" aria-label="Send">
                       <ArrowUp className="size-4" />
                     </button>
                   </form>
                   <p className="mt-2 flex items-center justify-center gap-1 text-[10.5px] text-ink-subtle">
-                    <Lock className="size-3" aria-hidden /> Answers are worked out in this browser from demo data. No API calls.
+                    <Lock className="size-3" aria-hidden /> Questions are sent to the SafeFare server (POST /assistant/ask).
                   </p>
                 </div>
               </motion.aside>

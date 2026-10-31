@@ -3,25 +3,26 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { ArrowUpRight, BatteryLow, Bell, CalendarX2, Cctv, Clock, Layers3, Navigation, Radar, RefreshCw, Route, SatelliteDish, ShieldAlert, Truck } from "lucide-react";
+import { ArrowUpRight, BatteryLow, Bell, CalendarX2, Cctv, Clock, Layers3, Navigation, Radar, RefreshCw, Route, SatelliteDish, ShieldAlert, Truck, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/features/drive-vision/hooks/use-preferences";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import { accountService } from "@/features/drive-vision/api/account-service";
+import { insightService } from "@/features/drive-vision/api/insight-service";
 import { reminderDaysFrom } from "../settings/settings-model";
 import { useAuth } from "@/features/drive-vision/store/auth-store";
 import { bucketTrend } from "@/features/drive-vision/selectors";
 import { DATE_RANGE_OPTIONS, greeting, resolveDateRange } from "@/features/drive-vision/utils/time";
 import type { DateRangeKey } from "@/features/drive-vision/types";
-import { formatDateTime, formatRelative, formatTime } from "@/features/drive-vision/utils/format";
+import { formatDateTime, formatKm, formatRelative, formatTime } from "@/features/drive-vision/utils/format";
 import { PageHeader } from "../shared/page-header";
 import { MetricCard } from "../shared/metric-card";
 import { InsetPanel, Panel, PanelHeader, ProgressMeter } from "../shared/panel";
 import { SegmentedControl } from "../shared/filter-bar";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
-import { ApiErrorState, DataSourceBadge, DataSourceNotice, UnavailableState, apiErrorMeta } from "../shared/api-states";
+import { ApiErrorState, DataSourceBadge, DataSourceNotice, apiErrorMeta } from "../shared/api-states";
 import { EASE_OUT } from "../shared/motion";
 import { describeApiError } from "@/features/drive-vision/api/errors";
 import { AlarmTrendChart, TrendViewToggle, type TrendView } from "./alarm-trend-chart";
@@ -29,6 +30,8 @@ import { FleetStatusCard, type HealthIssue } from "./fleet-status-card";
 import { LiveActivityList } from "./live-activity-list";
 import { RemindersList } from "./reminders-list";
 import { FleetGroups } from "./fleet-groups";
+import { statusSegments, trendRows } from "./dashboard-api-model";
+import { DailyTrendPanel, OperationsSnapshot } from "./operations-panels";
 import { CURRENT_REPORT_MS, EXPIRING_DAYS, LOW_BATTERY_PCT, deviceReminders, deviceStats, groupCards, mergeAlarms } from "./live-dashboard-model";
 
 const QUICK_LINKS = [
@@ -56,9 +59,12 @@ function InlineError({ error, onRetry, label }: { error: unknown; onRetry: () =>
 }
 
 /**
- * Fleet Overview on live BFF data: GET /devices, /groups, /monitor/realtime, /alarms/ai and
- * /alarms/routine. Figures the API can't support (distance, mileage ranking, moving/idle/parked,
- * per-device online state) are shown as unavailable rather than estimated.
+ * Fleet Overview on live BFF data. Server aggregates: GET /dashboard/overview (vehicle counts,
+ * active trips, device health, operations — one call, so /dashboard/vehicles, /active-trips and
+ * /device-health aren't requested separately), /dashboard/fleet-status, /dashboard/trends and
+ * /dashboard/safety-events for the selected range. Device lists, groups, realtime state and the
+ * alarm lists (GET /devices, /groups, /monitor/realtime, /alarms/*) still feed reminders, group
+ * cards, GPS freshness, the hourly/daily alarm chart and recent activity.
  */
 /** Used when the saved reminder window can't be loaded or isn't a positive whole number. */
 const DEFAULT_REMINDER_DAYS = 30;
@@ -82,6 +88,15 @@ export function FleetOverview() {
   const routineQ = useApiQuery(`overview:routine:${from}:${to}`, () => fleetService.listAllAlarms("routine", { from, to }));
   // Reminder window from GET /me/preferences; the default is used (and labelled) when it is unavailable.
   const prefsQ = useApiQuery("overview:preferences", () => accountService.preferences());
+  const dashQ = useApiQuery("overview:dashboard", () => insightService.overview());
+  const statusQ = useApiQuery("overview:fleet-status", () => insightService.fleetStatus());
+  const trendsQ = useApiQuery(`overview:trends:${from}:${to}`, () => insightService.trends({ from, to }));
+  const safetyQ = useApiQuery(`overview:safety:${from}:${to}`, () => insightService.safetyEvents({ from, to }));
+  const dash = dashQ.data?.data;
+  const health = dash?.health;
+  const slices = useMemo(() => statusSegments(statusQ.data?.items), [statusQ.data]);
+  const trendDays = useMemo(() => trendRows(trendsQ.data?.items), [trendsQ.data]);
+  const openAlerts = safetyQ.data?.data.open;
   const savedDays = reminderDaysFrom(prefsQ.data);
   const reminderDays = savedDays ?? DEFAULT_REMINDER_DAYS;
 
@@ -90,8 +105,10 @@ export function FleetOverview() {
     devicesQ.refetch();
     groupsQ.refetch();
     realtimeQ.refetch();
+    dashQ.refetch();
+    statusQ.refetch();
   };
-  const refreshing = devicesQ.refreshing || groupsQ.refreshing || realtimeQ.refreshing || aiQ.loading || routineQ.loading;
+  const refreshing = devicesQ.refreshing || groupsQ.refreshing || realtimeQ.refreshing || dashQ.refreshing || statusQ.refreshing || aiQ.loading || routineQ.loading;
 
   const devices = devicesQ.data?.items;
   const states = realtimeQ.data?.data.devices;
@@ -129,12 +146,22 @@ export function FleetOverview() {
     },
   ];
 
-  const healthIssues: HealthIssue[] = [
-    { label: "Stale GPS > 1 h", value: states ? stats.staleGps : null, icon: Clock, href: "/drive-vision/monitoring", note: "Latest device report older than 1 hour" },
-    { label: `Battery < ${LOW_BATTERY_PCT}%`, value: states ? stats.lowBattery : null, icon: BatteryLow, href: "/drive-vision/vehicles" },
-    { label: "No GPS fix", value: null, icon: SatelliteDish, href: "/drive-vision/monitoring", note: "Not available: the API's positionMode codes aren't documented" },
-    { label: "Service expired", value: devices ? stats.expired : null, icon: CalendarX2, href: "/drive-vision/vehicles?expiry=expired" },
-  ];
+  // Server-computed device health (GET /dashboard/overview → health); thresholds are the server's.
+  // Until it loads (or if it fails) the realtime-derived figures are shown, as before.
+  const num = (v: number | undefined) => (typeof v === "number" ? v : null);
+  const healthIssues: HealthIssue[] = health
+    ? [
+        { label: "Stale > 24 h", value: num(health.staleOver24h), icon: Clock, href: "/drive-vision/monitoring", note: "No report for over 24 hours (server count)" },
+        { label: "Low battery", value: num(health.lowBattery), icon: BatteryLow, href: "/drive-vision/vehicles", note: "Server count; threshold set by the server" },
+        { label: "Never online", value: num(health.neverOnline), icon: WifiOff, href: "/drive-vision/vehicles" },
+        { label: "Service expired", value: num(health.expired), icon: CalendarX2, href: "/drive-vision/vehicles?expiry=expired" },
+      ]
+    : [
+        { label: "Stale GPS > 1 h", value: states ? stats.staleGps : null, icon: Clock, href: "/drive-vision/monitoring", note: "Latest device report older than 1 hour" },
+        { label: `Battery < ${LOW_BATTERY_PCT}%`, value: states ? stats.lowBattery : null, icon: BatteryLow, href: "/drive-vision/vehicles" },
+        { label: "No GPS fix", value: null, icon: SatelliteDish, href: "/drive-vision/monitoring", note: "Not available: the API's positionMode codes aren't documented" },
+        { label: "Service expired", value: devices ? stats.expired : null, icon: CalendarX2, href: "/drive-vision/vehicles?expiry=expired" },
+      ];
 
   return (
     <div>
@@ -282,11 +309,17 @@ export function FleetOverview() {
               <MetricCard
                 index={3}
                 tone="muted"
-                label="Awaiting handling"
-                value={awaiting ?? "—"}
-                sublabel={alarms ? `status NEW · ${aiQ.error ? "routine only" : routineQ.error ? "AI events only" : rangeShort}` : "Unavailable"}
+                label={typeof openAlerts === "number" ? "Open alerts" : "Awaiting handling"}
+                value={openAlerts ?? awaiting ?? "—"}
+                sublabel={
+                  typeof openAlerts === "number"
+                    ? `${safetyQ.data?.data.severe ?? "—"} severe · ${rangeShort}`
+                    : alarms
+                      ? `status NEW · ${aiQ.error ? "routine only" : routineQ.error ? "AI events only" : rangeShort}`
+                      : "Unavailable"
+                }
                 icon={Bell}
-                accent={awaiting ? "brand" : "neutral"}
+                accent={(openAlerts ?? awaiting) ? "brand" : "neutral"}
                 href="/drive-vision/alerts"
                 spark={alarms ? trend.slice(-10).map((b) => b.total) : undefined}
                 className="min-h-[132px] @3xl:min-h-[170px]"
@@ -294,9 +327,10 @@ export function FleetOverview() {
               <MetricCard
                 index={4}
                 tone="muted"
-                label="Distance driven"
-                value="—"
-                sublabel="Not provided by the API"
+                label="Distance today"
+                value={typeof dash?.trips?.distanceTodayKm === "number" ? formatKm(dash.trips.distanceTodayKm) : "—"}
+                sublabel={dashQ.error ? "Unavailable" : dash ? `${dash.trips?.tripsToday ?? "—"} trips today` : "Loading…"}
+                href="/drive-vision/trips"
                 icon={Route}
                 accent="sky"
                 className="min-h-[132px] @3xl:min-h-[170px]"
@@ -307,8 +341,15 @@ export function FleetOverview() {
 
         {modules.status ? (
           <Panel className="flex flex-col @3xl:order-2 @6xl:order-none @6xl:col-span-4" aria-labelledby="status-title">
-            <PanelHeader titleId="status-title" title="Fleet status" description="Online / offline from the realtime feed, and device health" />
-            {realtimeQ.error && !realtimeQ.data ? (
+            <PanelHeader titleId="status-title" title="Fleet status" description={slices.length ? "Vehicle status from the server, and device health" : "Online / offline from the realtime feed, and device health"} />
+            {slices.length > 0 ? (
+              <FleetStatusCard
+                total={slices.reduce((s, x) => s + x.value, 0)}
+                online={dash?.vehicles?.online ?? online}
+                segments={slices.map((s) => ({ ...s, href: "/drive-vision/monitoring" }))}
+                issues={healthIssues}
+              />
+            ) : realtimeQ.error && !realtimeQ.data ? (
               <ApiErrorState error={realtimeQ.error} onRetry={realtimeQ.refetch} compact />
             ) : !realtimeQ.data ? (
               <LoadingSkeleton />
@@ -439,10 +480,20 @@ export function FleetOverview() {
             )}
           </Panel>
         ) : null}
+        <Panel aria-labelledby="ops-title" className="@4xl:col-span-5">
+          <PanelHeader titleId="ops-title" title="Today's operations" description="Trips, dispatches and pending workforce items" />
+          {dashQ.error && !dash ? <ApiErrorState error={dashQ.error} onRetry={dashQ.refetch} compact /> : !dash ? <LoadingSkeleton variant="list" rows={4} /> : <OperationsSnapshot trips={dash.trips} operations={dash.operations} />}
+        </Panel>
         {modules.mileage ? (
-          <Panel aria-labelledby="usage-title" className="@4xl:col-span-5">
-            <PanelHeader titleId="usage-title" title="Top vehicles" description="Mileage & driving time" />
-            <UnavailableState reason="The API doesn't provide per-vehicle mileage or driving time for a period. It could later be derived from each device's track history (GET /devices/{id}/track)." />
+          <Panel aria-labelledby="usage-title" className="@4xl:col-span-12">
+            <PanelHeader titleId="usage-title" title="Daily trend" description={`Trips, distance and alarms per day · ${range.label.toLowerCase()}`} />
+            {trendsQ.error && !trendsQ.data ? (
+              <ApiErrorState error={trendsQ.error} onRetry={trendsQ.refetch} compact />
+            ) : !trendsQ.data ? (
+              <LoadingSkeleton variant="chart" className="h-[220px]" />
+            ) : (
+              <DailyTrendPanel rows={trendDays} />
+            )}
           </Panel>
         ) : null}
       </div>

@@ -159,6 +159,32 @@ Evidence: [evidence/phase4-followup-auth-basemap.md](evidence/phase4-followup-au
 - **Attribution.** MapLibre's attribution control shows the style's credits (© MapTiler © OpenStreetMap contributors); a MapTiler link is shown bottom-left.
 - **Self-hosting.** `NEXT_PUBLIC_MAP_STYLE_URL` replaces MapTiler with any MapLibre style URL; no key is then sent.
 
-## Phases 3, 5–7
+## Phase 3 — Operations added to the spec on 2026-10-29
 
-Pending.
+Spec: 172 operations (90 new), snapshot `docs/openapi/api-docs-2026-10-29.json`, re-checked identical to the live `/v3/api-docs` on 2026-10-29. Module operation counts sum to 90. Per-endpoint table: `api-inventory.md` → "Added 2026-10-29". Evidence: `evidence/phase3-new-api-integration.md`.
+
+**Live verification, 2026-10-29 (Admin, user-signed-in session): 36 of 90 operations observed, 36 × 200, schema consistent, rendered** — request ids per endpoint in the evidence file. Columns below: “Live backend” = observed requests; “Browser” = rendering checked. Writes were never sent. Before that pass: nothing in this section was “Verified”. "Integrated" here = the screen calls the endpoint per the spec, and `tests/operations-api.test.cjs` asserts method, path, query, body and bearer token against the snapshot using the real client with a **mocked fetch**. No authenticated session was available, so no live response was observed and no write was sent.
+
+| Module | Screen | Operations | Reads | Writes | Status | Automated (mocked) | Live backend | Browser |
+|---|---|---|---|---|---|---|---|---|
+| Dashboard | `/overview`, vehicle detail | 8 (7 `/dashboard/*` + `/devices/{id}/summary`) | 8 | 0 | Integrated (5) · service only (3: vehicles, active-trips, device-health — same blocks as overview) | Pass | 5/5 used reads 200 (3 service-only not called) | Verified (rendered) |
+| Trips | `/trips` | 4 | 4 | 0 | Integrated | Pass | 4/4 200 | Verified (route empty state) |
+| Drivers & assignments | `/drivers`, vehicle detail | 10 | 5 | 5 (create, update, delete, assign, end) | Integrated — writes not executed | Pass | 5/5 reads 200 (+404 error state); 0/5 writes sent | Verified (reads) |
+| Dispatch & swaps | `/dispatch` | 12 | 5 | 7 (incl. `/check`) | Integrated — writes not executed | Pass | 3/5 reads 200 (detail, verification: no dispatch exists); 0/7 writes sent | Verified (list, conflicts, swaps — empty) |
+| Workforce | `/workforce` | 8 | 5 | 3 | Integrated — writes not executed | Pass | 5/5 reads 200; 0/3 writes sent | Verified (reads) |
+| Safety | `/safety`, driver detail | 5 | 5 | 0 | Integrated | Pass | 5/5 200 (2 via driver detail) | Verified |
+| Alerts | `/alerts` → Incidents; track playback | 11 (incl. `/devices/{id}/event-markers`) | 5 (3 integrated + evidence, actions service only) | 6 (5 integrated + assign **disabled**, #32) | Integrated — writes not executed | Pass (assign excluded) | 3/3 used reads 200 (list, detail, event-markers); 0/5 actions sent; assign disabled | Verified (reads; F1 fixed) |
+| Notifications | header bell | 5 | 2 | 3 | Integrated — writes not executed | Pass | 2/2 reads 200 (key `unread`); 0/3 writes sent | Verified (reads; F2 fixed) |
+| Search / assistant | Ctrl K, Iris | 3 | 2 | 1 (`POST /ask`, read-like) | Integrated | Pass | 2/2 reads 200; `POST /ask` not sent | Verified (search, prompts) |
+| Geofence events | `/geofences` | 2 (+ older `/voices/fence`, not counted in the 90) | 2 | 0 | Integrated | Pass | 2/2 200 (+ `/voices/fence`) | Verified |
+| Driver app | `/my-work` | 22 | 11 (10 used + `/driver/dispatches/{id}` service only) | 11 | Implemented, **unreachable** (no Driver role code, Q1) | Pass | 9/22 GETs with the DRIVER login: 403 until 16:56, then **200** (profile linked, #38 resolved); 0 writes | Verified: menu nav, per-item routes, guard, redirect, back/forward, rendering |
+
+Browser checks run on 2026-10-29 — signed in (Admin): every screen above except My Work; error state via `/drivers?driver=999999` (404 `NOT_FOUND`, ref shown). Signed out: `/drive-vision/dispatch`, `/my-work`, `/overview` → `/login?next=…`, 0 BFF requests.
+
+### Write tests (2026-10-29) — blocked, 0 sent
+
+Preflight and the gated plan (one disposable dispatch first, then drivers, assignments, leave): `evidence/phase3-write-test-plan.md`. Blocked on: explicit test-tenant designation, undocumented side effects of dispatch creation, cleanup leaving a CANCELLED record (no `DELETE /dispatches/{id}`), and no signed-in session (explicit sign-out 16:06:08). Alert actions additionally blocked by #36, alert assign by #32, driver operations by Q1.
+
+## Phases 5–7
+
+Superseded by Phase 3 above for the APIs that now exist; remaining work is verification (see `implementation-plan.md`).

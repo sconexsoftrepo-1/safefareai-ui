@@ -14,11 +14,12 @@ import { Panel, PanelHeader } from "../shared/panel";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
 import { DetailRow } from "../shared/slide-over-panel";
 import { StatusBadge } from "../shared/status-badge";
-import { ApiErrorState, DataSourceBadge, UnavailableState } from "../shared/api-states";
+import { ApiErrorState, DataSourceBadge } from "../shared/api-states";
 import { LiveActivityList } from "../dashboard/live-activity-list";
 import { mergeAlarms } from "../dashboard/live-dashboard-model";
 import { ExpiryBadge } from "./vehicle-cells";
 import { useFleetReference } from "./use-fleet-reference";
+import { VehicleAssignmentPanel, VehicleRecentTrips } from "./vehicle-operations";
 import { WRITES_PENDING } from "./vehicles-page";
 
 /** Days of alarm history shown under "Recent events". */
@@ -45,7 +46,8 @@ function NotFound({ message }: { message: string }) {
 
 /**
  * Vehicle detail from GET /devices/{id}, with the device's latest state (GET /monitor/realtime?deviceIds=)
- * and alarms from the last 7 days (GET /alarms/ai, /alarms/routine with deviceIds).
+ * and alarms from the last 7 days (GET /alarms/ai, /alarms/routine with deviceIds), recent trips
+ * (GET /trips?deviceId=) and assignment/work summary (GET /devices/{id}/summary, /driver-assignments).
  */
 export function VehicleDetail({ vehicleId }: { vehicleId: string }) {
   const id = /^\d+$/.test(vehicleId) ? Number(vehicleId) : null;
@@ -241,10 +243,8 @@ function LiveVehicleDetail({ id }: { id: number }) {
           )}
         </Panel>
 
-        <Panel className="xl:col-span-4">
-          <PanelHeader title="Recent trips" />
-          <UnavailableState reason="Trip history comes with track integration (GET /devices/{id}/track). The API has no trip list." />
-        </Panel>
+        <VehicleRecentTrips id={id} />
+        <VehicleAssignmentPanel id={id} />
       </div>
     </div>
   );

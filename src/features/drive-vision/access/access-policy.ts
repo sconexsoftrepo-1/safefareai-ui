@@ -23,18 +23,31 @@ export const SCREEN_ROUTES = {
   reports: `${DV_BASE}/reports`,
   vehicles: `${DV_BASE}/vehicles`,
   drivers: `${DV_BASE}/drivers`,
+  dispatch: `${DV_BASE}/dispatch`,
+  workforce: `${DV_BASE}/workforce`,
   alerts: `${DV_BASE}/alerts`,
   safety: `${DV_BASE}/safety`,
   geofences: `${DV_BASE}/geofences`,
   commands: `${DV_BASE}/devices/commands`,
   users: `${DV_BASE}/users`,
   settings: `${DV_BASE}/settings`,
+  myWork: `${DV_BASE}/my-work`,
 } as const;
 
 export type ScreenKey = keyof typeof SCREEN_ROUTES;
 export const ALL_SCREENS = Object.keys(SCREEN_ROUTES) as ScreenKey[];
 
-/** Shell features that aren't routes. Both currently read the in-browser sample data. */
+/**
+ * Driver self-service (/driver/* endpoints, resolved from the caller's own token). Never part of
+ * an admin or fleet grant: an administrator is not a driver, and granting it would only produce
+ * server errors or, worse, act on whichever driver record the backend links to that login.
+ */
+export const DRIVER_SELF_SERVICE_SCREENS: readonly ScreenKey[] = ["myWork"];
+
+/** Fleet-management screens: everything except driver self-service. */
+export const FLEET_SCREENS: readonly ScreenKey[] = ALL_SCREENS.filter((s) => !DRIVER_SELF_SERVICE_SCREENS.includes(s));
+
+/** Shell features that aren't routes: the assistant (GET/POST /assistant/*) and record results in global search (GET /search). */
 export type FeatureKey = "assistant" | "recordSearch";
 export const ALL_FEATURES: FeatureKey[] = ["assistant", "recordSearch"];
 
@@ -49,26 +62,34 @@ export interface AccessPolicy {
   screenGrants: Readonly<Partial<Record<ScreenKey, { permissions?: readonly string[]; menuRouteKeys?: readonly string[] }>>>;
 }
 
+/** Permission the BFF gives Driver logins for the driver app (/me permissions, /me/menus requiredPermissionCode). */
+export const DRIVER_APP_PERMISSION = "driver.app";
+
 /**
- * Current policy (2026-10-27).
- * - `PLATFORM_ADMIN` is the only role code observed on the live BFF. It has used every screen
- *   since integration began, so it keeps full access here.
- * - Fleet Owner and Driver role codes are unconfirmed → no codes map to them, and their grants
- *   stay empty. Driver trips, shifts, leave and assignments also need backend APIs that don't
- *   exist yet; don't grant those screens on the strength of a role code alone.
- * - Permission codes and menu routeKeys per screen are unconfirmed → no screen grants yet.
+ * Current policy (2026-10-29).
+ * - `PLATFORM_ADMIN` keeps every fleet screen. It never gets driver self-service (My Work).
+ * - `DRIVER` → "driver". Confirmed from a signed-in Driver login on the dev BFF (2026-10-29):
+ *   `/me` role `{ code: "DRIVER", description: "Driver" }`, permissions `["driver.app", "own.data.read"]`,
+ *   and `/me/menus` returns seven driver-app items requiring `driver.app`. The role itself grants no
+ *   screen; My Work opens only through the `driver.app` permission, and only for the driver role
+ *   (see computeAccess). No fleet screen or shell feature is granted to drivers.
+ * - Fleet Owner: no role code confirmed → no mapping, no grants.
+ * - Menus never grant access on their own; they only shape navigation (see menuNavEntries).
  */
 export const ACCESS_POLICY: AccessPolicy = {
   roleCodes: {
     PLATFORM_ADMIN: "admin",
+    DRIVER: "driver",
   },
   roleGrants: {
-    admin: { screens: ALL_SCREENS, features: ALL_FEATURES },
+    admin: { screens: FLEET_SCREENS, features: ALL_FEATURES },
     "fleet-owner": { screens: [], features: [] },
     driver: { screens: [], features: [] },
     unknown: { screens: [], features: [] },
   },
-  screenGrants: {},
+  screenGrants: {
+    myWork: { permissions: [DRIVER_APP_PERMISSION] },
+  },
 };
 
 export interface Access {
@@ -132,6 +153,8 @@ export function computeAccess(user: CurrentUserDto | null | undefined, menus: Me
     if (!g) continue;
     if (g.permissions?.some((p) => permissions.has(p)) || g.menuRouteKeys?.some((k) => routeKeys.has(k))) screens.add(screen);
   }
+  // Driver self-service is for driver logins only, whatever permissions or menus another role carries.
+  if (role !== "driver") for (const s of DRIVER_SELF_SERVICE_SCREENS) screens.delete(s);
   return { role, roleCode: readRoleCode(user), permissions, screens, features: new Set(grant.features) };
 }
 
@@ -157,10 +180,11 @@ export function canAccessPath(access: Access, pathname: string): boolean {
 
 /**
  * Search results the user may see: page results for openable screens; record results only with
- * the `recordSearch` grant (they come from the unscoped sample store) and only into openable screens.
+ * the `recordSearch` grant and only into openable screens. The server scopes GET /search, but a
+ * hit is still dropped when it would link to a screen this user can't open.
  */
-export function visibleSearchResults<R extends { href: string }>(access: Access, pages: readonly R[], records: readonly R[]): { pages: R[]; records: R[] } {
-  const reachable = (r: R) => canAccessPath(access, r.href);
+export function visibleSearchResults<R extends { href: string | null }>(access: Access, pages: readonly R[], records: readonly R[]): { pages: R[]; records: R[] } {
+  const reachable = (r: R) => r.href !== null && canAccessPath(access, r.href);
   return { pages: pages.filter(reachable), records: canUseFeature(access, "recordSearch") ? records.filter(reachable) : [] };
 }
 
@@ -195,4 +219,96 @@ export function decideRoute(status: AuthStatusInput, access: Access, pathname: s
   if (screen === null) return { kind: "forbidden", screen: null, reason: "unknown-route" };
   if (access.screens.has(screen)) return { kind: "allow", screen };
   return { kind: "forbidden", screen, reason: access.screens.size === 0 && access.role === "unknown" ? "no-role" : "no-access" };
+}
+
+// ── Menu-driven navigation (/me/menus) ───────────────────────────────────────
+
+/**
+ * Backend menu routeKey → app route. `routePath` values from the BFF (e.g. `/driver/work`) are the
+ * backend's own paths and don't exist in this app, so items are matched by `routeKey`. Each item has
+ * its own route under the My Work screen (`/drive-vision/my-work/<section>`, mirroring the backend's
+ * `/driver/<section>`), so the access guard for `myWork` covers all of them. `null` = no page yet.
+ */
+export const MENU_ROUTES: Readonly<Record<string, string | null>> = {
+  my_work: SCREEN_ROUTES.myWork,
+  my_shifts: `${SCREEN_ROUTES.myWork}/shifts`,
+  my_leave: `${SCREEN_ROUTES.myWork}/leave`,
+  shift_checklist: `${SCREEN_ROUTES.myWork}/checklist`,
+  my_safety: `${SCREEN_ROUTES.myWork}/safety`,
+  my_profile: `${SCREEN_ROUTES.myWork}/profile`,
+  // Notifications live in the header bell (GET /notifications); there is no notifications page.
+  driver_notifications: null,
+};
+
+export interface MenuNavEntry {
+  routeKey: string;
+  title: string;
+  href: string;
+  sortOrder: number;
+}
+
+/**
+ * Navigation entries from an untrusted `/me/menus` tree. Only visible + active nodes count (a hidden
+ * or inactive parent hides its children); a node with a `requiredPermissionCode` needs that code in
+ * the user's permissions; its routeKey must map to an app route; and that route must be a screen the
+ * access policy already allows — so a menu can never widen access. Ordered by `sortOrder` (missing →
+ * last), then server order. `unmapped` lists routeKeys that would be shown but have no page.
+ */
+export function menuNavEntries(menus: unknown, access: Access, routes: Readonly<Record<string, string | null>> = MENU_ROUTES): { items: MenuNavEntry[]; unmapped: string[] } {
+  const found: (MenuNavEntry & { index: number })[] = [];
+  const unmapped: string[] = [];
+  const seen = new Set<unknown>();
+  let index = 0;
+  const visit = (nodes: unknown, depth: number) => {
+    if (!Array.isArray(nodes) || depth > 10) return;
+    for (const node of nodes) {
+      if (!node || typeof node !== "object" || seen.has(node)) continue;
+      seen.add(node);
+      const n = node as MenuNodeDto & { children?: unknown };
+      if (n.visible === false || n.active === false) continue;
+      const required = typeof n.requiredPermissionCode === "string" && n.requiredPermissionCode !== "" ? n.requiredPermissionCode : null;
+      if (required !== null && !access.permissions.has(required)) continue;
+      if (typeof n.routeKey === "string" && n.routeKey !== "") {
+        const href = Object.hasOwn(routes, n.routeKey) ? routes[n.routeKey] : null;
+        if (href === null) unmapped.push(n.routeKey);
+        else if (canAccessPath(access, href) && !found.some((f) => f.href === href)) {
+          const title = typeof n.title === "string" && n.title.trim() ? n.title.trim() : typeof n.menuKey === "string" && n.menuKey ? n.menuKey : n.routeKey;
+          const sortOrder = typeof n.sortOrder === "number" && Number.isFinite(n.sortOrder) ? n.sortOrder : Number.POSITIVE_INFINITY;
+          found.push({ routeKey: n.routeKey, title, href, sortOrder, index: index++ });
+        }
+      }
+      visit(n.children, depth + 1);
+    }
+  };
+  visit(menus, 0);
+  found.sort((a, b) => a.sortOrder - b.sortOrder || a.index - b.index);
+  return { items: found.map((e) => ({ routeKey: e.routeKey, title: e.title, href: e.href, sortOrder: e.sortOrder })), unmapped };
+}
+
+/**
+ * Where a user should land instead of a screen they can't open: only for the generic landing pages
+ * (`/drive-vision` and Overview), and only when another screen is allowed. Deep links to any other
+ * screen keep showing the access-denied panel, so a typed URL is never silently rewritten.
+ */
+export function landingRedirect(access: Access, pathname: string): string | null {
+  const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "");
+  if (path !== DV_BASE && path !== SCREEN_ROUTES.overview) return null;
+  if (access.screens.has("overview")) return null;
+  const home = homeScreen(access);
+  return home ? SCREEN_ROUTES[home] : null;
+}
+
+/**
+ * The nav item to highlight: the longest item href that equals the path or is its parent on a
+ * segment boundary (query and hash ignored). Computed from the items actually shown, so menu-built
+ * driver items highlight themselves rather than the static My Work entry.
+ */
+export function activeNavHref(hrefs: readonly string[], pathname: string): string | null {
+  const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "");
+  let best: string | null = null;
+  for (const href of hrefs) {
+    const h = href.split(/[?#]/)[0].replace(/\/+$/, "");
+    if ((path === h || path.startsWith(`${h}/`)) && (best === null || h.length > best.split(/[?#]/)[0].length)) best = href;
+  }
+  return best;
 }

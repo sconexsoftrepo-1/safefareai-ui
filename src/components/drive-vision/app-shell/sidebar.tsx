@@ -9,8 +9,9 @@ import { toast } from "sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { updatePreferences, usePreferences } from "@/features/drive-vision/hooks/use-preferences";
-import { findNavItem, type NavItem } from "../navigation/nav-config";
+import { type NavItem } from "../navigation/nav-config";
 import { useNavGroups } from "../navigation/use-nav";
+import { activeNavHref } from "@/features/drive-vision/access/access-policy";
 import { EASE_OUT, transitions } from "../shared/motion";
 
 export const RAIL_COMPACT = 56;
@@ -58,9 +59,9 @@ function useAlertBadge() {
 /** Labelled navigation list — used by the mobile drawer. */
 export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => void; layoutGroup: string }) {
   const pathname = usePathname();
-  const active = findNavItem(pathname);
   const alertBadge = useAlertBadge();
   const groups = useNavGroups();
+  const activeHref = activeNavHref(groups.flatMap((g) => g.items.map((i) => i.href)), pathname);
 
   return (
     <nav aria-label="SafeFare AI" className="space-y-4">
@@ -69,7 +70,7 @@ export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => voi
           <p className="mb-1 px-3 text-[10.5px] font-semibold tracking-[0.12em] text-ink-subtle uppercase">{group.label}</p>
           <ul className="space-y-px">
             {group.items.map((item) => {
-              const isActive = active?.href === item.href;
+              const isActive = activeHref === item.href;
               return (
                 <li key={item.href}>
                   <Link
@@ -181,10 +182,10 @@ function RailLink({ item, active, expanded, badge }: { item: NavItem; active: bo
  */
 export function DriveVisionRail() {
   const pathname = usePathname();
-  const active = findNavItem(pathname);
   const badge = useAlertBadge();
   const { sidebarExpanded: expanded } = usePreferences();
   const groups = useNavGroups();
+  const activeHref = activeNavHref(groups.flatMap((g) => g.items.map((i) => i.href)), pathname);
 
   return (
     <motion.aside
@@ -216,7 +217,7 @@ export function DriveVisionRail() {
               ) : null}
               {group.items.map((item) => (
                 <li key={item.href}>
-                  <RailLink item={item} active={active?.href === item.href} expanded={expanded} badge={item.label === "Alerts & Events" && badge > 0 ? badge : undefined} />
+                  <RailLink item={item} active={activeHref === item.href} expanded={expanded} badge={item.label === "Alerts & Events" && badge > 0 ? badge : undefined} />
                 </li>
               ))}
             </Fragment>

@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { CircleSlash, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { decideRoute, homeScreen } from "@/features/drive-vision/access/access-policy";
+import { decideRoute, homeScreen, landingRedirect } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { signOut, useAuth } from "@/features/drive-vision/store/auth-store";
 import { ALL_NAV_ITEMS } from "../navigation/nav-config";
@@ -17,9 +18,16 @@ import { Panel } from "../shared/panel";
  */
 export function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const status = useAuth((s) => s.status);
   const access = useAccess();
   const decision = decideRoute(status, access, pathname);
+  // The default landing (Overview) is fleet-only; send e.g. a driver to their own home screen instead.
+  const landing = decision.kind === "forbidden" ? landingRedirect(access, pathname) : null;
+  useEffect(() => {
+    if (landing) router.replace(landing);
+  }, [landing, router]);
+  if (landing) return null;
 
   // AuthGate owns the unauthenticated / checking / session-error states and never renders the shell for them.
   if (decision.kind !== "forbidden") return decision.kind === "allow" ? <>{children}</> : null;

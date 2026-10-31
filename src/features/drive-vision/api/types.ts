@@ -128,6 +128,14 @@ export interface DriverInfo {
   remark?: string;
 }
 
+export interface TerminalInfo {
+  iccid?: string;
+  model?: string;
+  hardwareVersion?: string;
+  firmwareVersion?: string;
+  syncedAt?: string;
+}
+
 export interface DeviceDto {
   id?: number;
   vendorVehicleId?: number;
@@ -149,6 +157,8 @@ export interface DeviceDto {
   insuranceDueAt?: string;
   maintenanceDueAt?: string;
   driver?: DriverInfo;
+  /** Added to the spec 2026-10-29. */
+  terminal?: TerminalInfo;
   vendorCreatedAt?: string;
   vendorUpdatedAt?: string;
   syncedAt?: string;
@@ -643,3 +653,20 @@ export interface CommandListQuery {
   pageNumber?: number;
   pageSize?: number;
 }
+
+/** GET /voices, /voices/fence. */
+export interface VoiceDto {
+  id?: number;
+  vendorVoiceId?: number;
+  name?: string;
+  fileSizeMb?: number;
+  path?: string;
+  url?: string;
+  vendorUserId?: number;
+  /** Integer code, undocumented. */
+  importType?: number;
+  createdAt?: string;
+  syncedAt?: string;
+}
+
+export * from "./types-operations";

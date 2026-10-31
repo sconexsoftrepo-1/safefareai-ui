@@ -19,13 +19,14 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { toast } from "../shared/toast-provider";
 import { GeoMap } from "../map/geo-map";
 import { snappedBounds } from "../map/projection";
+import { FenceVoices, GeofenceEvents } from "./geofence-events";
 import { bindingSummary, fenceColor, fenceGeometry, fencePath } from "./geofence-model";
 
 type ShapeFilter = "all" | "AREA" | "LINE";
 
 /**
  * Geofences on live BFF data: GET /geofences drawn on the base map, DELETE /geofences/{id} after
- * confirmation. Creating and editing are off: GeofenceRequest requires `ruleTypes` (and uses
+ * confirmation, crossings from GET /geofences/events(+/summary) and voice prompts from /voices/fence. Creating and editing are off: GeofenceRequest requires `ruleTypes` (and uses
  * `areaType` / `colorIndex`) whose integer codes the API doesn't document.
  */
 export function GeofencesPage() {
@@ -166,6 +167,9 @@ export function GeofencesPage() {
           ) : null}
         </div>
       </div>
+
+      <GeofenceEvents geofenceId={selectedId} geofenceName={selected?.f.name} />
+      <FenceVoices />
 
       <ConfirmDialog
         open={deleteTarget !== null}
