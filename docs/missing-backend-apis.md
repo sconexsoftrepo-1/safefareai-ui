@@ -244,3 +244,62 @@ Fix `GET /commands/1` (500). Confirm whether `targets` must contain `targetCount
 
 ### Q9. Logout
 `POST /auth/logout` requires the bearer token in practice (401 without it). Please document this in the spec, and confirm the refresh token is revoked server-side (not independently verified by the frontend).
+
+---
+
+## 2026-10-29 — spec update status (no new questions repeated)
+
+The spec now has 172 operations (snapshot `docs/openapi/api-docs-2026-10-29.json`). The items below now **have endpoints in the spec** and are integrated in the frontend (see `api-inventory.md` → "Added 2026-10-29"); their semantics questions above still stand where noted:
+
+| Earlier item | Now in spec | Still open |
+|---|---|---|
+| #1 Driver entity + user link | `/drivers*`, `DriverDto.userId`, `/driver/*` (resolved from the token) | Q1: which role code is a driver; one test login per role |
+| #4 Assignment | `/drivers/{id}/assignments*`, `/devices/{id}/driver-assignments` | — |
+| #5 Trips | `/trips`, `/trips/summary`, `/trips/{id}`, `/trips/{id}/route` | — |
+| #6 Shifts / hours | `/shifts`, `/driver/shifts/*`, `/driver/working-hours` | — |
+| #7 Leave | `/leave-requests*`, `/driver/leave-requests*` | Status values undocumented (shown raw) |
+| #8 Driver safety | `/drivers/{id}/safety-*`, `/driver/safety-*` | — |
+| #9 Availability / conflicts / swaps / dispatch | `/drivers/availability`, `/dispatches*`, `/swap-requests*` | Status values and allowed transitions undocumented (server decides; shown raw) |
+| #10 Alarm handling | `/alerts*` (acknowledge, comment, resolve, dismiss, reopen) | Assign: see #32 |
+| #14 Notifications | `/notifications*` | Unread-count keys: see #33 |
+| #15 Safety scores | `/safety/analytics`, `/safety/scores/*` | — |
+| #16 Dashboard aggregations | `/dashboard/*` | — |
+| #17 Global search | `/search` | Group keys / `Hit.type` values undocumented (unknown types listed without a link) |
+| #18 Assistant | `/assistant/prompts`, `/assistant/ask` | — |
+
+Only the two items below are new, and both directly block a UI action.
+
+### 32. Alert assignment body — Undocumented / likely spec defect (blocks "Assign alert")
+`POST /api/v1/alerts/{id}/assign` and `POST /api/v1/drivers/{id}/assignments` both reference the schema `AssignRequest` = `{ deviceId* (int64), from, to, replaceCurrent }`. That is the driver↔vehicle shape: it has no assignee user field, so an alert can't be assigned to a person with it. Most likely two Java classes named `AssignRequest` collided in springdoc. **Needed:** the real body for alert assignment (e.g. `assigneeUserId`, optional `note`). Frontend: the action is not offered; `alertService` has no assign function.
+
+### 33. `GET /notifications/unread-count` response keys — **Answered by observation 2026-10-29**
+Live response `{ unread: n }` (ref `4caa4d1e-2983-4e0f-b430-917ac18855cf`); the client now reads only `unread`. Please still document the key in the spec. _Original note:_
+Returns `Map<String, Long>` with no documented keys. The client reads the first numeric key among `unread`, `count`, `unreadCount`, `total`; anything else → the bell shows no badge (never a guessed number). **Needed:** the key name(s). Not blocking beyond the badge.
+
+## 2026-10-29 live-verification findings (Admin session, read-only)
+
+Request ids and full context: `evidence/phase3-new-api-integration.md`.
+
+### 34. Alert evidence URL is a placeholder — Backend data (same class as #29)
+`GET /alerts/1` → `evidence[0].url` on host `example.invalid` (ref `e8e1b451-3c8b-4fcc-ad35-c8b1a6e194da`). The UI now shows "Link not usable". **Needed:** `url` null until the media exists, never a placeholder host.
+
+### 35. Inconsistent 404 for an unknown driver — Backend behaviour
+`GET /drivers/999999`, `/assignments`, `/safety-score` → 404 `NOT_FOUND`, but `/drivers/999999/safety-events` → 200 with an empty list (ref `d5379763-590b-4c42-b2c9-01ffbad24f67`). **Needed:** 404 for all, so "no events" and "no such driver" can be told apart.
+
+### 36. Alert status doesn't reflect its history — Backend data or behaviour
+Alert 1: `handlingStatus: NEW` while `actions[]` contains an `ACKNOWLEDGE` (24 Oct, "Demo Tenant Admin"). **Needed:** confirm whether acknowledging changes `handlingStatus` (and to what), or whether this is seed data. This blocks writing a test plan for alert actions.
+
+### 37. Write-test prerequisites — Awaiting confirmation (blocks every write test)
+1. Is the dev tenant behind `http://185.193.19.156:9096` designated for test data?
+2. Does `POST /dispatches` (or cancel/update) send anything outside the BFF — SMS, push, email — e.g. to driver 1’s phone? Which in-app notifications does it create, and for whom?
+3. There is no `DELETE /dispatches/{id}`: is a cancelled test dispatch acceptable as residue, or can the backend purge it?
+Details and the exact planned requests: `evidence/phase3-write-test-plan.md`.
+
+### Q1 (update 2026-10-29) — DRIVER role confirmed by live data
+A DRIVER login returns role `DRIVER` with permissions `driver.app`, `own.data.read` and seven driver menus. The frontend now maps `DRIVER` → driver and grants My Work via `driver.app`. MANAGER / Fleet Owner remain unmapped.
+
+### 38. Driver login not linked to a driver record — Backend data (blocks every driver workflow)
+For the signed-in DRIVER test login, every `/driver/*` read returns **403 `FORBIDDEN` "Your account is not linked to a driver profile"** (e.g. `GET /driver/me` ref `bf02c397-718e-4b1d-bade-aaff9c2fa6d7`; nine refs in `evidence/phase3-new-api-integration.md` → "Driver login access"). **Needed:** link this login to a disposable driver record (`DriverDto.userId`), or provide a test-driver login that is already linked. Also: should the menu offer `driver_notifications`, given that there is no driver notifications page beyond `GET /notifications`?
+
+### 38 (update) — Resolved on the backend, observed 2026-10-29 16:56
+The same DRIVER login now gets 200 from all nine `/driver/*` reads (e.g. `GET /driver/me` ref `a29673b7-e114-45a5-b766-affa918b347d`). Driver writes are still untested (write-test prerequisites #37 apply).

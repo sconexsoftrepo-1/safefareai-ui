@@ -43,3 +43,26 @@ Written 2026-10-27 after the Phase 0 audit. Companion docs: `api-inventory.md` (
 - Mutations disabled unless contract, permission and ownership are confirmed; device commands are never sent automatically.
 - No tokens or credentials in logs; `[api]` console diagnostics stay on in dev.
 - A feature is "Implemented and verified" only after a live test is recorded.
+
+## 2026-10-29 — integration of the 90 new spec operations
+
+The re-downloaded spec (172 ops, snapshot `docs/openapi/api-docs-2026-10-29.json`) added the driver, assignment, trip, shift, leave, dispatch, notification, safety, search and assistant APIs that Phase 0 found missing. Done in this pass:
+
+| Area | Done | Status |
+|---|---|---|
+| Foundations | Typed DTOs (`api/types-operations.ts`), 5 services (`insight`, `operations`, `alert`, `assistant`, `driver-app`) on the existing client; no new libraries, no second base URL | Typecheck/lint clean |
+| Access | New screens `dispatch`, `workforce`, `myWork`; `myWork` is driver-only and excluded from the admin grant; no new role codes mapped | Unit-tested |
+| Screens on real data | Overview aggregates, Trips list/detail/route, Drivers (mock removed), Safety Analytics (mock + local scoring removed), Alerts → Incidents, notifications bell, global search, Iris (local engine removed), Geofence events + voices, vehicle detail trips/assignment; new Dispatch, Workforce, My Work | Integrated — **not backend- or browser-verified** |
+| Writes | 35 write operations wired behind confirmations (24 fleet, 11 driver) | **None executed** |
+| Tests | `tests/operations-api.test.cjs` (89/90 ops' request construction vs. the snapshot, mocked fetch), `tests/operations-models.test.cjs` | 179/179 pass |
+
+Classification of the 90: 62 connected to Admin-reachable screens · 21 connected only to the driver-only My Work screen · 6 service only · 1 disabled (`POST /alerts/{id}/assign`, #32). **Live verification (same day, user-signed-in Admin session): 36 operations observed — 36 × 200, schema consistent, rendered; 0 failed.** Three frontend defects found and fixed (placeholder evidence link, unread-count key, plural). Evidence: `evidence/phase3-new-api-integration.md`.
+
+### Remaining sequence
+
+1. ~~Authenticated read verification (Admin, dev tenant)~~ — **done 2026-10-29** for 36 of the 38 Admin-reachable reads (see evidence). Remaining: `GET /dispatches/{id}` and `/dispatches/{id}/verification` — they need a dispatch to exist, which comes with step 2.
+2. **Write tests on disposable records only** — preflight done 2026-10-29, **blocked** (see `evidence/phase3-write-test-plan.md` → “Needed before the first write”); 0 writes sent. — needs a confirmed test tenant: create a driver → assign/end → edit → delete; dispatch check → create → swap request → approve/reject → cancel; leave create → approve/reject; alert acknowledge/comment/resolve on a test alert; notification read/unread. Write plans first, as in `evidence/phase2-write-test-plans.md`.
+3. **Role mapping (Q1)** — **DRIVER done 2026-10-29** (live role + `driver.app` + menus). #38 resolved on the backend (16:56); driver reads verified live (9 × 200). Remaining: driver writes (needs #37) and the schema-shape check for driver responses. Fleet Owner (MANAGER?) still unconfirmed.
+4. **#32 / #33** — wire alert assignment and the unread badge key once the backend answers.
+5. **Service-only operations** — keep unused unless a workflow needs them (see evidence file): standalone dashboard blocks for per-widget refresh, `/alerts/{id}/evidence` + `/actions` for refreshing history without reloading the alert, `/driver/dispatches/{id}` for a driver deep link.
+6. Video playback stays blocked on the vendor SDK (#20); `/video/sdk-token` is not called until then.

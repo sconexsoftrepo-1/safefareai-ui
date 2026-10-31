@@ -4,13 +4,13 @@ import Link from "next/link";
 import { Fragment } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { FlaskConical, LifeBuoy, PanelLeftClose, PanelLeftOpen, ScanEye } from "lucide-react";
-import { toast } from "sonner";
+import { PanelLeftClose, PanelLeftOpen, ScanEye } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { updatePreferences, usePreferences } from "@/features/drive-vision/hooks/use-preferences";
-import { findNavItem, type NavItem } from "../navigation/nav-config";
+import { type NavItem } from "../navigation/nav-config";
 import { useNavGroups } from "../navigation/use-nav";
+import { activeNavHref } from "@/features/drive-vision/access/access-policy";
 import { EASE_OUT, transitions } from "../shared/motion";
 
 export const RAIL_COMPACT = 56;
@@ -58,9 +58,9 @@ function useAlertBadge() {
 /** Labelled navigation list — used by the mobile drawer. */
 export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => void; layoutGroup: string }) {
   const pathname = usePathname();
-  const active = findNavItem(pathname);
   const alertBadge = useAlertBadge();
   const groups = useNavGroups();
+  const activeHref = activeNavHref(groups.flatMap((g) => g.items.map((i) => i.href)), pathname);
 
   return (
     <nav aria-label="SafeFare AI" className="space-y-4">
@@ -69,7 +69,7 @@ export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => voi
           <p className="mb-1 px-3 text-[10.5px] font-semibold tracking-[0.12em] text-ink-subtle uppercase">{group.label}</p>
           <ul className="space-y-px">
             {group.items.map((item) => {
-              const isActive = active?.href === item.href;
+              const isActive = activeHref === item.href;
               return (
                 <li key={item.href}>
                   <Link
@@ -97,17 +97,6 @@ export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => voi
         </div>
       ))}
     </nav>
-  );
-}
-
-export function DemoNotice() {
-  return (
-    <p className="flex items-start gap-2 rounded-2xl bg-lavender/70 px-3 py-2.5 text-[11.5px] leading-snug text-ai-ink">
-      <FlaskConical className="mt-px size-3.5 shrink-0" aria-hidden />
-      <span>
-        <span className="font-semibold">Demo workspace</span> · sample data, no live device connections
-      </span>
-    </p>
   );
 }
 
@@ -181,10 +170,10 @@ function RailLink({ item, active, expanded, badge }: { item: NavItem; active: bo
  */
 export function DriveVisionRail() {
   const pathname = usePathname();
-  const active = findNavItem(pathname);
   const badge = useAlertBadge();
   const { sidebarExpanded: expanded } = usePreferences();
   const groups = useNavGroups();
+  const activeHref = activeNavHref(groups.flatMap((g) => g.items.map((i) => i.href)), pathname);
 
   return (
     <motion.aside
@@ -216,7 +205,7 @@ export function DriveVisionRail() {
               ) : null}
               {group.items.map((item) => (
                 <li key={item.href}>
-                  <RailLink item={item} active={active?.href === item.href} expanded={expanded} badge={item.label === "Alerts & Events" && badge > 0 ? badge : undefined} />
+                  <RailLink item={item} active={activeHref === item.href} expanded={expanded} badge={item.label === "Alerts & Events" && badge > 0 ? badge : undefined} />
                 </li>
               ))}
             </Fragment>
@@ -235,17 +224,6 @@ export function DriveVisionRail() {
           >
             {expanded ? <PanelLeftClose className="size-[17px] shrink-0" aria-hidden /> : <PanelLeftOpen className="size-[17px] shrink-0" aria-hidden />}
             {expanded ? <span className="text-[13px] font-medium whitespace-nowrap">Collapse</span> : null}
-          </button>
-        </RailTooltip>
-        <RailTooltip label="About this demo" enabled={!expanded}>
-          <button
-            type="button"
-            onClick={() => toast.info("SafeFare AI demo", { description: "This workspace uses sample data only. Support links will be added with backend integration." })}
-            aria-label="About this demo"
-            className={cn(RAIL_ITEM, "text-ink-muted hover:bg-surface-sunken hover:text-ink short:hidden", expanded ? "gap-3 px-2.5" : RAIL_ICON_ONLY)}
-          >
-            <LifeBuoy className="size-[17px] shrink-0" aria-hidden />
-            {expanded ? <span className="text-[13px] font-medium whitespace-nowrap">About this demo</span> : null}
           </button>
         </RailTooltip>
       </div>

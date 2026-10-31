@@ -8,6 +8,7 @@ import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
 import type { ExportRequest, RecordingDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import { formatDate, formatDateTime, formatTime } from "@/features/drive-vision/utils/format";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "../shared/page-header";
@@ -41,6 +42,7 @@ export function VideoWorkspace() {
   const [month, setMonth] = useState(today.slice(0, 7));
   const [exportPage, setExportPage] = useState(1);
   const [pendingExport, setPendingExport] = useState<ExportRequest | null>(null);
+  const canExport = useCan("video.export");
 
   const devicesQ = useApiQuery("video:devices", () => fleetService.listAllDevices());
   const devices = useMemo(() => (devicesQ.data?.items ?? []).filter((d) => d.id !== undefined), [devicesQ.data]);
@@ -157,7 +159,7 @@ export function VideoWorkspace() {
               ) : (
                 <ul className="divide-y divide-line">
                   {recordings.map((r, i) => (
-                    <RecordingRow key={r.id ?? i} rec={r} onExport={(req) => setPendingExport(req)} deviceId={deviceId} />
+                    <RecordingRow key={r.id ?? i} rec={r} onExport={canExport ? (req) => setPendingExport(req) : undefined} deviceId={deviceId} />
                   ))}
                 </ul>
               )}
@@ -247,7 +249,8 @@ export function VideoWorkspace() {
   );
 }
 
-function RecordingRow({ rec, deviceId, onExport }: { rec: RecordingDto; deviceId: number; onExport: (req: ExportRequest) => void }) {
+/** `onExport` is omitted when the user may not request exports (no button is shown). */
+function RecordingRow({ rec, deviceId, onExport }: { rec: RecordingDto; deviceId: number; onExport?: (req: ExportRequest) => void }) {
   const req = exportRequestFor(rec, deviceId);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-[13px]">
@@ -256,9 +259,11 @@ function RecordingRow({ rec, deviceId, onExport }: { rec: RecordingDto; deviceId
       </span>
       <span className="text-ink-muted">Channel {rec.channel ?? "—"}</span>
       {typeof rec.fileSizeMb === "number" ? <span className="text-ink-muted tabular">{rec.fileSizeMb} MB</span> : null}
-      <Button variant="outline" size="sm" className={cn("ml-auto")} disabled={!req} title={req ? undefined : "Missing channel or times"} onClick={() => req && onExport(req)}>
-        <Scissors /> Export clip
-      </Button>
+      {onExport ? (
+        <Button variant="outline" size="sm" className={cn("ml-auto")} disabled={!req} title={req ? undefined : "Missing channel or times"} onClick={() => req && onExport(req)}>
+          <Scissors /> Export clip
+        </Button>
+      ) : null}
     </li>
   );
 }

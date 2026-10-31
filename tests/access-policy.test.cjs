@@ -28,9 +28,11 @@ function testPolicy(overrides = {}) {
 
 // ── Default policy: nothing guessed ─────────────────────────────────────────
 
-test("default policy maps only the confirmed PLATFORM_ADMIN code and grants nothing else", () => {
-  same(Object.keys(ACCESS_POLICY.roleCodes), ["PLATFORM_ADMIN"]);
-  same(ACCESS_POLICY.screenGrants, {});
+test("default policy maps only the confirmed PLATFORM_ADMIN and DRIVER codes; the only screen grant is My Work via driver.app", () => {
+  // DRIVER confirmed 2026-10-29 from a live Driver login: role DRIVER, permission driver.app, driver menus.
+  same(ACCESS_POLICY.roleCodes, { PLATFORM_ADMIN: "admin", DRIVER: "driver" });
+  same(ACCESS_POLICY.screenGrants, { myWork: { permissions: ["driver.app"] } });
+  // The driver role itself grants nothing; Fleet Owner stays unmapped.
   for (const role of ["fleet-owner", "driver", "unknown"]) {
     same(ACCESS_POLICY.roleGrants[role].screens, []);
     same(ACCESS_POLICY.roleGrants[role].features, []);
@@ -41,6 +43,7 @@ test("default policy maps only the confirmed PLATFORM_ADMIN code and grants noth
 
 test("role codes map exactly; missing, malformed and unknown roles resolve to unknown", () => {
   assert.equal(resolveAppRole(admin), "admin");
+  assert.equal(resolveAppRole({ role: { code: "DRIVER" } }), "driver");
   for (const user of [
     null,
     undefined,
@@ -56,7 +59,8 @@ test("role codes map exactly; missing, malformed and unknown roles resolve to un
     { role: { code: "platform_admin" } },
     { role: { code: " PLATFORM_ADMIN" } },
     { role: { code: "FLEET_OWNER" } },
-    { role: { code: "DRIVER" } },
+    { role: { code: "driver" } },
+    { role: { code: "DRIVER " } },
     { role: { code: "toString" } },
     { role: { code: "__proto__" } },
     // A description that looks privileged must not grant anything.
@@ -89,14 +93,43 @@ test("menu route keys: nested, hidden/inactive skipped, malformed input tolerate
 
 // ── Access computation ──────────────────────────────────────────────────────
 
-test("PLATFORM_ADMIN keeps every existing screen and shell feature (regression)", () => {
+test("PLATFORM_ADMIN keeps every fleet screen and shell feature (regression)", () => {
   const a = computeAccess(admin, null);
   assert.equal(a.role, "admin");
-  same(list(a.screens), [...ALL_SCREENS].sort());
+  same(list(a.screens), [...policy.FLEET_SCREENS].sort());
+  for (const s of ["overview", "drivers", "dispatch", "workforce", "alerts", "safety", "trips", "users"]) assert.equal(a.screens.has(s), true, s);
   assert.equal(canUseFeature(a, "assistant"), true);
   assert.equal(canUseFeature(a, "recordSearch"), true);
   // Admin access doesn't depend on permissions[] being present.
-  same(list(computeAccess({ role: admin.role }, null).screens), [...ALL_SCREENS].sort());
+  same(list(computeAccess({ role: admin.role }, null).screens), [...policy.FLEET_SCREENS].sort());
+});
+
+test("driver self-service is never part of the admin grant; only a confirmed driver role code would open it", () => {
+  same([...policy.DRIVER_SELF_SERVICE_SCREENS], ["myWork"]);
+  same([...policy.FLEET_SCREENS].sort(), ALL_SCREENS.filter((s) => s !== "myWork").sort());
+  const a = computeAccess(admin, null);
+  assert.equal(a.screens.has("myWork"), false);
+  assert.equal(canAccessPath(a, "/drive-vision/my-work"), false);
+  same(decideRoute("authenticated", a, "/drive-vision/my-work"), { kind: "forbidden", screen: "myWork", reason: "no-access" });
+  // DRIVER maps to "driver", but the role alone grants no screen (My Work needs driver.app).
+  assert.equal(ACCESS_POLICY.roleCodes.DRIVER, "driver");
+  same([...ACCESS_POLICY.roleGrants.driver.screens], []);
+  // A test policy with a driver mapping opens it — the grant works once a code is confirmed.
+  const p = testPolicy({ roleGrants: { ...testPolicy().roleGrants, driver: { screens: ["myWork"], features: [] } } });
+  const d = computeAccess({ role: { code: "TEST_DRIVER" } }, null, p);
+  assert.equal(d.role, "driver");
+  same(list(d.screens), ["myWork"]);
+});
+
+test("new operations routes map to their screens", () => {
+  assert.equal(screenForPath("/drive-vision/dispatch"), "dispatch");
+  assert.equal(screenForPath("/drive-vision/workforce?tab=leave"), "workforce");
+  assert.equal(screenForPath("/drive-vision/my-work"), "myWork");
+});
+
+test("search results with no link are never reachable", () => {
+  const r = visibleSearchResults(computeAccess(admin, null), [], [{ href: null }, { href: "/drive-vision/drivers?driver=1" }]);
+  same(r.records, [{ href: "/drive-vision/drivers?driver=1" }]);
 });
 
 test("no user, unknown role or missing permissions → no screens, no features", () => {

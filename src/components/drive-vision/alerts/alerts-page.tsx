@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileVideo, ImageIcon, Info, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,14 +19,16 @@ import { LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState, DataSourceBadge, DataSourceNotice } from "../shared/api-states";
 import { StatusBadge } from "../shared/status-badge";
 import { EventDetailDrawer } from "./event-detail-drawer";
-import { ALARM_PAGE_SIZE, alarmLabel, alarmQuery, alertsSearch, deviceLabel, parseAlertsView, typeOptions, type AlarmKind, type AlertsView } from "./alerts-model";
+import { IncidentsList } from "./incidents";
+import { ALARM_PAGE_SIZE, alarmLabel, alarmQuery, alertsSearch, deviceLabel, parseAlertsView, typeOptions, type AlarmKind, type AlertsTab, type AlertsView } from "./alerts-model";
 
-const KIND_LABEL: Record<AlarmKind, string> = { ai: "AI events", routine: "Routine alarms" };
+const KIND_LABEL: Record<AlertsTab, string> = { ai: "AI events", routine: "Routine alarms", incidents: "Incidents" };
 
 /**
- * Alerts & Events on live BFF data: GET /alarms/ai and /alarms/routine, server-paged, filtered
- * by time window, device and alarm type (the filters the API has). The view lives in the URL so
- * links, reloads and Back keep it. Read-only: the API has no alarm handling endpoints.
+ * Alerts & Events on live BFF data. AI events and routine alarms: GET /alarms/ai and
+ * /alarms/routine, read-only feeds. Incidents: GET /alerts with handling actions (see
+ * incidents.tsx). All tabs are server-paged and filtered by time window, device and alarm type;
+ * the view lives in the URL so links, reloads and Back keep it.
  */
 export function AlertsPage() {
   const router = useRouter();
@@ -41,11 +43,14 @@ export function AlertsPage() {
   const query = useMemo(() => alarmQuery(view, now), [view, now]);
   const filterKey = `${query.from}:${query.to}:${view.deviceId ?? "*"}:${view.typeId ?? "*"}`;
   const fetchKind = (kind: AlarmKind) => (kind === "ai" ? fleetService.aiAlarms : fleetService.routineAlarms);
+  const feed: AlarmKind | null = view.kind === "incidents" ? null : view.kind;
   const other: AlarmKind = view.kind === "ai" ? "routine" : "ai";
 
-  const listQ = useApiQuery(`alerts:${view.kind}:${filterKey}:${view.page}`, () => fetchKind(view.kind)(query));
-  // The other tab's count only: page 1 with one item, for the envelope's `total`.
-  const otherQ = useApiQuery(`alerts:count:${other}:${filterKey}`, () => fetchKind(other)({ ...query, pageNumber: 1, pageSize: 1 }));
+  const listQ = useApiQuery(feed ? `alerts:${feed}:${filterKey}:${view.page}` : null, () => fetchKind(feed!)(query));
+  // The other feed's count only: page 1 with one item, for the envelope's `total`.
+  const otherQ = useApiQuery(feed ? `alerts:count:${other}:${filterKey}` : null, () => fetchKind(other)({ ...query, pageNumber: 1, pageSize: 1 }));
+  const [incidentTotal, setIncidentTotal] = useState<number | undefined>();
+  const onIncidentPage = useCallback((page: number) => router.replace(`/drive-vision/alerts${alertsSearch({ ...view, page, alarmId: null })}`, { scroll: false }), [router, view]);
 
   const devicesQ = useApiQuery("alerts:devices", () => fleetService.listAllDevices());
   const typesQ = useApiQuery("alerts:alarm-types", () => fleetService.alarmTypes());
@@ -53,10 +58,10 @@ export function AlertsPage() {
 
   const items = useMemo(() => listQ.data?.items ?? [], [listQ.data]);
   const total = listQ.data?.total ?? 0;
-  const countOf = (kind: AlarmKind) => (kind === view.kind ? listQ.data?.total : otherQ.data?.total);
+  const countOf = (kind: AlertsTab) => (kind === "incidents" ? (view.kind === "incidents" ? incidentTotal : undefined) : kind === view.kind ? listQ.data?.total : otherQ.data?.total);
 
-  const openAlarm = view.alarmId !== null ? items.find((a) => a.id === view.alarmId) : undefined;
-  const linkMissing = view.alarmId !== null && !!listQ.data && !openAlarm;
+  const openAlarm = feed && view.alarmId !== null ? items.find((a) => a.id === view.alarmId) : undefined;
+  const linkMissing = feed !== null && view.alarmId !== null && !!listQ.data && !openAlarm;
   const range = resolveDateRange(view.range, now);
   const filtersActive = view.deviceId !== null || view.typeId !== null;
   const unavailable503 = isApiError(listQ.error) && listQ.error.status === 503;
@@ -140,7 +145,9 @@ export function AlertsPage() {
         eyebrow={<DataSourceBadge source={listQ.data?.source} />}
         title="Alerts & Events"
         description={
-          listQ.data
+          view.kind === "incidents"
+            ? `${incidentTotal !== undefined ? `${formatNumber(incidentTotal)} incidents · ` : ""}${range.label.toLowerCase()}${filtersActive ? " · filtered" : ""}`
+            : listQ.data
             ? `${formatNumber(total)} ${KIND_LABEL[view.kind].toLowerCase()} · ${range.label.toLowerCase()}${filtersActive ? " · filtered" : ""}`
             : listQ.error
               ? `Couldn't load ${KIND_LABEL[view.kind].toLowerCase()}`
@@ -158,7 +165,7 @@ export function AlertsPage() {
           label="Alarm kind"
           value={view.kind}
           onChange={(kind) => filter({ kind })}
-          options={(["ai", "routine"] as const).map((k) => ({ value: k, label: KIND_LABEL[k], count: countOf(k) }))}
+          options={(["incidents", "ai", "routine"] as const).map((k) => ({ value: k, label: KIND_LABEL[k], count: countOf(k) }))}
         />
         <FilterBar>
           <FilterSelect label="Time range" value={view.range} onChange={(r: DateRangeKey) => filter({ range: r })} options={DATE_RANGE_OPTIONS} />
@@ -175,12 +182,14 @@ export function AlertsPage() {
       <p className="mb-3 flex items-start gap-1.5 px-1 text-xs text-ink-muted">
         <Info className="mt-px size-3.5 shrink-0" aria-hidden />
         <span>
-          Read-only: the API has no endpoint to acknowledge, resolve, assign or annotate alarms. It filters by time, device and alarm type only.
+          {view.kind === "incidents"
+            ? "Incidents are the alerts the server tracks for handling: acknowledge, comment, resolve, dismiss or reopen them from the detail panel."
+            : "AI events and routine alarms are the raw device feeds (read-only). Handle alerts in the Incidents tab."}
           {devicesQ.error || typesQ.error ? ` Couldn't load the ${[devicesQ.error && "device", typesQ.error && "alarm type"].filter(Boolean).join(" and ")} list for the filters.` : ""}
         </span>
       </p>
 
-      <DataSourceNotice source={listQ.data?.source} className="mb-3" />
+      {feed ? <DataSourceNotice source={listQ.data?.source} className="mb-3" /> : null}
 
       {linkMissing ? (
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-line bg-surface-muted px-3.5 py-2.5 text-[13px] text-ink-muted" role="status">
@@ -193,7 +202,9 @@ export function AlertsPage() {
       ) : null}
 
       <Panel className="overflow-hidden">
-        {listQ.error ? (
+        {view.kind === "incidents" ? (
+          <IncidentsList view={view} now={now} typeById={typeById} onPage={onIncidentPage} onOpen={(alarmId) => go({ alarmId })} onTotal={setIncidentTotal} />
+        ) : listQ.error ? (
           <>
             <ApiErrorState error={listQ.error} onRetry={listQ.refetch} title={unavailable503 ? `${KIND_LABEL[view.kind]} unavailable` : undefined} />
             {unavailable503 ? (
@@ -231,7 +242,7 @@ export function AlertsPage() {
         )}
       </Panel>
 
-      <EventDetailDrawer alarm={openAlarm} kind={view.kind} typeById={typeById} open={openAlarm !== undefined} onOpenChange={(o) => !o && go({ alarmId: null })} />
+      <EventDetailDrawer alarm={openAlarm} kind={feed ?? "ai"} typeById={typeById} open={openAlarm !== undefined} onOpenChange={(o) => !o && go({ alarmId: null })} />
     </div>
   );
 }

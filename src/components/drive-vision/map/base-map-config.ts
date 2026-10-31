@@ -25,6 +25,19 @@ export function baseMapSource(): BaseMapSource {
   return { kind: "none" };
 }
 
+/** The map's caption row sits this far above the map's bottom edge (`bottom-3`). */
+const CAPTION_INSET_PX = 12;
+const ATTRIBUTION_GAP_PX = 6;
+
+/**
+ * `bottom` offset (px) for the provider attribution so it sits just above the caption row
+ * (MapTiler logo, data note, legend), whatever height that row wraps to on narrow maps.
+ */
+export function attributionBottom(captionHeight: number): number {
+  const h = Number.isFinite(captionHeight) && captionHeight > 0 ? Math.round(captionHeight) : 0;
+  return CAPTION_INSET_PX + h + ATTRIBUTION_GAP_PX;
+}
+
 /** Loads MapLibre on demand (it is browser-only and ~800 kB), configuring its worker once. */
 export function loadMapLibre() {
   return import("./maplibre-runtime");

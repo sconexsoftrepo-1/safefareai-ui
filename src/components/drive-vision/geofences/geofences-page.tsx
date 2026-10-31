@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import { Info, MapPinned, RefreshCw, Route, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
@@ -19,19 +20,21 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { toast } from "../shared/toast-provider";
 import { GeoMap } from "../map/geo-map";
 import { snappedBounds } from "../map/projection";
+import { FenceVoices, GeofenceEvents } from "./geofence-events";
 import { bindingSummary, fenceColor, fenceGeometry, fencePath } from "./geofence-model";
 
 type ShapeFilter = "all" | "AREA" | "LINE";
 
 /**
  * Geofences on live BFF data: GET /geofences drawn on the base map, DELETE /geofences/{id} after
- * confirmation. Creating and editing are off: GeofenceRequest requires `ruleTypes` (and uses
+ * confirmation, crossings from GET /geofences/events(+/summary) and voice prompts from /voices/fence. Creating and editing are off: GeofenceRequest requires `ruleTypes` (and uses
  * `areaType` / `colorIndex`) whose integer codes the API doesn't document.
  */
 export function GeofencesPage() {
   const [shape, setShape] = useState<ShapeFilter>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GeofenceDto | null>(null);
+  const canDelete = useCan("geofences.delete");
   const listQ = useApiQuery(`geofences:${shape}`, () => fleetService.listGeofences(shape === "all" ? {} : { shape }));
   const groupsQ = useApiQuery("geofences:groups", () => fleetService.listGroups());
   const devicesQ = useApiQuery("geofences:devices", () => fleetService.listAllDevices());
@@ -142,9 +145,11 @@ export function GeofencesPage() {
                 title={selected.f.name ?? `Geofence ${selected.f.id}`}
                 description={selected.f.shape === "LINE" ? "Route line" : "Zone"}
                 action={
-                  <Button variant="outline" size="sm" onClick={() => setDeleteTarget(selected.f)}>
-                    <Trash2 /> Delete
-                  </Button>
+                  canDelete ? (
+                    <Button variant="outline" size="sm" onClick={() => setDeleteTarget(selected.f)}>
+                      <Trash2 /> Delete
+                    </Button>
+                  ) : undefined
                 }
               />
               <dl className="divide-y divide-line px-5 pb-4">
@@ -166,6 +171,9 @@ export function GeofencesPage() {
           ) : null}
         </div>
       </div>
+
+      <GeofenceEvents geofenceId={selectedId} geofenceName={selected?.f.name} />
+      <FenceVoices />
 
       <ConfirmDialog
         open={deleteTarget !== null}

@@ -11,7 +11,7 @@ import { useReturnFocus } from "./use-return-focus";
 
 /**
  * Confirmation modal (fade + scale). `onConfirm` may be async — the button shows a
- * spinner and the dialog closes when it settles.
+ * spinner and the dialog closes when it resolves. If it throws, the dialog stays open.
  */
 export function ConfirmDialog({
   open,
@@ -43,6 +43,8 @@ export function ConfirmDialog({
     try {
       await onConfirm();
       onOpenChange(false);
+    } catch {
+      // onConfirm reports its own failure (toast / inline error); stay open so the user can retry or cancel.
     } finally {
       setBusy(false);
     }

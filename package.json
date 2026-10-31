@@ -2,7 +2,7 @@
   "name": "drive-vision",
   "version": "0.1.0",
   "private": true,
-  "description": "SafeFare AI — AI-powered fleet management & driver-safety UI (frontend demo with mock data)",
+  "description": "SafeFare AI — AI-powered fleet management & driver-safety UI for the Safe-Fare Fleet BFF",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
+import { insightService } from "@/features/drive-vision/api/insight-service";
 import type { TrackQuery } from "@/features/drive-vision/api/types";
 import { isApiError } from "@/features/drive-vision/api/errors";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
@@ -22,6 +23,8 @@ import type { MapPin as TrackPin } from "../map/fleet-map";
 import { GeoMap } from "../map/geo-map";
 import { snappedBounds } from "../map/projection";
 import { useFleetReference } from "../vehicles/use-fleet-reference";
+import { TripHistory } from "./trip-history";
+import { checkPosition } from "../monitoring/live-fleet-model";
 import { MAX_TRACK_RANGE_MS, dateToIstInput, istInputToDate, prepareTrack, trackStats, validateRange, type TrackPoint } from "./track-model";
 
 type Preset = "24h" | "3d" | "7d" | "custom";
@@ -38,12 +41,37 @@ const POSITION_FILTERS: { value: NonNullable<TrackQuery["positionFilter"]>; labe
 ];
 const PLAY_STEP_MS = 500;
 
+type Mode = "trips" | "track";
+
 /**
- * Trips & Tracking on GET /devices/{id}/track. The API returns raw track points, not trips,
- * so this screen shows the recorded points for one device and time range (≤ 7 days).
- * Playback steps through recorded points only — nothing is interpolated between them.
+ * Trips & Tracking: server-segmented trips (GET /trips…, see TripHistory) and raw track playback
+ * (GET /devices/{id}/track). Links with `?device=` (e.g. from a vehicle) open playback directly.
  */
 export function TripsPage() {
+  const params = useSearchParams();
+  const [mode, setMode] = useState<Mode>(params.get("device") ? "track" : "trips");
+  const driver = /^d+$/.test(params.get("driver") ?? "") ? Number(params.get("driver")) : null;
+  return (
+    <div>
+      <SegmentedControl
+        label="View"
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: "trips", label: "Trips" },
+          { value: "track", label: "Track playback" },
+        ]}
+      />
+      <div className="mt-3">{mode === "trips" ? <TripHistory initialDriverId={driver} /> : <TrackPlayback />}</div>
+    </div>
+  );
+}
+
+/**
+ * Track playback on GET /devices/{id}/track: the recorded points for one device and time range
+ * (≤ 7 days). Playback steps through recorded points only — nothing is interpolated between them.
+ */
+function TrackPlayback() {
   const params = useSearchParams();
   const ref = useFleetReference();
   const devicesQ = useApiQuery("tracks:devices", () => fleetService.listAllDevices());
@@ -69,6 +97,8 @@ export function TripsPage() {
   const trackQ = useApiQuery(deviceId !== null && !rangeError ? `track:${deviceId}:${fromIso}:${toIso}:${positionFilter}` : null, () =>
     fleetService.track(deviceId!, { from: fromIso!, to: toIso!, positionFilter })
   );
+  // Alarms in the same window for map markers (GET /devices/{id}/event-markers); positions are validated like track points.
+  const markersQ = useApiQuery(deviceId !== null && !rangeError ? `track:markers:${deviceId}:${fromIso}:${toIso}` : null, () => insightService.eventMarkers(deviceId!, { from: fromIso!, to: toIso! }));
   const prepared = useMemo(() => prepareTrack(trackQ.data?.data.points), [trackQ.data]);
   const stats = useMemo(() => trackStats(prepared.points), [prepared]);
   const track = trackQ.data?.data;
@@ -113,8 +143,14 @@ export function TripsPage() {
     .filter((p) => (p.stopSeconds ?? 0) > 0 && p !== first && p !== final)
     .forEach((p, i) => pins.push({ id: `p${p.index}`, kind: "stop", ...p.pos!, title: `Stopped ${formatSeconds(p.stopSeconds!)} · ${formatDateTime(p.deviceTime!)}`, glyph: String(i + 1) }));
   prepared.plotted.filter((p) => p.alarm).forEach((p) => pins.push({ id: `a${p.index}`, kind: "alarm", ...p.pos!, title: `${p.alarm} · ${formatDateTime(p.deviceTime!)}` }));
+  (markersQ.data?.items ?? []).forEach((m, i) => {
+    const c = checkPosition(m);
+    if (c.ok) pins.push({ id: `m${m.id ?? i}`, kind: "alarm", lat: c.lat, lon: c.lon, title: `${m.alarmName ?? "Alarm"}${m.alarmTime ? ` · ${formatDateTime(m.alarmTime)}` : ""}` });
+  });
 
   const jumpToPin = (id: string) => {
+    // Event-marker pins ("m…") aren't track points: nothing to jump to.
+    if (id.startsWith("m")) return;
     const index = Number(id.slice(1));
     const i = prepared.points.findIndex((p) => p.index === index);
     if (i >= 0) {

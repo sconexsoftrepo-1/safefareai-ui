@@ -16,6 +16,7 @@ import { ShellContext, type ShellState } from "./shell-context";
 import { ToastProvider } from "../shared/toast-provider";
 import { DriveVisionAIAssistant } from "../assistant/ai-assistant";
 import { RouteGuard } from "../auth/route-guard";
+import { MenuLoadError } from "./menu-load-error";
 import { canUseFeature } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 
@@ -30,7 +31,7 @@ export function DriveVisionAppShell({ children }: { children: React.ReactNode })
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const prefs = usePreferences();
-  // Iris answers from the in-browser sample fleet, so it's a granted feature rather than a default.
+  // Iris (GET /assistant/prompts, POST /assistant/ask) is a granted feature rather than a default.
   const assistantAllowed = canUseFeature(useAccess(), "assistant");
   // Map/video workspaces fill the viewport on desktop (Iris opens from the header there), so no launcher clearance.
   const workspace = isWorkspaceRoute(usePathname());
@@ -73,6 +74,7 @@ export function DriveVisionAppShell({ children }: { children: React.ReactNode })
                 )}
               >
                 <div className="@container mx-auto w-full max-w-[1680px] min-w-0">
+                  <MenuLoadError />
                   <RouteGuard>
                     <PageIntro />
                     {children}

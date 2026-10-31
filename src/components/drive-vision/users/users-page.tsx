@@ -9,6 +9,7 @@ import { adminService } from "@/features/drive-vision/api/admin-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
 import type { RoleDto, UserDetailDto, UserListStatus, UserSummaryDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
+import { useCan } from "@/features/drive-vision/access/use-access";
 import { useAuth } from "@/features/drive-vision/store/auth-store";
 import { formatDateTime, formatNumber, initials } from "@/features/drive-vision/utils/format";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,7 @@ export function UsersPage() {
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<number | null>(null);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
+  const canManage = useCan("users.manage");
 
   useEffect(() => {
     const next = searchInput.trim();
@@ -132,9 +134,11 @@ export function UsersPage() {
                 <RefreshCw className={listQ.refreshing ? "animate-spin" : undefined} /> Refresh
               </Button>
             ) : null}
-            <Button onClick={() => setFormMode("create")} disabled={!rolesQ.data}>
-              <Plus /> New user
-            </Button>
+            {canManage ? (
+              <Button onClick={() => setFormMode("create")} disabled={!rolesQ.data}>
+                <Plus /> New user
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -339,6 +343,7 @@ function UserDrawer({ id, roles, onClose, onEdit, onChanged }: { id: number | nu
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [pw, setPw] = useState({ next: "", confirm: "" });
   const [pwErrors, setPwErrors] = useState<Errors<"newPassword" | "confirm">>({});
+  const canManage = useCan("users.manage");
   const user = updated?.id === id && id !== null ? updated : detailQ.data;
   const self = user?.id !== undefined && user.id === me;
   const toggle = nextStatus(user?.status);
@@ -374,7 +379,7 @@ function UserDrawer({ id, roles, onClose, onEdit, onChanged }: { id: number | nu
         title={user?.displayName ?? (id !== null ? `User ${id}` : "")}
         description={user?.email ?? undefined}
         footer={
-          user ? (
+          user && canManage ? (
             <div className="flex flex-wrap justify-end gap-2">
               {user.locked ? (
                 <Button variant="outline" onClick={() => setPending({ kind: "unlock" })}>
