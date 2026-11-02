@@ -1,0 +1,257 @@
+{
+  "allTenants": {
+    "headers": [
+      "ID",
+      "Driver",
+      "Licence",
+      "Assignment",
+      "Phone",
+      "Email",
+      "Tenant",
+      "Status"
+    ],
+    "firstRows": [
+      "1 | AD  Any Driver 01  LIC-1 | Valid 15 Jan 2027 | KA-01-1001 Active | +91 90000 00001 | driver1@synthetic.invalid | Acme Logistics | ACTIVE",
+      "2 | AD  Any Driver 02  LIC-2 | Valid 15 Jan 2027 | Unassigned | +91 90000 00002 | driver2@synthetic.invalid | Blue Line Cabs | ACTIVE"
+    ],
+    "notice": true,
+    "createDisabled": true,
+    "tenantHeaders": 0,
+    "drawerActions": []
+  },
+  "tenantSelected": {
+    "headers": [
+      "ID",
+      "Driver",
+      "Licence",
+      "Assignment",
+      "Phone",
+      "Email",
+      "Status"
+    ],
+    "anyStale": false,
+    "acme": 20,
+    "driverHeaders": [
+      "1"
+    ]
+  },
+  "search": {
+    "lastQuery": "?keyword=Driver+0&pageNumber=1&pageSize=20",
+    "rows": 9
+  },
+  "filter": {
+    "lastQuery": "?status=INACTIVE&pageNumber=1&pageSize=20",
+    "statuses": [
+      "INACTIVE"
+    ]
+  },
+  "paging": {
+    "lastQuery": "?pageNumber=2&pageSize=20"
+  },
+  "detail": {
+    "text": "Acme Driver 01\n\nLicence LIC-1\n\nStatus\nACTIVE\nLicence\nValid\n15 Jan 2027\nCurrent vehicle\nKA-01-1001\nPhone\n+91 90000 00001\nEmail\ndriver1@synthetic.invalid\nIC card\n—\nEmergency contact\n—\nHired\n01 Apr 2024\nLinked user\n— (no login)\nUpdated\n—\nSafety · last 30 days\nScore\n82(B)\nAlarms · severe\n4 · 1\nDistance\n512 km\nHarsh braking (synthetic)\n02 Nov, 13:00\n\nEvents attributed to this driver by the server (GET /drivers/{id}/safety-events). The app doesn't link alarms to drivers itself.\n\nVehicle assignments\nKA-01-1001\n01 Nov, 10:00 → open · MANUAL\nActive\nEnd\nKA-03-1003\n25 Oct, 08:00 → 01 Nov, 10:00 · MANUAL\nDelete\nAssign vehicle\nEdit"
+  },
+  "assign": {
+    "reviewConflict": "Review\n\nDriver: Acme Driver 01\n\nVehicle: KA-02-1002\n\nFrom: now (server time) · To: open-ended\n\nActive: Acme Driver 01 → KA-01-1001 since 01 Nov, 10:00\nActive: Acme Driver 07 → KA-02-1002 since 02 Nov, 11:00\n\nThe server is expected to refuse this while the assignment above is active, unless you replace it.",
+    "confirmDisabledNoReplace": false,
+    "replaceNeedsAck": {
+      "review": "Review\n\nDriver: Acme Driver 01\n\nVehicle: KA-02-1002\n\nFrom: now (server time) · To: open-ended\n\nActive: Acme Driver 01 → KA-01-1001 since 01 Nov, 10:00\nActive: Acme Driver 07 → KA-02-1002 since 02 Nov, 11:00\nI understand this ends the active assignments listed above.",
+      "confirmDisabled": true
+    },
+    "afterAck": false,
+    "request": [
+      "/drivers/1/assignments {\"deviceId\":102,\"replaceCurrent\":true} tenant=1"
+    ],
+    "reReads": [
+      "/drivers/1",
+      "/drivers/1/assignments",
+      "/drivers"
+    ],
+    "history": "\nKA-02-1002\n02 Nov, 16:00 → open · MANUAL\nActive\nEnd\nKA-01-1001\n01 Nov, 10:00 → 02 Nov, 16:00 · MANUAL\nKA-03-1003\n25 Oct, 08:00 → 01 Nov, 10:00 · MANUAL\nDelete\nAssign vehicle\nEdit"
+  },
+  "assignFailed": {
+    "stillOpen": true,
+    "toast": "The server rejected the change Vehicle already assigned (MOCKED)",
+    "posts": 1
+  },
+  "end": {
+    "invalidBlocked": true,
+    "text": "Started 02 Nov, 16:00 · open-ended\n\nEnd at (IST)\n\nThe end must be after the assignment started.",
+    "request": [
+      "/drivers/1/assignments/32/end {}"
+    ]
+  },
+  "create": {
+    "required": true,
+    "posts": 0,
+    "backendError": true,
+    "success": [
+      "/drivers {\"name\":\"Synthetic New Driver\",\"status\":\"ACTIVE\",\"email\":\"dup@synthetic.invalid\"} tenant=1"
+    ]
+  },
+  "error": {
+    "alert": "Couldn't load this data\n\nDriver service unavailable (MOCKED)\n\nHTTP 503 · SERVICE_UNAVAILABLE · ref mock-503\n\nTry again"
+  },
+  "empty": true,
+  "switchIsolation": {
+    "blue": 20,
+    "staleAcme": false
+  },
+  "responsive": {
+    "320x568": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "drawer": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "assign": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [
+          {
+            "t": "",
+            "w": 16,
+            "h": 16
+          }
+        ]
+      }
+    },
+    "390x844": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "drawer": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "assign": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [
+          {
+            "t": "",
+            "w": 16,
+            "h": 16
+          }
+        ]
+      }
+    },
+    "768x1024": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "drawer": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "assign": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [
+          {
+            "t": "",
+            "w": 16,
+            "h": 16
+          }
+        ]
+      }
+    },
+    "1024x768": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "drawer": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "assign": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [
+          {
+            "t": "",
+            "w": 16,
+            "h": 16
+          }
+        ]
+      }
+    },
+    "1366x768": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "drawer": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "assign": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [
+          {
+            "t": "",
+            "w": 16,
+            "h": 16
+          }
+        ]
+      }
+    },
+    "1920x1080": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "drawer": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "assign": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [
+          {
+            "t": "",
+            "w": 16,
+            "h": 16
+          }
+        ]
+      }
+    }
+  },
+  "dispatcher": {
+    "newDriverButton": false,
+    "drawerActions": [],
+    "safetyCalls": 0,
+    "safetyText": true
+  },
+  "operator": {
+    "page": "You don't have access to this page\n\nYour",
+    "driverCalls": 0,
+    "navLink": false
+  },
+  "driver": {
+    "page": "You don't have access to this page\n\nYour",
+    "driverCalls": 0,
+    "navLink": false
+  },
+  "anyTenantQuery": 0
+}

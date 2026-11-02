@@ -4,6 +4,8 @@ import { logAuth, logRequest } from "./diagnostics";
 import { isRefreshExpired, readSession, sessionFromTokens, writeSession, type StoredSession } from "./session";
 import { PEER_QUERY_MS, PEER_RESCUE_MS, adoptFromPeers, announceRotation, forgetLineage, knowsPeers, startSessionSync, withRefreshLock } from "./session-sync";
 import type { ApiResponse, RefreshRequest, TokenResponse } from "./types";
+import { tenantHeaderFor } from "./tenant-scope";
+import { reportTenantRejected } from "./tenant-context";
 
 /**
  * Typed fetch wrapper for the Safe-Fare Fleet BFF. Requests go straight from the browser
@@ -26,7 +28,15 @@ export interface RequestOptions {
   auth?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** "none": never attach the Safe-Fare Admin's tenant header (see api/tenant-scope.ts). */
+  tenant?: "none";
 }
+
+/** Tenant header resolved for one request (internal). */
+type TenantHeader = { name: string; value: string } | null;
+
+/** Server error codes meaning the selected tenant itself was refused. */
+const TENANT_REJECTED_CODES = new Set(["INVALID_TENANT", "TENANT_ACCESS_DENIED"]);
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type SessionEndReason = "expired" | "signed-out";
@@ -63,11 +73,13 @@ function buildUrl(path: string, query?: RequestOptions["query"]) {
   return { url: `${API_BASE_URL}${relative}`, display: relative };
 }
 
-async function send<T>(method: HttpMethod, path: string, opts: RequestOptions, session: StoredSession | null): Promise<ApiResponse<T>> {
+async function send<T>(method: HttpMethod, path: string, opts: RequestOptions, session: StoredSession | null, tenant: TenantHeader = null): Promise<ApiResponse<T>> {
   const { url, display } = buildUrl(path, opts.query);
   const headers: Record<string, string> = { Accept: "application/json" };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
   if (session) headers.Authorization = `${session.tokenType} ${session.accessToken}`;
+  // Safe-Fare Admin's selected tenant, on tenant-scoped requests only (never with auth: false).
+  if (tenant && session) headers[tenant.name] = tenant.value;
 
   const timeout = AbortSignal.timeout(opts.timeoutMs ?? API_TIMEOUT_MS);
   const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
@@ -114,6 +126,7 @@ async function send<T>(method: HttpMethod, path: string, opts: RequestOptions, s
   logRequest({ method, url: display, status: res.status, durationMs: performance.now() - started, errorCode: failed ? extend.errorCode : undefined, requestId });
 
   if (failed) {
+    if (tenant && extend.errorCode && TENANT_REJECTED_CODES.has(extend.errorCode)) reportTenantRejected(Number(tenant.value), extend.errorCode);
     throw new ApiError({
       kind: "http",
       status: envelopeError && res.ok ? body!.code! : res.status,
@@ -232,15 +245,17 @@ export async function apiRequest<T>(method: HttpMethod, path: string, opts: Requ
   if (opts.auth === false) return send<T>(method, path, opts, null);
 
   const session = await validSession(method, path);
+  // Resolved once, so the 401 retry below carries the same tenant as the first attempt.
+  const tenant = tenantHeaderFor(path, opts);
   try {
-    return await send<T>(method, path, opts, session);
+    return await send<T>(method, path, opts, session, tenant);
   } catch (err) {
     if (!isApiError(err) || err.status !== 401 || err.kind !== "http") throw err;
     // Another request may already have rotated the token while this one was in flight.
     const latest = readSession({ fresh: true });
     const retrySession = latest && latest.accessToken !== session.accessToken ? latest : await refreshSession(`401 on ${method} ${path}`);
     try {
-      return await send<T>(method, path, opts, retrySession);
+      return await send<T>(method, path, opts, retrySession, tenant);
     } catch (retryErr) {
       // Rejected even with a fresh token: the session itself is no longer accepted.
       if (isApiError(retryErr) && retryErr.kind === "http" && retryErr.status === 401) endSession("expired");

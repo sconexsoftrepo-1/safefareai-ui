@@ -1,0 +1,279 @@
+// Phase 8 browser validation (headless Edge via CDP). EVERY */api/v1/* request is answered locally with
+// SYNTHETIC data; nothing reaches the BFF, no credentials are used, no real writes happen.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser-p8");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3112";
+const CDP = "http://127.0.0.1:9342";
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES, IDENTITIES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const ids = (x) => ({ userId: 1, homeTenantId: 1, tenantId: 1, roleId: 1, screens: [], ...x });
+const IDS = {
+  sfa: ids({ platform: true, homeTenantId: null, tenantId: null, roleCode: "ADMIN", permissions: ALL_CODES.filter((c) => c !== "driver.app") }),
+  dispatcher: ids({ platform: false, roleCode: "TEST_DISPATCHER", permissions: IDENTITIES.dispatcher.permissions }),
+  operator: ids({ platform: false, roleCode: "TEST_OPERATOR", permissions: ["device.read", "track.read", "alarm.read"] }),
+  driver: ids({ platform: false, roleCode: "DRIVER", permissions: ["driver.app", "own.data.read"] }),
+};
+const TENANTS = [{ id: 1, code: "ACME", name: "Acme Logistics", status: "ACTIVE" }, { id: 2, code: "BLUE", name: "Blue Line Cabs", status: "ACTIVE" }];
+const ago = (h) => new Date(Date.now() - h * 3_600_000).toISOString();
+// SYNTHETIC drivers per scope (header): "all" = every tenant, with the documented tenant columns.
+function driversFor(scope, page) {
+  const base = scope === "2" ? "Blue" : scope === "1" ? "Acme" : "Any";
+  return Array.from({ length: page === 1 ? 20 : 5 }, (_, i) => {
+    const n = (page - 1) * 20 + i + 1;
+    const tenantId = scope === "all" ? (n % 2 ? 1 : 2) : Number(scope);
+    return {
+      id: n, name: `${base} Driver ${String(n).padStart(2, "0")}`, status: n % 6 === 0 ? "INACTIVE" : "ACTIVE", phone: `+91 90000 ${String(n).padStart(5, "0")}`,
+      email: `driver${n}@synthetic.invalid`, licence: { number: `LIC-${n}`, status: n % 5 === 0 ? "EXPIRING" : "VALID", expiresOn: "2027-01-15" },
+      currentAssignment: n === 1 ? { id: 11, deviceId: 101, deviceName: "KA-01-1001", active: true, assignedFrom: ago(30) } : undefined,
+      ...(scope === "all" ? { tenantId, tenantName: tenantId === 1 ? "Acme Logistics" : "Blue Line Cabs" } : {}),
+    };
+  });
+}
+let assignments = { 1: [{ id: 11, deviceId: 101, deviceName: "KA-01-1001", driverId: 1, driverName: "Acme Driver 01", assignedFrom: ago(30), active: true, source: "MANUAL" }, { id: 10, deviceId: 103, deviceName: "KA-03-1003", driverId: 1, driverName: "Acme Driver 01", assignedFrom: ago(200), assignedTo: ago(30), active: false, source: "MANUAL" }] };
+const deviceAssignments = { 101: () => assignments[1].filter((a) => a.deviceId === 101), 102: () => [{ id: 21, deviceId: 102, deviceName: "KA-02-1002", driverId: 7, driverName: "Acme Driver 07", assignedFrom: ago(5), active: true }], 103: () => [] };
+const DEVICES = [{ id: 101, name: "KA-01-1001" }, { id: 102, name: "KA-02-1002" }, { id: 103, name: "KA-03-1003" }];
+let identity = IDS.sfa;
+let mode = { drivers: "ok", assign: "ok", create: "ok" };
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  const body = request.postData ? JSON.parse(request.postData) : null;
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  const err = (status, errorCode, msg, fieldErrors) => [status, { code: status, msg, data: null, extend: { errorCode, requestId: `mock-${status}`, ...(fieldErrors ? { fieldErrors } : {}) } }];
+  let status = 200, res;
+  const dm = p.match(/^\/drivers\/(\d+)$/), am = p.match(/^\/drivers\/(\d+)\/assignments$/), em = p.match(/^\/drivers\/(\d+)\/assignments\/(\d+)\/end$/), vm = p.match(/^\/devices\/(\d+)\/driver-assignments$/);
+  if (p === "/auth/login") res = ok({ accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 });
+  else if (p === "/me") res = ok({ id: 1, displayName: "Synthetic user", email: "synthetic@example.invalid" });
+  else if (p === "/me/permissions") res = ok(identity);
+  else if (p === "/platform/tenants") res = ok(TENANTS, 2);
+  else if (p === "/platform/switch-tenant") { const t = TENANTS.find((x) => x.id === body.tenantId); res = ok({ tenantId: t.id, code: t.code, name: t.name, header: "X-Tenant-Id" }); }
+  else if (p === "/drivers" && request.method === "GET") {
+    if (mode.drivers === "error") [status, res] = err(503, "SERVICE_UNAVAILABLE", "Driver service unavailable (MOCKED)");
+    else if (mode.drivers === "empty") res = ok([], 0);
+    else { const page = Number(u.searchParams.get("pageNumber") || 1); let rows = driversFor(th ?? "all", page); const kw = u.searchParams.get("keyword"); if (kw) rows = rows.filter((r) => r.name.toLowerCase().includes(kw.toLowerCase())); const st = u.searchParams.get("status"); if (st) rows = rows.filter((r) => r.status === st); res = ok(rows, kw || st ? rows.length : 25); }
+  } else if (p === "/drivers" && request.method === "POST") {
+    if (mode.create === "invalid") [status, res] = err(400, "VALIDATION_FAILED", "Request validation failed (MOCKED)", [{ field: "email", message: "Email already used (MOCKED)" }]);
+    else res = ok({ id: 99, name: body.name, status: body.status });
+  } else if (dm && request.method === "GET") res = ok({ ...driversFor(th ?? "all", 1)[0], id: Number(dm[1]), name: Number(dm[1]) === 1 ? "Acme Driver 01" : `Driver ${dm[1]}`, currentAssignment: (assignments[dm[1]] ?? []).find((a) => a.active), hiredOn: "2024-04-01", userId: undefined });
+  else if (am && request.method === "GET") res = ok(assignments[am[1]] ?? [], (assignments[am[1]] ?? []).length);
+  else if (am && request.method === "POST") {
+    if (mode.assign === "conflict") [status, res] = err(409, "OPERATION_NOT_ALLOWED", "Vehicle already assigned (MOCKED)");
+    else { const list = (assignments[am[1]] ??= []); if (body.replaceCurrent) list.forEach((a) => { if (a.active) { a.active = false; a.assignedTo = new Date().toISOString(); } }); const dev = DEVICES.find((d) => d.id === body.deviceId); const a = { id: 30 + list.length, deviceId: body.deviceId, deviceName: dev?.name, driverId: Number(am[1]), driverName: "Acme Driver 01", assignedFrom: body.from ?? new Date().toISOString(), assignedTo: body.to, active: true, source: "MANUAL" }; list.unshift(a); res = ok(a); }
+  } else if (em) { const a = (assignments[em[1]] ?? []).find((x) => x.id === Number(em[2])); if (a) { a.active = false; a.assignedTo = body?.at ?? new Date().toISOString(); } res = ok(a); }
+  else if (vm) res = ok((deviceAssignments[vm[1]] ?? (() => []))(), 1);
+  else if (p === "/devices") res = ok(DEVICES, DEVICES.length);
+  else if (/\/safety-score$/.test(p)) res = ok({ score: { score: 82, grade: "B", alarmCount: 4, severeCount: 1, distanceKm: 512 } });
+  else if (/\/safety-events$/.test(p)) res = ok([{ id: 1, alarmName: "Harsh braking (synthetic)", alarmTime: ago(3) }], 1);
+  else res = ok(null);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name, full = false) {
+  let extra = {};
+  if (full) { const mm = await send("Page.getLayoutMetrics"); extra = { clip: { x: 0, y: 0, width: mm.cssContentSize.width, height: Math.min(mm.cssContentSize.height, 5000), scale: 1 }, captureBeyondViewport: true }; }
+  const r = await send("Page.captureScreenshot", { format: "png", ...extra });
+  fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64"));
+}
+async function waitFor(sel, ms = 6000) { const end = Date.now() + ms; while (Date.now() < end) { if (await evaluate(`!!document.querySelector(${JSON.stringify(sel)})`)) return true; await sleep(200); } console.error("waitFor timeout", sel, await evaluate("location.pathname")); return false; }
+async function typeInto(sel, text) { if (!(await waitFor(sel))) throw new Error("missing " + sel); await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select && el.select(); return true; })()`); if (text) await send("Input.insertText", { text }); }
+const clickText = (t, scope = "button") => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(scope)})].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)})); if (!el) return false; el.click(); return true; })()`);
+const clickLabel = (l) => evaluate(`(() => { const el = [...document.querySelectorAll('[aria-label]')].find(b => b.offsetParent !== null && b.getAttribute('aria-label') === ${JSON.stringify(l)}); if (!el) return false; el.click(); return true; })()`);
+const clickRow = (t) => evaluate(`(() => { const r = [...document.querySelectorAll('main table tbody tr, main ul li button, main [role=row]')].find(x => x.offsetParent !== null && x.textContent.includes(${JSON.stringify(t)})); if (!r) return false; r.click(); return true; })()`);
+const esc = async () => { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500); };
+const TXT = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)})?.innerText ?? '').slice(0, 2500)`);
+const rows = () => evaluate(`[...document.querySelectorAll('main table tbody tr')].map(r => [...r.cells].map(c => c.innerText.trim().replace(/\\n/g, ' ')).join(' | '))`);
+const heads = () => evaluate(`[...document.querySelectorAll('main table thead th')].filter(h => h.offsetParent !== null).map(h => h.innerText.trim())`);
+async function login(platform) {
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  if (platform) await clickText("Safe-Fare Admin"); else await typeInto("input[name=tenantCode]", "SYNTH");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in");
+  await sleep(3500);
+}
+async function selectTenant(name) {
+  await clickLabel((await evaluate(`document.querySelector('[data-testid=tenant-switcher]')?.getAttribute('aria-label')`)));
+  await sleep(1200);
+  await clickText(name, "[data-radix-popper-content-wrapper] li button");
+  await sleep(2500);
+}
+async function selectOption(triggerSel, label) {
+  await waitFor(triggerSel);
+  await evaluate(`(() => { const t = document.querySelector(${JSON.stringify(triggerSel)}); t && t.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' })); t && t.click(); return !!t; })()`);
+  await sleep(500);
+  await evaluate(`(() => { const o = [...document.querySelectorAll('[role=option]')].find(x => x.textContent.trim() === ${JSON.stringify(label)}); if (!o) return false; o.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' })); o.click(); return true; })()`);
+  await sleep(500);
+}
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth; const r = e => e.getBoundingClientRect();
+  const vis = [...document.querySelectorAll('header *, main *, [role=dialog] *, [role=alertdialog] *')].filter(e => e.offsetParent !== null && r(e).width > 0);
+  const clipped = vis.filter(e => { let p = e.parentElement; while (p && p !== document.body) { if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } const b = r(e); return b.right > vw + 1 || b.left < -1; }).slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+  const small = [...document.querySelectorAll('main button, [role=dialog] button, [role=alertdialog] button')].filter(e => e.offsetParent !== null).map(e => ({ t: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  return { overflow: document.documentElement.scrollWidth > vw, clipped, small: small.slice(0, 6) };
+})()`;
+const since = (i) => captured.slice(i).filter((c) => c.method !== "OPTIONS");
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => { const msg = JSON.parse(mm.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+
+  // 1) Safe-Fare Admin, all tenants: tenant column, create disabled, notice, no header.
+  identity = IDS.sfa;
+  await viewport(1366, 768);
+  await login(true);
+  let i = captured.length;
+  await go(`${APP}/drive-vision/drivers`, 3000);
+  R.allTenants = { headers: await heads(), firstRows: (await rows()).slice(0, 2), notice: await evaluate(`!!document.querySelector('[data-testid=tenant-scope-notice]')`), createDisabled: await evaluate(`!!document.querySelector('[data-testid=tenant-required-action]')`), tenantHeaders: since(i).filter((c) => c.tenant).length };
+  await shot("drivers-all-tenants-1366x768", true);
+  await clickRow("Any Driver 01"); await sleep(1500);
+  R.allTenants.drawerActions = await evaluate(`[...document.querySelectorAll('[role=dialog] button')].map(b => b.textContent.trim()).filter(t => /Assign|Edit|Delete/.test(t))`);
+  await esc();
+
+  // 2) Select Acme → tenant rows (no stale "Any" rows), header sent; search, filter, paging.
+  i = captured.length;
+  await selectTenant("Acme Logistics");
+  const r0 = await rows();
+  R.tenantSelected = { headers: await heads(), anyStale: r0.some((r) => r.includes("Any Driver")), acme: r0.filter((r) => r.includes("Acme Driver")).length, driverHeaders: [...new Set(since(i).filter((c) => c.path === "/drivers").map((c) => c.tenant))] };
+  await typeInto("input[aria-label='Search drivers']", "Driver 0"); await sleep(1200);
+  R.search = { lastQuery: since(i).filter((c) => c.path === "/drivers").at(-1)?.query, rows: (await rows()).length };
+  await typeInto("input[aria-label='Search drivers']", ""); await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); await sleep(1200);
+  await selectOption("main button[aria-label='Status']", "Inactive");
+  R.filter = { lastQuery: since(i).filter((c) => c.path === "/drivers").at(-1)?.query, statuses: [...new Set((await rows()).map((r) => r.split(" | ").at(-1)))] };
+    await selectOption("main button[aria-label='Status']", "Any status");
+  await clickLabel("Next page") || (await clickText("Next")); await sleep(1500);
+  R.paging = { lastQuery: since(i).filter((c) => c.path === "/drivers").at(-1)?.query };
+  await clickLabel("Previous page") || (await clickText("Previous")); await sleep(1200);
+
+  // 3) Driver detail + assignment history + assign (conflict → replace → ack) + end.
+  await clickRow("Acme Driver 01"); await sleep(2000);
+  R.detail = { text: (await TXT("[role=dialog]")).slice(0, 900) };
+  await shot("driver-detail-1366x768");
+  await clickText("Assign vehicle", "[role=dialog] button"); await sleep(1200);
+  await selectOption("#as-device", "KA-02-1002"); await sleep(1500);
+  R.assign = { reviewConflict: await TXT("[data-testid=assign-review]"), confirmDisabledNoReplace: await evaluate(`[...document.querySelectorAll('[role=alertdialog] button')].find(b => /^(Assign|Replace)/.test(b.textContent.trim()))?.disabled`) };
+  await shot("assign-review-conflict-1366x768");
+  await evaluate(`(() => { const l = [...document.querySelectorAll('[role=alertdialog] label')].find(x => x.textContent.includes('Replace the current assignment')); l && l.querySelector('button')?.click(); return !!l; })()`); await sleep(500);
+  R.assign.replaceNeedsAck = { review: await TXT("[data-testid=assign-review]"), confirmDisabled: await evaluate(`[...document.querySelectorAll('[role=alertdialog] button')].find(b => b.textContent.trim().startsWith('Replace and assign'))?.disabled`) };
+  await clickLabel("Confirm ending the active assignment"); await sleep(400);
+  R.assign.afterAck = await evaluate(`[...document.querySelectorAll('[role=alertdialog] button')].find(b => b.textContent.trim().startsWith('Replace and assign'))?.disabled`);
+  await shot("assign-replace-ack-1366x768");
+  i = captured.length;
+  await clickText("Replace and assign", "[role=alertdialog] button"); await sleep(2500);
+  R.assign.request = since(i).filter((c) => c.method === "POST").map((c) => `${c.path} ${JSON.stringify(c.body)} tenant=${c.tenant}`);
+  R.assign.reReads = since(i).filter((c) => c.method === "GET").map((c) => c.path);
+  R.assign.history = (await TXT("[role=dialog]")).split("Vehicle assignments")[1]?.slice(0, 300);
+  // Failed assignment (409): dialog stays open, no success.
+  mode.assign = "conflict";
+  await clickText("Assign vehicle", "[role=dialog] button"); await sleep(1200);
+  await selectOption("#as-device", "KA-03-1003"); await sleep(1200);
+  i = captured.length;
+  await clickText("Assign", "[role=alertdialog] button"); await sleep(1800);
+  R.assignFailed = { stillOpen: await evaluate(`!!document.querySelector('[role=alertdialog]')`), toast: await evaluate(`[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText.replace(/\\n/g, ' ')).slice(-1)[0] ?? null`), posts: since(i).filter((c) => c.method === "POST").length };
+  mode.assign = "ok";
+  await esc();
+  // End assignment: invalid time blocked; blank ends now.
+  await evaluate(`(() => { const b = [...document.querySelectorAll('[role=dialog] button')].find(x => x.textContent.trim() === 'End'); b && b.click(); return !!b; })()`); await sleep(900);
+  await waitFor("#end-at"); await evaluate(`(() => { const el = document.querySelector('#end-at'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(el, '2020-01-01T00:00'); el.dispatchEvent(new Event('input', { bubbles: true })); return el.value; })()`); await sleep(400);
+  R.end = { invalidBlocked: await evaluate(`[...document.querySelectorAll('[role=alertdialog] button')].find(b => b.textContent.trim() === 'End assignment')?.disabled`), text: await TXT("[data-testid=end-assignment]") };
+  await shot("end-assignment-1366x768");
+  await evaluate(`(() => { const el = document.querySelector('#end-at'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(el, ''); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`); await sleep(300);
+  i = captured.length;
+  await clickText("End assignment", "[role=alertdialog] button"); await sleep(2000);
+  R.end.request = since(i).filter((c) => c.method === "POST").map((c) => `${c.path} ${JSON.stringify(c.body)}`);
+  await esc();
+
+  // 4) Create form: required validation (no request) → backend field error → success.
+  await clickText("New driver"); await sleep(1000);
+  i = captured.length;
+  await clickText("Create driver", "[role=dialog] button"); await sleep(400);
+  R.create = { required: (await TXT("#driver-form")).includes("Name is required."), posts: since(i).filter((c) => c.method === "POST").length };
+  mode.create = "invalid";
+  await typeInto("#df-name", "Synthetic New Driver"); await typeInto("#df-email", "dup@synthetic.invalid");
+  await clickText("Create driver", "[role=dialog] button"); await sleep(1200);
+  R.create.backendError = (await TXT("#driver-form")).includes("Email already used (MOCKED)");
+  mode.create = "ok";
+  i = captured.length;
+  await clickText("Create driver", "[role=dialog] button"); await sleep(1800);
+  R.create.success = since(i).filter((c) => c.method === "POST").map((c) => `${c.path} ${JSON.stringify(c.body)} tenant=${c.tenant}`);
+  await shot("driver-created-1366x768");
+  await esc();
+
+  // 5) Error / empty / retry.
+  mode.drivers = "error";
+  await go(`${APP}/drive-vision/drivers`, 2500);
+  await selectTenant("Acme Logistics");
+  R.error = { alert: (await TXT("main [role=alert]")).slice(0, 160) };
+  await shot("drivers-error-1366x768");
+  mode.drivers = "empty";
+  await clickText("Try again"); await sleep(1500);
+  R.empty = (await TXT("main")).includes("No drivers");
+  mode.drivers = "ok";
+
+  // 6) Tenant switching isolation: Acme → Blue, no stale Acme rows.
+  await clickText("Refresh"); await sleep(1500);
+  await selectTenant("Blue Line Cabs");
+  const rb = await rows();
+  R.switchIsolation = { blue: rb.filter((r) => r.includes("Blue Driver")).length, staleAcme: rb.some((r) => r.includes("Acme Driver")) };
+
+  // 7) Responsive.
+  R.responsive = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/drivers`, 2500);
+    await selectTenant("Acme Logistics");
+    const ll = await evaluate(LAYOUT);
+    await shot(`drivers-${w}x${h}`, true);
+    await clickRow("Acme Driver 01"); await sleep(1800);
+    const ld = await evaluate(LAYOUT);
+    await shot(`driver-drawer-${w}x${h}`);
+    await clickText("Assign vehicle", "[role=dialog] button"); await sleep(1000);
+    const la = await evaluate(LAYOUT);
+    await shot(`assign-dialog-${w}x${h}`);
+    await esc(); await esc();
+    R.responsive[`${w}x${h}`] = { list: { overflow: ll.overflow, clipped: ll.clipped.length, small: ll.small }, drawer: { overflow: ld.overflow, clipped: ld.clipped.length, small: ld.small }, assign: { overflow: la.overflow, clipped: la.clipped.length, small: la.small } };
+  }
+
+  // 8) Role-based access: Dispatcher (view only, no safety requests), Operator and Driver (denied, zero driver requests).
+  identity = IDS.dispatcher;
+  await viewport(1366, 768);
+  await login(false);
+  i = captured.length;
+  await go(`${APP}/drive-vision/drivers`, 2500);
+  await clickRow("Any Driver 01"); await sleep(1800);
+  R.dispatcher = { newDriverButton: await evaluate(`[...document.querySelectorAll('main button')].some(b => b.textContent.includes('New driver'))`), drawerActions: await evaluate(`[...document.querySelectorAll('[role=dialog] button')].map(b => b.textContent.trim()).filter(t => /Assign|Edit|Delete|End/.test(t))`), safetyCalls: since(i).filter((c) => /safety/.test(c.path)).length, safetyText: (await TXT("[role=dialog]")).includes("Needs alarm.read") };
+  await esc();
+  for (const [label, id] of [["operator", IDS.operator], ["driver", IDS.driver]]) {
+    identity = id;
+    await login(false);
+    i = captured.length;
+    await go(`${APP}/drive-vision/drivers`, 2500);
+    R[label] = { page: (await TXT("main")).slice(0, 40), driverCalls: since(i).filter((c) => /^\/drivers|driver-assignments/.test(c.path)).length, navLink: await evaluate(`!!document.querySelector("a[href='/drive-vision/drivers']")`) };
+  }
+  R.anyTenantQuery = captured.filter((c) => /tenantId=/.test(c.query)).length;
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(R, null, 2));
+  console.log(JSON.stringify(R, null, 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

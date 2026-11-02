@@ -45,9 +45,13 @@ export interface DataSourceExtend {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
-/** LoginRequest — all required. tenantCode ≤ 50, login ≤ 320, password ≤ 72. */
+/**
+ * LoginRequest (V10) — `login` and `password` required; `tenantCode` optional. Tenant users send their
+ * tenant code; the Safe-Fare Admin signs in without one, and the property is then omitted (never "" or
+ * null). tenantCode ≤ 50, login ≤ 320, password ≤ 72.
+ */
 export interface LoginRequest {
-  tenantCode: string;
+  tenantCode?: string;
   login: string;
   password: string;
 }
@@ -80,6 +84,8 @@ export interface CurrentUserDto {
   tenantId?: number;
   tenantCode?: string;
   tenantName?: string;
+  /** V10: true for the Safe-Fare Admin. Profile display only — authorisation reads GET /me/permissions. */
+  platform?: boolean;
   displayName?: string;
   email?: string;
   phone?: string;
@@ -87,10 +93,116 @@ export interface CurrentUserDto {
   timezone?: string;
   parentUserId?: number;
   role?: RoleRef;
-  /** Permission codes (uniqueItems). */
+  /** Permission codes (uniqueItems). Not used for authorisation (see MyPermissionsDto). */
   permissions?: string[];
   /** ISO date-time. */
   lastLoginAt?: string;
+}
+
+// ── Effective identity (V10 GET /me/permissions) ─────────────────────────────
+
+/** Per-resource CRUD flags on a screen (`ResourceAccessDto`). */
+export interface ResourceAccessDto {
+  label?: string;
+  read?: boolean;
+  create?: boolean;
+  update?: boolean;
+  delete?: boolean;
+}
+
+/** An operation on a screen and whether the caller may perform it (`AllowedOperationDto`). */
+export interface AllowedOperationDto {
+  operation?: string;
+  permissionCode?: string;
+  label?: string;
+  allowed?: boolean;
+}
+
+/** A screen the caller may open (`MyScreenDto`). No routeKey / sortOrder / visible in V10. */
+export interface MyScreenDto {
+  menuKey?: string;
+  title?: string;
+  routePath?: string;
+  icon?: string;
+  parentId?: number;
+  readOnly?: boolean;
+  resources?: ResourceAccessDto[];
+  operations?: AllowedOperationDto[];
+}
+
+/** GET /api/v1/me/permissions → the frontend's identity and authorisation source (`MyPermissionsDto`). */
+export interface MyPermissionsDto {
+  userId?: number;
+  /** true only for the Safe-Fare Admin. */
+  platform?: boolean;
+  homeTenantId?: number;
+  tenantId?: number;
+  roleId?: number;
+  roleCode?: string;
+  permissions?: string[];
+  screens?: MyScreenDto[];
+}
+
+/**
+ * GET /api/v1/platform/tenants → `TenantDto` (Safe-Fare Admin, `tenant.all`). The list isn't paged.
+ * `status` values are undocumented: the UI counts only "ACTIVE" / "INACTIVE" and reports anything else as such.
+ * `users` / `devices` / `drivers` are the server's per-tenant counts.
+ */
+export interface TenantDto {
+  id?: number;
+  code?: string;
+  name?: string;
+  status?: string;
+  timezone?: string;
+  users?: number;
+  devices?: number;
+  drivers?: number;
+  /** True for the tenant the caller currently works in. */
+  current?: boolean;
+}
+
+/**
+ * POST /api/v1/platform/tenants body. NOT in the V10 spec: contract supplied by the backend team (2026-11-02).
+ * `code: ""` was observed to make the server generate the code. `copyRolePermissionsFromTenantId` defaults to 1.
+ */
+export interface CreateTenantRequest {
+  code: string;
+  name: string;
+  timezone: string;
+  status: string;
+  s3Prefix: string;
+  copyRolePermissionsFromTenantId: number;
+}
+
+/** POST /platform/tenants response `data` (observed): TenantDto plus s3Prefix and timestamps. */
+export interface CreatedTenantDto extends TenantDto {
+  s3Prefix?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** One entity's valid status values (`StatusSet` in GET /api/v1/reference/statuses). Contents are server-defined. */
+export interface StatusSetDto {
+  name?: string;
+  field?: string;
+  values?: string[];
+  terminal?: string[];
+  transitions?: { from?: string[]; to?: string; endpoint?: string; sideEffects?: string }[];
+  notes?: string;
+}
+
+/** GET /api/v1/reference/statuses → `CatalogDto` (any signed-in user). */
+export interface StatusCatalogDto {
+  statusSets?: StatusSetDto[];
+  conventions?: Record<string, string>;
+}
+
+/** POST /api/v1/platform/switch-tenant → `TenantSelectionDto`. `header` is the header NAME (currently X-Tenant-Id), not a value or token. */
+export interface TenantSelectionDto {
+  tenantId?: number;
+  code?: string;
+  name?: string;
+  header?: string;
 }
 
 export interface MenuNodeDto {
@@ -162,6 +274,34 @@ export interface DeviceDto {
   vendorCreatedAt?: string;
   vendorUpdatedAt?: string;
   syncedAt?: string;
+}
+
+/**
+ * PUT /api/v1/devices/{id} (and POST /devices) body — V10 `DeviceRequest`. A full replace: the 7 required
+ * fields must always be sent. `confirmChargeableChange` is undocumented; the frontend never sends it.
+ */
+export interface DeviceRequest {
+  groupId: number;
+  name: string;
+  terminalNo: string;
+  modelName: string;
+  protocol: number;
+  objectTypeId: number;
+  cameraCount: number;
+  plateColor?: string;
+  simNumber?: string;
+  serviceCode?: string;
+  remark?: string;
+  frameNo?: string;
+  insuranceDueAt?: string;
+  maintenanceDueAt?: string;
+  driverName?: string;
+  driverCard?: string;
+  driverPhone?: string;
+  driverGender?: number;
+  drivingLicense?: string;
+  driverRemark?: string;
+  confirmChargeableChange?: boolean;
 }
 
 /** GET /devices query (pageNumber ≥ 1, default 1; pageSize 1–100, default 20). No sort parameter. */
@@ -449,11 +589,55 @@ export interface RoleDto {
   permissionCodes?: string[];
   assignable?: boolean;
   protectedRole?: boolean;
+  /** V10: the role has every permission of its tenant. */
+  fullAccess?: boolean;
+  /** V10: tenant the role belongs to. */
+  tenantId?: number;
+  /** V10: active users holding the role. */
+  activeUsers?: number;
 }
 
 export interface PermissionDto {
   code?: string;
   description?: string;
+  /** V10: permission scope. The request schemas allow "TENANT" | "PLATFORM" (pattern); meaning per D5. */
+  scope?: string;
+}
+
+/** GET/POST/DELETE /api/v1/roles/{id}/permissions → `RolePermissionsDto`. */
+export interface RolePermissionsDto {
+  roleId?: number;
+  roleCode?: string;
+  tenantId?: number;
+  /** The role has every permission (no explicit list to edit). */
+  fullAccess?: boolean;
+  /** Server flag: whether this role's permissions may be changed. */
+  editable?: boolean;
+  permissionCodes?: string[];
+}
+
+/** POST /api/v1/roles → `CreateRoleRequest` (code ^[A-Z][A-Z0-9_]{1,29}$, description ≤ 200; both required). */
+export interface CreateRoleRequest {
+  code: string;
+  description: string;
+}
+
+/** PUT /api/v1/roles/{id} → `UpdateRoleRequest` (description only). */
+export interface UpdateRoleRequest {
+  description: string;
+}
+
+/** POST /api/v1/permissions → `CreatePermissionRequest` (code ^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$ ≤ 60, description ≤ 200, scope TENANT|PLATFORM). */
+export interface CreatePermissionRequest {
+  code: string;
+  description: string;
+  scope: "TENANT" | "PLATFORM";
+}
+
+/** PUT /api/v1/permissions/{code} → `UpdatePermissionRequest`. */
+export interface UpdatePermissionRequest {
+  description: string;
+  scope: "TENANT" | "PLATFORM";
 }
 
 // ── Geofences (Phase 2) ─────────────────────────────────────────────────────

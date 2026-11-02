@@ -1,6 +1,7 @@
 import { api } from "./client";
 import { toList, type ListResult } from "./fleet-service";
 import type {
+  DriverRow,
   AssignDriverRequest,
   AssignmentDto,
   AvailabilityOverviewDto,
@@ -38,8 +39,8 @@ export const operationsService = {
   // ── Drivers ────────────────────────────────────────────────────────────────
 
   /** GET /api/v1/drivers → ApiResponseListDriverDto. */
-  async listDrivers(query: DriverListQuery, signal?: AbortSignal): Promise<ListResult<DriverDto>> {
-    return toList(await api.get<DriverDto[]>("/drivers", { query: { ...query }, signal }));
+  async listDrivers(query: DriverListQuery, signal?: AbortSignal): Promise<ListResult<DriverRow>> {
+    return toList(await api.get<DriverRow[]>("/drivers", { query: { ...query }, signal }));
   },
 
   /** GET /api/v1/drivers/{id} → ApiResponseDriverDto. */
@@ -63,8 +64,8 @@ export const operationsService = {
   },
 
   /** GET /api/v1/drivers/licence-expiries {withinDays} → ApiResponseListDriverDto. */
-  async licenceExpiries(withinDays: number, signal?: AbortSignal): Promise<ListResult<DriverDto>> {
-    return toList(await api.get<DriverDto[]>("/drivers/licence-expiries", { query: { withinDays }, signal }));
+  async licenceExpiries(withinDays: number, signal?: AbortSignal): Promise<ListResult<DriverRow>> {
+    return toList(await api.get<DriverRow[]>("/drivers/licence-expiries", { query: { withinDays }, signal }));
   },
 
   /** GET /api/v1/drivers/{id}/assignments → ApiResponseListAssignmentDto. */

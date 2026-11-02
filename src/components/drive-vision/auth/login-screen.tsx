@@ -7,46 +7,40 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { API_BASE_URL, API_DEBUG, DEFAULT_TENANT_CODE } from "@/features/drive-vision/api/config";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
-import type { LoginRequest } from "@/features/drive-vision/api/types";
 import { bootstrapAuth, signIn, useAuth } from "@/features/drive-vision/store/auth-store";
+import { defaultLanding } from "@/features/drive-vision/access/access-policy";
+import { useAccess } from "@/features/drive-vision/access/use-access";
 import { cn } from "@/lib/utils";
 import { BrandGlyph } from "../app-shell/sidebar";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { Panel } from "../shared/panel";
 import { AuthScreenFrame } from "./auth-gate";
-
-type Field = keyof LoginRequest;
-type FieldErrors = Partial<Record<Field, string>>;
-
-/** Limits from the LoginRequest schema. */
-const MAX_LENGTH: Record<Field, number> = { tenantCode: 50, login: 320, password: 72 };
-const LABELS: Record<Field, string> = { tenantCode: "Tenant code", login: "Email or username", password: "Password" };
+import { LOGIN_LABELS as LABELS, LOGIN_MAX_LENGTH as MAX_LENGTH, buildLoginRequest, loginFields, validateLogin, type LoginErrors as FieldErrors, type LoginField as Field, type LoginForm, type LoginMode } from "./login-model";
 
 const FALLBACK_PATH = "/drive-vision/overview";
 
 /** Only same-app paths are accepted as a post-login destination (no open redirects). */
-function safeNext(raw: string | null) {
-  return raw && raw.startsWith("/drive-vision") && !raw.startsWith("//") ? raw : FALLBACK_PATH;
+function safeNext(raw: string | null): string | null {
+  return raw && raw.startsWith("/drive-vision") && !raw.startsWith("//") ? raw : null;
 }
 
-function validate(values: LoginRequest): FieldErrors {
-  const errors: FieldErrors = {};
-  for (const field of Object.keys(MAX_LENGTH) as Field[]) {
-    const value = field === "password" ? values[field] : values[field].trim();
-    if (!value) errors[field] = `${LABELS[field]} is required.`;
-    else if (value.length > MAX_LENGTH[field]) errors[field] = `${LABELS[field]} must be at most ${MAX_LENGTH[field]} characters.`;
-  }
-  return errors;
-}
+const MODES: { mode: LoginMode; label: string }[] = [
+  { mode: "tenant", label: "Tenant user" },
+  { mode: "platform", label: "Safe-Fare Admin" },
+];
 
 export function LoginScreen() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = safeNext(params.get("next"));
+  const requested = safeNext(params.get("next"));
+  const access = useAccess();
+  // No (valid) next: the default for this identity — platform dashboard for the Safe-Fare Admin, else Overview.
+  const next = requested ?? defaultLanding(access) ?? FALLBACK_PATH;
   const expired = params.get("reason") === "expired";
   const status = useAuth((s) => s.status);
 
-  const [values, setValues] = useState<LoginRequest>({ tenantCode: DEFAULT_TENANT_CODE, login: "", password: "" });
+  const [mode, setMode] = useState<LoginMode>("tenant");
+  const [values, setValues] = useState<LoginForm>({ tenantCode: DEFAULT_TENANT_CODE, login: "", password: "" });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<{ message: string; meta?: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -68,20 +62,21 @@ export function LoginScreen() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
-    const errors = validate(values);
+    const errors = validateLogin(mode, values);
     setFieldErrors(errors);
     setFormError(null);
     if (Object.keys(errors).length) return;
 
     setSubmitting(true);
     try {
-      await signIn({ tenantCode: values.tenantCode.trim(), login: values.login.trim(), password: values.password });
+      // Safe-Fare Admin: tenantCode is omitted from the request (see login-model).
+      await signIn(buildLoginRequest(mode, values));
       // Redirect happens in the status effect.
     } catch (err) {
       if (isApiError(err)) {
         const serverFields = err.fieldErrorMap();
         const known: FieldErrors = {};
-        for (const f of Object.keys(MAX_LENGTH) as Field[]) if (serverFields[f]) known[f] = serverFields[f];
+        for (const f of loginFields(mode)) if (serverFields[f]) known[f] = serverFields[f];
         setFieldErrors(known);
         const meta = [err.status ? `HTTP ${err.status}` : null, err.errorCode, err.requestId ? `ref ${err.requestId}` : null].filter(Boolean).join(" · ");
         setFormError({ message: describeApiError(err), meta: meta || undefined });
@@ -126,17 +121,43 @@ export function LoginScreen() {
           ) : null}
 
           <form className="mt-5 space-y-4" onSubmit={onSubmit} noValidate>
-            <FormField id="login-tenant" label={LABELS.tenantCode} error={fieldErrors.tenantCode} required>
-              <Input
-                {...fieldA11y("login-tenant", fieldErrors.tenantCode)}
-                name="tenantCode"
-                autoComplete="organization"
-                value={values.tenantCode}
-                onChange={set("tenantCode")}
-                maxLength={MAX_LENGTH.tenantCode}
-                disabled={submitting}
-              />
-            </FormField>
+            <div role="radiogroup" aria-label="Account type" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-muted p-1">
+              {MODES.map((m) => (
+                <button
+                  key={m.mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={mode === m.mode}
+                  disabled={submitting}
+                  onClick={() => {
+                    setMode(m.mode);
+                    setFieldErrors({});
+                    setFormError(null);
+                  }}
+                  className={cn(
+                    "min-h-9 rounded-lg px-3 text-[13px] font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none",
+                    mode === m.mode ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink"
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {mode === "tenant" ? (
+              <FormField id="login-tenant" label={LABELS.tenantCode} error={fieldErrors.tenantCode} required>
+                <Input
+                  {...fieldA11y("login-tenant", fieldErrors.tenantCode)}
+                  name="tenantCode"
+                  autoComplete="organization"
+                  value={values.tenantCode}
+                  onChange={set("tenantCode")}
+                  maxLength={MAX_LENGTH.tenantCode}
+                  disabled={submitting}
+                />
+              </FormField>
+            ) : (
+              <p className="text-[12px] text-ink-muted">Safe-Fare platform administrators sign in without a tenant code.</p>
+            )}
             <FormField id="login-user" label={LABELS.login} error={fieldErrors.login} required>
               <Input
                 {...fieldA11y("login-user", fieldErrors.login)}

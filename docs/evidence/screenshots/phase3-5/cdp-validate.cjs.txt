@@ -1,0 +1,275 @@
+// Phase 3.5 browser validation via Chrome DevTools Protocol (headless Edge).
+// EVERY request matching */api/v1/* is intercepted and answered locally: nothing reaches the BFF.
+// No real credentials are used; the login/password typed are fake strings that never leave the browser.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3107";
+const VIEWPORTS = [[320, 640], [375, 812], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let ws, seq = 0;
+const pending = new Map();
+const handlers = [];
+function send(method, params = {}) {
+  const id = ++seq;
+  ws.send(JSON.stringify({ id, method, params }));
+  return new Promise((res, rej) => pending.set(id, { res, rej, method }));
+}
+const evaluate = async (expr) => {
+  const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
+  if (r.exceptionDetails) throw new Error(`eval failed: ${JSON.stringify(r.exceptionDetails).slice(0, 300)}`);
+  return r.result.value;
+};
+
+// ── API mock ────────────────────────────────────────────────────────────────
+const captured = [];
+let mockMode = "login-401"; // or "platform-session"
+const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64");
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const SYNTHETIC_PLATFORM = { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ["tenant.all"], screens: [] };
+
+function answer(url, method) {
+  const p = new URL(url).pathname.replace(/^.*\/api\/v1/, "");
+  if (p === "/auth/login") {
+    if (mockMode === "login-401") return { status: 401, delay: 1500, body: { code: 401, msg: "Invalid login or password (MOCKED)", data: null } };
+    return { status: 200, delay: 300, body: { success: true, data: { accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 } } };
+  }
+  if (mockMode === "platform-session") {
+    if (p === "/me") return { status: 200, body: { success: true, data: { id: 1, fullName: "Synthetic Platform Admin", email: "synthetic@example.invalid", roleCode: "ADMIN" } } };
+    if (p === "/me/permissions") return { status: 200, body: { success: true, data: SYNTHETIC_PLATFORM } };
+  }
+  return { status: 503, body: { success: false, message: "Blocked by Phase 3.5 browser mock", errorCode: "MOCK_BLOCKED" } };
+}
+
+async function onPaused(params) {
+  const { requestId, request } = params;
+  captured.push({ method: request.method, url: request.url, postData: request.postData ?? null, auth: !!request.headers.Authorization });
+  if (request.method === "OPTIONS") {
+    return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: corsHeaders(), body: "" });
+  }
+  const a = answer(request.url, request.method);
+  if (a.delay) await sleep(a.delay);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: a.status, responseHeaders: [...corsHeaders(), { name: "Content-Type", value: "application/json" }], body: b64(a.body) });
+}
+const corsHeaders = () => [
+  { name: "Access-Control-Allow-Origin", value: APP },
+  { name: "Access-Control-Allow-Headers", value: "*" },
+  { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
+  { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id" },
+];
+
+// ── helpers ────────────────────────────────────────────────────────────────
+async function viewport(w, h) {
+  await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 });
+}
+async function go(url, waitMs = 1500) {
+  await send("Page.navigate", { url });
+  await sleep(waitMs);
+}
+async function shot(name) {
+  const r = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+  fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64"));
+}
+async function type(selector, text) {
+  await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.focus(); el.select && el.select(); return true; })()`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+  if (text) await send("Input.insertText", { text });
+}
+const click = (selector) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+const clickText = (text) => evaluate(`(() => { const el = [...document.querySelectorAll("button")].find(b => b.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`);
+
+const LAYOUT_PROBE = `(() => {
+  const vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  const sel = ['[role=radio]', 'input', 'button[type=submit]', 'button[aria-label$="password"]'];
+  const els = sel.flatMap(s => [...document.querySelectorAll(s)]).filter(e => e.offsetParent !== null);
+  const rect = e => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
+  const items = els.map(e => ({ tag: e.tagName.toLowerCase(), id: e.id || e.name || e.getAttribute('aria-label') || e.textContent.trim().slice(0, 20), ...rect(e) }));
+  const clipped = items.filter(i => i.l < 0 || i.r > vw + 0.5);
+  const overlaps = [];
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i], b = items[j];
+    const inter = Math.min(a.r, b.r) - Math.max(a.l, b.l) > 1 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 1;
+    // The show/hide button sits inside the password input by design.
+    const designed = [a.id, b.id].some(x => /password/i.test(x)) && [a.id, b.id].some(x => /Show password|Hide password/.test(x));
+    if (inter && !designed) overlaps.push(a.id + ' × ' + b.id);
+  }
+  return {
+    vw, vh, scrollWidth: document.documentElement.scrollWidth, bodyScrollWidth: document.body.scrollWidth,
+    horizontalOverflow: document.documentElement.scrollWidth > vw,
+    clipped: clipped.map(c => c.id), overlaps,
+    targets: items.map(i => ({ id: i.id, w: Math.round(i.w), h: Math.round(i.h) })),
+  };
+})()`;
+
+const STATE_PROBE = `(() => ({
+  path: location.pathname + location.search,
+  tenantField: !!document.querySelector('#login-tenant'),
+  adminNote: document.body.innerText.includes('sign in without a tenant code'),
+  checked: [...document.querySelectorAll('[role=radio]')].filter(r => r.getAttribute('aria-checked') === 'true').map(r => r.textContent.trim()),
+  errors: [...document.querySelectorAll('[id$="-error"], [role=alert]')].map(e => e.textContent.trim()).filter(Boolean),
+  passwordType: document.querySelector('input[name=password]')?.type,
+  passwordValueLength: document.querySelector('input[name=password]')?.value.length,
+  togglePressed: document.querySelector('button[aria-label$="password"]')?.getAttribute('aria-pressed'),
+  submitText: document.querySelector('button[type=submit]')?.textContent.trim(),
+  submitDisabled: document.querySelector('button[type=submit]')?.disabled,
+  heading: document.querySelector('h1')?.textContent.trim(),
+  nav: [...document.querySelectorAll('nav a')].map(a => a.textContent.trim()).filter(Boolean),
+  bodyText: document.body.innerText.slice(0, 400),
+}))()`;
+
+const results = { viewports: {}, interactions: {}, routes: {}, mockedPostLogin: {}, apiRequests: null };
+
+async function main() {
+  const targets = await (await fetch("http://127.0.0.1:9337/json/list")).json();
+  const page = targets.find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (m) => {
+    const msg = JSON.parse(m.data);
+    if (msg.id && pending.has(msg.id)) {
+      const p = pending.get(msg.id);
+      pending.delete(msg.id);
+      msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result);
+    } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock error", e.message));
+  };
+  await send("Page.enable");
+  await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+
+  // 1) Layout at every viewport, both modes.
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/login`);
+    const tenant = await evaluate(LAYOUT_PROBE);
+    await shot(`login-${w}x${h}-tenant`);
+    await clickText("Safe-Fare Admin");
+    await sleep(200);
+    const admin = await evaluate(LAYOUT_PROBE);
+    await shot(`login-${w}x${h}-admin`);
+    results.viewports[`${w}x${h}`] = { tenant, admin };
+  }
+
+  // 2) Interactions at a mobile and a desktop width.
+  for (const [w, h] of [[375, 812], [1440, 900]]) {
+    const r = {};
+    await viewport(w, h);
+    await evaluate("sessionStorage.clear(), true");
+    await go(`${APP}/login`);
+    const start = captured.length;
+    r.initial = await evaluate(STATE_PROBE);
+
+    // Tenant mode, everything blank → three required errors, no request.
+    await type("input[name=tenantCode]", "");
+    await clickText("Sign in");
+    await sleep(200);
+    r.tenantEmptySubmit = await evaluate(STATE_PROBE);
+    // Whitespace-only tenant code is still "required".
+    await type("input[name=tenantCode]", "   ");
+    await type("input[name=login]", "phase35.synthetic@example.invalid");
+    await type("input[name=password]", "not-a-real-password");
+    await clickText("Sign in");
+    await sleep(200);
+    r.tenantWhitespaceCode = await evaluate(STATE_PROBE);
+    r.requestsAfterClientValidation = captured.length - start;
+
+    // Switch to Safe-Fare Admin: tenant field disappears, its error goes, validation changes.
+    await clickText("Safe-Fare Admin");
+    await sleep(200);
+    r.adminMode = await evaluate(STATE_PROBE);
+    await type("input[name=login]", "");
+    await type("input[name=password]", "");
+    await clickText("Sign in");
+    await sleep(200);
+    r.adminEmptySubmit = await evaluate(STATE_PROBE);
+
+    // Password visibility control.
+    await type("input[name=password]", "not-a-real-password");
+    await click('button[aria-label="Show password"]');
+    await sleep(100);
+    r.passwordShown = await evaluate(STATE_PROBE);
+    await click('button[aria-label="Hide password"]');
+    await sleep(100);
+    r.passwordHidden = await evaluate(STATE_PROBE);
+
+    // Admin submit (mocked 401 after 1.5 s): loading state, then error state; body has no tenantCode.
+    mockMode = "login-401";
+    await type("input[name=login]", "phase35.synthetic@example.invalid");
+    const before = captured.length;
+    await clickText("Sign in");
+    await sleep(500);
+    r.adminLoading = await evaluate(STATE_PROBE);
+    await sleep(1800);
+    r.adminError = await evaluate(STATE_PROBE);
+    await shot(`login-${w}x${h}-error`);
+    r.adminRequest = captured.slice(before).map((c) => ({ ...c, postData: redact(c.postData) }));
+
+    // Tenant submit: body carries tenantCode.
+    await clickText("Tenant user");
+    await sleep(200);
+    await type("input[name=tenantCode]", "TEST");
+    await type("input[name=password]", "not-a-real-password");
+    const before2 = captured.length;
+    await clickText("Sign in");
+    await sleep(2300);
+    r.tenantRequest = captured.slice(before2).map((c) => ({ ...c, postData: redact(c.postData) }));
+    results.interactions[`${w}x${h}`] = r;
+  }
+
+  // 3) Route protection with no session: protected / unknown URLs → /login?next=…, no API calls.
+  await viewport(1440, 900);
+  for (const route of ["/drive-vision/users", "/drive-vision/settings", "/drive-vision/my-work", "/drive-vision/not-a-page", "/drive-vision"]) {
+    await evaluate("sessionStorage.clear(), true");
+    const before = captured.length;
+    await go(`${APP}${route}`, 2500);
+    results.routes[route] = { landedOn: (await evaluate(STATE_PROBE)).path, apiCalls: captured.slice(before).map((c) => `${c.method} ${new URL(c.url).pathname}`) };
+  }
+
+  // 4) MOCKED post-login with a SYNTHETIC platform identity (platform:true, permissions:["tenant.all"]).
+  //    This checks the shell's behaviour for such an identity — NOT what the real backend returns.
+  mockMode = "platform-session";
+  for (const [w, h] of [[1440, 900], [375, 812]]) {
+    await viewport(w, h);
+    await evaluate("sessionStorage.clear(), true");
+    await go(`${APP}/login`);
+    await clickText("Safe-Fare Admin");
+    await type("input[name=login]", "synthetic@example.invalid");
+    await type("input[name=password]", "not-a-real-password");
+    const before = captured.length;
+    await clickText("Sign in");
+    await sleep(3500);
+    const landed = await evaluate(STATE_PROBE);
+    await shot(`mocked-platform-landing-${w}x${h}`);
+    const layout = await evaluate(`({ horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth, vw: document.documentElement.clientWidth })`);
+    await go(`${APP}/drive-vision/users`, 3000);
+    const users = await evaluate(STATE_PROBE);
+    await shot(`mocked-platform-users-denied-${w}x${h}`);
+    results.mockedPostLogin[`${w}x${h}`] = {
+      landedPath: landed.path, heading: landed.heading, nav: landed.nav, layout,
+      usersDirect: { path: users.path, heading: users.heading, text: users.bodyText.slice(0, 300) },
+      apiCalls: captured.slice(before).map((c) => `${c.method} ${new URL(c.url).pathname}${c.auth ? " (bearer)" : ""}`),
+    };
+  }
+
+  results.apiRequests = captured.map((c) => `${c.method} ${new URL(c.url).pathname}`);
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(results, null, 2));
+  console.log(JSON.stringify(results, null, 1));
+  ws.close();
+}
+// Show body keys and tenantCode only; never echo the (fake) password.
+function redact(body) {
+  if (!body) return body;
+  try {
+    const o = JSON.parse(body);
+    return { keys: Object.keys(o), tenantCode: Object.hasOwn(o, "tenantCode") ? o.tenantCode : "<absent>", passwordPresent: typeof o.password === "string" };
+  } catch {
+    return "<unparsed>";
+  }
+}
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

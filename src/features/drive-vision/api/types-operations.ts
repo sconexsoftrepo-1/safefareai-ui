@@ -226,6 +226,18 @@ export interface AssignmentDto {
   active?: boolean;
 }
 
+/**
+ * V10 "Tenant columns": list operations whose description says "every row also has tenantId and tenantName"
+ * (not part of the DTO schemas). Shown to the Safe-Fare Admin in all-tenants mode; never used to route requests.
+ */
+export interface TenantColumns {
+  tenantId?: number;
+  tenantName?: string;
+}
+
+/** A row of GET /drivers or GET /drivers/licence-expiries: DriverDto plus the documented tenant columns. */
+export type DriverRow = DriverDto & TenantColumns;
+
 export interface DriverDto {
   id?: number;
   /** Login user linked to this record. Not proof of the current user's driver identity. */
@@ -411,6 +423,8 @@ export interface EvidenceRow {
 
 export interface ActionRow {
   id?: number;
+  /** V10: step number within a high-priority handling procedure. */
+  stepNo?: number;
   actionType?: string;
   actorUserId?: number;
   actorName?: string;

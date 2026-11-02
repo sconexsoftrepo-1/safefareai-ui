@@ -23,7 +23,8 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
-import { useCan } from "@/features/drive-vision/access/use-access";
+import { useActionGate, useCan } from "@/features/drive-vision/access/use-access";
+import { TenantRequiredButton } from "../shared/tenant-required";
 import type { Errors } from "../settings/settings-model";
 import { EMPTY_LEAVE_FORM, istDate, leaveRequestBody, validateLeaveForm, windowAround, type LeaveField, type LeaveForm } from "./operations-model";
 import { usePickers } from "./use-pickers";
@@ -198,7 +199,10 @@ function LeavePanel({ version }: { version: number }) {
   const [pending, setPending] = useState<{ leave: LeaveDto; decision: "approve" | "reject" } | null>(null);
   const [note, setNote] = useState("");
   const [formOpen, setFormOpen] = useState(false);
-  const canManage = useCan("leave.manage");
+  // V10: requesting leave for a driver needs workforce.create; approve / reject need workforce.update.
+  const requestGate = useActionGate("leave.create");
+  const canRequest = requestGate.allowed;
+  const canDecide = useCan("leave.decide");
   const refresh = () => setLocal((v) => v + 1);
 
   async function decide() {
@@ -247,7 +251,7 @@ function LeavePanel({ version }: { version: number }) {
           <span className="text-xs text-ink-muted">
             {l.decidedByName ?? "Decided"} · {time(l.decidedAt)}
           </span>
-        ) : !canManage ? (
+        ) : !canDecide ? (
           <span className="text-xs text-ink-muted">Pending</span>
         ) : (
           <span className="inline-flex gap-1">
@@ -267,10 +271,12 @@ function LeavePanel({ version }: { version: number }) {
       <PanelHeader
         title="Leave requests"
         action={
-          canManage ? (
+          canRequest ? (
             <Button size="sm" onClick={() => setFormOpen(true)}>
               <Plus /> Request leave for a driver
             </Button>
+          ) : requestGate.tenantBlocked ? (
+            <TenantRequiredButton size="sm" label="Request leave for a driver" />
           ) : undefined
         }
       />

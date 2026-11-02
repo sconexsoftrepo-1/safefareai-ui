@@ -2,7 +2,7 @@ import { api, endSession, usableSession } from "./client";
 import { ApiError } from "./errors";
 import { logAuth } from "./diagnostics";
 import { sessionFromTokens, writeSession } from "./session";
-import type { CurrentUserDto, LoginRequest, MenuNodeDto, RefreshRequest, TokenResponse } from "./types";
+import type { CurrentUserDto, LoginRequest, MenuNodeDto, MyPermissionsDto, RefreshRequest, TokenResponse } from "./types";
 
 /** Auth + current-user endpoints (Phase 1). */
 export const authService = {
@@ -43,7 +43,21 @@ export const authService = {
     return res.data ?? {};
   },
 
-  /** GET /api/v1/me/menus → ApiResponseListMenuNodeDto (menus visible to the current user). */
+  /**
+   * GET /api/v1/me/permissions → ApiResponseMyPermissionsDto: the effective identity (platform flag,
+   * home / current tenant, role, permission codes, screens + operations). The frontend's single source
+   * for authorisation; `null` when the server sends no data (callers fail closed).
+   */
+  async myPermissions(signal?: AbortSignal): Promise<MyPermissionsDto | null> {
+    const res = await api.get<MyPermissionsDto>("/me/permissions", { signal });
+    return res.data ?? null;
+  },
+
+  /**
+   * GET /api/v1/me/menus → ApiResponseListMenuNodeDto (menus visible to the current user).
+   * No longer read by the app since V10 (navigation follows GET /me/permissions `screens`); kept for
+   * the Screen/Menu Management phase.
+   */
   async myMenus(signal?: AbortSignal): Promise<MenuNodeDto[]> {
     const res = await api.get<MenuNodeDto[]>("/me/menus", { signal });
     return res.data ?? [];

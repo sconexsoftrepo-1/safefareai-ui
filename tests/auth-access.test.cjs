@@ -6,25 +6,34 @@ const assert = require("node:assert/strict");
 const { createRealm } = require("./helpers/load-ts.cjs");
 const { createServer, MemoryStorage, createLockManager } = require("./helpers/browser-fakes.cjs");
 
+const { IDENTITIES } = require("./helpers/identities.cjs");
+
 const STORAGE_KEY = "safefare:session:v1";
 const same = (got, want) => assert.equal(JSON.stringify(got), JSON.stringify(want));
 
-const ADMIN = { id: 1, displayName: "Admin", role: { id: 1, code: "PLATFORM_ADMIN" }, permissions: [] };
+// GET /me is profile only (its role/permissions are deliberately misleading here: authorisation must
+// come from GET /me/permissions).
+const ADMIN = { id: 2, displayName: "Admin", platform: false, role: { id: 2, code: "ADMIN" }, permissions: [] };
 
 function toSession(tokens) {
   return { accessToken: tokens.accessToken, tokenType: "Bearer", accessExpiresAt: Date.now() + tokens.expiresIn * 1000, refreshToken: tokens.refreshToken, refreshExpiresAt: null };
 }
 
-/** One browser tab: fake BFF that serves `me` on GET /me, plus the real auth store and access policy. */
-function openTab({ me = ADMIN, accessInMs, withSession = true } = {}) {
+/** One browser tab: fake BFF serving `me` on GET /me and `identity` on GET /me/permissions, plus the real auth store and access policy. */
+function openTab({ me = ADMIN, identity = IDENTITIES.tenantAdmin, accessInMs, withSession = true, permissionsFailures = 0 } = {}) {
   const server = createServer();
   const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+  let failuresLeft = permissionsFailures;
   async function fetch(url, init) {
     const res = await server.fetch(url, init);
     const path = new URL(url).pathname.replace("/api/v1", "");
     if (res.status !== 200) return res;
+    if (path === "/me/permissions" && failuresLeft > 0) {
+      failuresLeft--;
+      return json(503, { code: 503, msg: "Service unavailable", extend: { errorCode: "SERVICE_UNAVAILABLE" } });
+    }
     if (path === "/me") return json(200, { code: 200, data: me });
-    if (path === "/me/menus") return json(200, { code: 200, data: [] });
+    if (path === "/me/permissions") return json(200, { code: 200, data: identity });
     return res;
   }
   const storage = new MemoryStorage();
@@ -50,7 +59,7 @@ function openTab({ me = ADMIN, accessInMs, withSession = true } = {}) {
   const policy = realm.require("features/drive-vision/access/access-policy");
   const decide = (path) => {
     const s = store.getAuthState();
-    return policy.decideRoute(s.status, policy.computeAccess(s.user, s.menus), path);
+    return policy.decideRoute(s.status, policy.computeAccess(s.identity), path);
   };
   const calls = (path) => server.calls.filter((c) => c.path === path).length;
   return { server, store, storage, decide, calls, logs };
@@ -70,12 +79,17 @@ test("before the session check finishes, routes render nothing (checking)", asyn
   await pending;
 });
 
-test("stored session recovered via GET /me → admin keeps existing screens", async () => {
+test("stored session recovered via GET /me + GET /me/permissions → tenant ADMIN keeps existing screens", async () => {
   const tab = openTab();
   await tab.store.bootstrapAuth();
   same(tab.decide("/drive-vision/overview"), { kind: "allow", screen: "overview" });
   same(tab.decide("/drive-vision/devices/commands"), { kind: "allow", screen: "commands" });
   assert.equal(tab.calls("/auth/refresh"), 0);
+  assert.equal(tab.calls("/me"), 1);
+  assert.equal(tab.calls("/me/permissions"), 1);
+  assert.equal(tab.calls("/me/menus"), 0, "V10 navigation doesn't read /me/menus");
+  const s = tab.store.getAuthState();
+  same([s.identity.platform, s.identity.roleCode, s.identity.tenantId], [false, "ADMIN", 10]);
 });
 
 test("access token near expiry → one refresh, then the session recovers", async () => {
@@ -108,13 +122,27 @@ test("server unreachable during recovery → retryable session error, tokens kep
   same(tab.decide("/drive-vision/overview"), { kind: "allow", screen: "overview" });
 });
 
-test("authenticated with an unrecognised, missing or malformed role → forbidden, not admin", async () => {
-  for (const me of [{ id: 2, role: { code: "FLEET_OWNER" }, permissions: ["devices:read"] }, { id: 3 }, { id: 4, role: "PLATFORM_ADMIN", permissions: "all" }]) {
-    const tab = openTab({ me });
+test("authenticated with a missing, malformed or permission-less identity → forbidden, never admin", async () => {
+  const cases = [null, "x", [], { roleCode: "ADMIN", platform: true }, { roleCode: "PLATFORM_ADMIN", permissions: "all" }, { roleCode: "ADMIN", permissions: [] }];
+  for (const identity of cases) {
+    // A privileged-looking GET /me profile must not matter.
+    const tab = openTab({ identity, me: { id: 1, platform: true, role: { code: "ADMIN" }, permissions: ["device.read", "tenant.all"] } });
     await tab.store.bootstrapAuth();
-    assert.equal(tab.store.getAuthState().status, "authenticated");
-    same(tab.decide("/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-role" });
+    assert.equal(tab.store.getAuthState().status, "authenticated", JSON.stringify(identity));
+    same(tab.decide("/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-permissions" });
   }
+});
+
+test("GET /me/permissions failing (5xx) → retryable session error, no identity, tokens kept; retry recovers", async () => {
+  const tab = openTab({ permissionsFailures: 1 });
+  await tab.store.bootstrapAuth();
+  const s = tab.store.getAuthState();
+  same([s.status, s.identity, s.user], ["error", null, null]);
+  assert.match(s.bootError, /unavailable|503/i);
+  same(tab.decide("/drive-vision/overview"), { kind: "session-error" });
+  assert.notEqual(tab.storage.getItem(STORAGE_KEY), null);
+  await tab.store.bootstrapAuth();
+  same(tab.decide("/drive-vision/overview"), { kind: "allow", screen: "overview" });
 });
 
 test("signing out after recovery clears access", async () => {
@@ -127,6 +155,9 @@ test("signing out after recovery clears access", async () => {
   same({ status: logouts[0].status, bearer: logouts[0].bearer, sentCurrent: logouts[0].refreshToken === refreshToken }, { status: 200, bearer: true, sentCurrent: true });
   assert.equal(tab.storage.getItem(STORAGE_KEY), null);
   same(tab.decide("/drive-vision/overview"), { kind: "login", next: "/drive-vision/overview" });
+  // Nothing about the previous user survives in memory.
+  const s = tab.store.getAuthState();
+  same([s.status, s.user, s.identity, s.bootError, s.endReason], ["unauthenticated", null, null, null, "signed-out"]);
 });
 
 test("signing out with an expired access token refreshes first and logs out the rotated refresh token", async () => {

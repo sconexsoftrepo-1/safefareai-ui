@@ -1,5 +1,7 @@
 import { api } from "./client";
 import type {
+  DeviceRequest,
+  StatusCatalogDto,
   ActivityDto,
   CommandDefinitionDto,
   CommandDto,
@@ -93,6 +95,14 @@ export const fleetService = {
     return { data: res.data ?? {}, source: readSource(res.extend) };
   },
 
+  /**
+   * PUT /api/v1/devices/{id} {DeviceRequest} → ApiResponseDeviceDto (`device.update`). Full replace; may call the
+   * vendor (502/503/504 VENDOR_*; 504 VENDOR_OUTCOME_UNKNOWN = re-read before retrying). Tenant-scoped (Phase 5).
+   */
+  async updateDevice(id: number, body: DeviceRequest): Promise<DeviceDto> {
+    return (await api.put<DeviceDto>(`/devices/${id}`, body)).data ?? {};
+  },
+
   /** GET /api/v1/devices/{id}/track → ApiResponseTrackDto. */
   async track(id: number, query: TrackQuery, signal?: AbortSignal): Promise<{ data: TrackDto; source: DataSourceExtend | null }> {
     const res = await api.get<TrackDto>(`/devices/${id}/track`, { query: { ...query }, signal });
@@ -119,6 +129,15 @@ export const fleetService = {
   listAllAlarms(kind: "routine" | "ai", query: Omit<AlarmListQuery, "pageNumber" | "pageSize">, maxPages = 5): Promise<CollectedList<AlarmDto>> {
     const fetchPage = kind === "ai" ? fleetService.aiAlarms : fleetService.routineAlarms;
     return collectPages((pageNumber) => fetchPage({ ...query, pageNumber, pageSize: MAX_PAGE_SIZE }), maxPages);
+  },
+
+  /**
+   * GET /api/v1/reference/statuses → ApiResponseCatalogDto (any signed-in user): valid status values,
+   * terminal states and transitions per entity. Read-only reference data.
+   */
+  async statusCatalog(signal?: AbortSignal): Promise<StatusCatalogDto> {
+    const res = await api.get<StatusCatalogDto>("/reference/statuses", { signal });
+    return res.data ?? {};
   },
 
   /** GET /api/v1/reference/device-models → ApiResponseListDeviceModelDto. */

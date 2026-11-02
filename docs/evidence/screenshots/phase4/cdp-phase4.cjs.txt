@@ -1,0 +1,178 @@
+// Phase 4 browser validation (headless Edge via CDP). EVERY */api/v1/* request is answered locally with
+// SYNTHETIC data — nothing reaches the BFF, no credentials are used. Proves UI behaviour, not backend data.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser-p4");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3108";
+const VIEWPORTS = [[320, 640], [375, 812], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+
+// ── synthetic scenario data ─────────────────────────────────────────────────
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const IDS = {
+  safeFareAdmin: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 10, tenantId: 10, roleId: 2, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+  driver: { userId: 9, platform: false, homeTenantId: 10, tenantId: 10, roleId: 4, roleCode: "DRIVER", permissions: ["driver.app", "own.data.read"], screens: [] },
+};
+const TENANTS = [
+  { id: 1, code: "ACME", name: "Acme Logistics", status: "ACTIVE", timezone: "Asia/Kolkata", users: 14, devices: 120, drivers: 48, current: false },
+  { id: 2, code: "BLUE", name: "Blue Line Cabs", status: "ACTIVE", timezone: "Asia/Kolkata", users: 6, devices: 35, drivers: 22, current: false },
+  { id: 3, code: "OLDCO", name: "Old Co Transport", status: "INACTIVE", timezone: "Asia/Kolkata", users: 2, devices: 0, drivers: 0, current: false },
+];
+const day = (i) => new Date(Date.now() - (6 - i) * 86400000).toISOString().slice(0, 10);
+const DATA = {
+  "/platform/tenants": () => ({ data: TENANTS, total: 3 }),
+  "/groups": () => ({ data: [{ id: 1, name: "North" }, { id: 2, name: "South" }], total: 9 }),
+  "/dashboard/overview": () => ({ data: { generatedAt: new Date().toISOString(), vehicles: { total: 155, online: 97, offline: 51, neverOnline: 7, expired: 3, driving: 40, idling: 12, parked: 45 }, trips: { tripsInProgress: 38, dispatchesInProgress: 11, dispatchesToday: 64, dispatchesTodayByStatus: { COMPLETED: 40, PENDING: 13, IN_PROGRESS: 11 }, tripsToday: 212, distanceTodayKm: 5320.4 }, health: { online: 97, offline: 51, neverOnline: 7, expired: 3, staleOver24h: 9, lowBattery: 4 }, operations: { pendingLeaveRequests: 5, pendingSwapRequests: 2, driversOnLeaveToday: 3, activeDrivers: 61, licencesExpiring30Days: 6 } } }),
+  "/dashboard/fleet-status": () => ({ data: [{ status: "DRIVING", label: "Driving", count: 40 }, { status: "IDLING", label: "Idling", count: 12 }, { status: "PARKED", label: "Parked", count: 45 }, { status: "OFFLINE", label: "Offline", count: 51 }, { status: "EXPIRED", label: "Expired", count: 7 }] }),
+  "/dashboard/trends": () => ({ data: [0, 1, 2, 3, 4, 5, 6].map((i) => ({ day: day(i), alarms: 20 + i * 3, severeAlarms: 2 + (i % 3), trips: 180 + i * 6, distanceKm: 4800 + i * 90 })) }),
+  "/dashboard/safety-events": () => ({ data: { total: 186, open: 23, severe: 7, ai: 120, routine: 66, bySeverity: { 1: 90, 2: 70, 3: 26 }, latestOpen: [{ id: 11, alarmName: "Driver fatigue", deviceName: "KA-01-1234", driverName: "Synthetic Driver A", kind: "AI", severity: 3, handlingStatus: "NEW", alarmTime: new Date(Date.now() - 600000).toISOString() }, { id: 12, alarmName: "Overspeed", deviceName: "KA-05-9876", kind: "ROUTINE", severity: 2, handlingStatus: "NEW", alarmTime: new Date(Date.now() - 3600000).toISOString() }] } }),
+};
+let scenario = { identity: IDS.safeFareAdmin, overrides: {} };
+const captured = [];
+const corsHeaders = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  captured.push({ method: request.method, path: p, query: u.search, tenantHeader: Object.keys(request.headers).some((h) => h.toLowerCase() === "x-tenant-id"), auth: !!request.headers.Authorization });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: corsHeaders(), body: "" });
+  let status = 200, body;
+  if (p === "/auth/login") body = { code: 200, msg: "Success", data: { accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 } };
+  else if (p === "/me") body = { code: 200, msg: "Success", data: { id: scenario.identity.userId, displayName: `Synthetic ${scenario.identity.roleCode}`, email: "synthetic@example.invalid" } };
+  else if (p === "/me/permissions") body = { code: 200, msg: "Success", data: scenario.identity };
+  else if (scenario.overrides[p]) [status, body] = scenario.overrides[p];
+  else if (DATA[p]) body = { code: 200, msg: "Success", ...DATA[p]() };
+  else body = { code: 200, msg: "Success", data: null };
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...corsHeaders(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name, full = false) {
+  let clip;
+  if (full) { const m = await send("Page.getLayoutMetrics"); clip = { x: 0, y: 0, width: m.cssContentSize.width, height: Math.min(m.cssContentSize.height, 6000), scale: 1 }; }
+  const r = await send("Page.captureScreenshot", { format: "png", ...(full ? { clip, captureBeyondViewport: true } : {}) });
+  fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64"));
+}
+async function typeInto(sel, text) { await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select(); return true; })()`); await send("Input.insertText", { text }); }
+const clickText = (t) => evaluate(`(() => { const el = [...document.querySelectorAll("button")].find(b => b.textContent.trim() === ${JSON.stringify(t)}); if (!el) return false; el.click(); return true; })()`);
+async function login(mode) {
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  if (mode === "platform") await clickText("Safe-Fare Admin");
+  else { await typeInto("input[name=tenantCode]", "SYNTH"); }
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in");
+  await sleep(4000);
+}
+
+const PROBE = `(() => {
+  const vw = document.documentElement.clientWidth;
+  const main = document.querySelector('main') || document.body;
+  const cards = [...main.querySelectorAll('section, [class*="rounded-card"], a[class*="rounded-[18px]"]')].filter(e => e.offsetParent !== null && e.getBoundingClientRect().width > 0);
+  const r = e => e.getBoundingClientRect();
+  const clipped = [...main.querySelectorAll('*')].filter(e => { if (e.offsetParent === null) return false; const b = r(e); if (b.width === 0) return false; let p = e.parentElement; while (p && p !== document.body) { const s = getComputedStyle(p); if (/(auto|scroll|hidden)/.test(s.overflowX)) return false; p = p.parentElement; } return b.right > vw + 1 || b.left < -1; }).slice(0, 5).map(e => e.tagName + '.' + (e.className?.toString?.() || '').slice(0, 40));
+  // sibling panels overlapping each other (same parent grid)
+  const overlaps = [];
+  const grids = [...main.querySelectorAll('.grid')];
+  for (const g of grids) { const kids = [...g.children].filter(k => k.offsetParent !== null); for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) { const a = r(kids[i]), b = r(kids[j]); if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2) overlaps.push((kids[i].textContent || '').trim().slice(0, 20) + ' × ' + (kids[j].textContent || '').trim().slice(0, 20)); } }
+  const smallTargets = [...main.querySelectorAll('a, button')].filter(e => e.offsetParent !== null).map(e => ({ t: (e.textContent || e.getAttribute('aria-label') || '').trim().slice(0, 18), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  return {
+    path: location.pathname, vw, scrollWidth: document.documentElement.scrollWidth, horizontalOverflow: document.documentElement.scrollWidth > vw,
+    clipped, overlaps: overlaps.slice(0, 5), smallTargets: smallTargets.slice(0, 6),
+    scope: document.querySelector('[data-testid=platform-scope]')?.textContent.trim() ?? null,
+    overviewScope: document.querySelector('[data-testid=overview-scope]')?.textContent.trim() ?? null,
+    heading: document.querySelector('h1')?.textContent.trim(),
+    navLinks: [...document.querySelectorAll('nav a, aside a')].map(a => a.textContent.trim()).filter(Boolean).slice(0, 30),
+    alerts: [...main.querySelectorAll('[role=alert]')].map(e => e.textContent.trim().slice(0, 90)),
+    text: main.innerText.slice(0, 1600),
+  };
+})()`;
+
+const results = { scenarios: {} };
+async function main() {
+  const page = (await (await fetch("http://127.0.0.1:9338/json/list")).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (m) => { const msg = JSON.parse(m.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+
+  // 1) Synthetic Safe-Fare Admin: landing + all viewports.
+  scenario = { identity: IDS.safeFareAdmin, overrides: {} };
+  await viewport(1440, 900);
+  const start = captured.length;
+  await login("platform");
+  const landed = await evaluate(PROBE);
+  const sfa = { landing: landed.path, scope: landed.scope, navLinks: landed.navLinks, viewports: {} };
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/platform`, 3000);
+    const pr = await evaluate(PROBE);
+    sfa.viewports[`${w}x${h}`] = { overflow: pr.horizontalOverflow, scrollWidth: pr.scrollWidth, clipped: pr.clipped, overlaps: pr.overlaps, smallTargets: pr.smallTargets, alerts: pr.alerts };
+    await shot(`platform-${w}x${h}`, true);
+  }
+  sfa.text = (await evaluate(PROBE)).text;
+  await viewport(1440, 900);
+  await go(`${APP}/drive-vision/overview`, 3500);
+  const ov = await evaluate(PROBE);
+  sfa.overviewScopeBadge = ov.overviewScope;
+  await shot("sfa-overview-1440x900");
+  sfa.requests = captured.slice(start).filter((c) => c.method !== "OPTIONS");
+  sfa.tenantSelectorSent = sfa.requests.filter((c) => c.tenantHeader || /tenantId=/.test(c.query)).map((c) => c.path);
+  results.scenarios.safeFareAdmin = { ...sfa, requests: [...new Set(sfa.requests.map((c) => `${c.method} ${c.path}`))] };
+
+  // 2) Partial failure: safety 503, groups 403, trends network-ish 500 — others still render.
+  scenario = { identity: IDS.safeFareAdmin, overrides: { "/dashboard/safety-events": [503, { code: 503, msg: "Database unavailable (MOCKED)", data: null, extend: { errorCode: "DB_UNAVAILABLE", requestId: "mock-req-1" } }], "/groups": [403, { code: 403, msg: "Forbidden (MOCKED)", data: null, extend: { errorCode: "FORBIDDEN" } }] } };
+  for (const [w, h] of [[1440, 900], [375, 812]]) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/platform`, 3500);
+    const pr = await evaluate(PROBE);
+    results.scenarios[`partialFailure-${w}x${h}`] = { overflow: pr.horizontalOverflow, alerts: pr.alerts, stillShown: { tenants: /Acme Logistics/.test(pr.text), vehicles: /155/.test(pr.text), trend: /Daily trend/.test(pr.text) } };
+    await shot(`platform-partial-failure-${w}x${h}`, true);
+  }
+
+  // 3) Empty platform: no tenants, empty dashboards.
+  scenario = { identity: IDS.safeFareAdmin, overrides: { "/platform/tenants": [200, { code: 200, msg: "Success", data: [], total: 0 }], "/dashboard/overview": [200, { code: 200, msg: "Success", data: {} }], "/dashboard/fleet-status": [200, { code: 200, msg: "Success", data: [] }], "/dashboard/trends": [200, { code: 200, msg: "Success", data: [] }], "/dashboard/safety-events": [200, { code: 200, msg: "Success", data: {} }], "/groups": [200, { code: 200, msg: "Success", data: [], total: 0 }] } };
+  await viewport(1440, 900);
+  await go(`${APP}/drive-vision/platform`, 3500);
+  const empty = await evaluate(PROBE);
+  results.scenarios.empty = { alerts: empty.alerts, text: empty.text.slice(0, 1200) };
+  await shot("platform-empty-1440x900", true);
+
+  // 4) Tenant ADMIN: Overview landing, no Platform nav, /platform blocked, no platform API call.
+  scenario = { identity: IDS.tenantAdmin, overrides: {} };
+  await viewport(1440, 900);
+  const tStart = captured.length;
+  await login("tenant");
+  const tl = await evaluate(PROBE);
+  await go(`${APP}/drive-vision/platform`, 3000);
+  const tp = await evaluate(PROBE);
+  await shot("tenant-admin-platform-denied-1440x900");
+  const tReq = captured.slice(tStart).filter((c) => c.method !== "OPTIONS");
+  results.scenarios.tenantAdmin = { landing: tl.path, overviewScopeBadge: tl.overviewScope, platformInNav: tl.navLinks.some((t) => /Platform/.test(t)), platformRoute: tp.heading ?? tp.text.slice(0, 120), platformApiCalls: tReq.filter((c) => c.path.startsWith("/platform")).length, tenantSelectorSent: tReq.filter((c) => c.tenantHeader || /tenantId=/.test(c.query)).length };
+
+  // 5) Driver mobile experience preserved.
+  scenario = { identity: IDS.driver, overrides: {} };
+  await viewport(375, 812);
+  await login("tenant");
+  const dl = await evaluate(PROBE);
+  await shot("driver-my-work-375x812");
+  await go(`${APP}/drive-vision/platform`, 2500);
+  const dp = await evaluate(PROBE);
+  results.scenarios.driverMobile = { landing: dl.path, overflow: dl.horizontalOverflow, platformRoute: dp.text.slice(0, 100) };
+
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(results, null, 2));
+  console.log(JSON.stringify(results, (k, v) => (k === "text" ? undefined : v), 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

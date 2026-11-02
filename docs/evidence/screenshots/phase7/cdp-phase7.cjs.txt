@@ -1,0 +1,253 @@
+// Phase 7 browser validation (headless Edge via CDP). EVERY */api/v1/* request is answered locally with
+// SYNTHETIC data; nothing reaches the BFF, no credentials are used, no real writes happen.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser-p7");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3111";
+const CDP = "http://127.0.0.1:9341";
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdminAll: { userId: 2, platform: false, homeTenantId: 10, tenantId: 10, roleId: 2, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  driver: { userId: 9, platform: false, homeTenantId: 10, tenantId: 10, roleId: 4, roleCode: "DRIVER", permissions: ["driver.app", "own.data.read"], screens: [] },
+};
+// SYNTHETIC roles / catalogue / tenants.
+const ROLES = [
+  { id: 1, code: "ADMIN", description: "Platform administrator (synthetic)", protectedRole: true, fullAccess: true, permissionCodes: [], assignable: true, activeUsers: 2 },
+  { id: 2, code: "OPS_LEAD", description: "Operations lead (synthetic)", protectedRole: false, fullAccess: false, permissionCodes: ["device.read", "driver.read"], assignable: true, activeUsers: 0 },
+  { id: 3, code: "AUDITOR", protectedRole: false, permissionCodes: undefined },
+  { id: 40, code: "TENANT_DISPATCH", description: "Tenant role (synthetic)", tenantId: 1, protectedRole: false, permissionCodes: ["dispatch.read"], activeUsers: 4 },
+];
+const CATALOG = [
+  ...["device.read", "device.create", "device.update", "device.delete", "driver.read", "driver.create", "driver.update", "driver.delete", "alarm.read", "alarm.handle", "track.read", "trip.create", "trip.update", "trip.delete", "dispatch.read"].map((code) => ({ code, description: `Synthetic description of ${code}`, scope: "TENANT" })),
+  { code: "role.manage", description: "Manage roles (synthetic)", scope: "PLATFORM" },
+  { code: "role.permission.read", description: "Read role permissions (synthetic)", scope: "PLATFORM" },
+  { code: "permission.manage", description: "Manage the catalogue (synthetic)", scope: "PLATFORM" },
+  { code: "tenant.all", description: "All tenants (synthetic)", scope: "PLATFORM" },
+  { code: "report.read", description: "", scope: "TENANT" },
+];
+const TENANTS = [{ id: 1, code: "ACME", name: "Acme Logistics", status: "ACTIVE", users: 1, devices: 1, drivers: 1 }];
+let rolePerms = { 2: ["device.read", "driver.read"] };
+let identity = IDS.sfa;
+let failDeletePerms = false;
+let failCreateRole = false;
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  const body = request.postData ? JSON.parse(request.postData) : null;
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  const err = (status, errorCode, msg) => [status, { code: status, msg, data: null, total: null, extend: { errorCode, requestId: `mock-${errorCode}` } }];
+  let status = 200, res;
+  const m = p.match(/^\/roles\/(\d+)\/permissions$/);
+  if (p === "/auth/login") res = ok({ accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 });
+  else if (p === "/me") res = ok({ id: identity.userId, displayName: "Synthetic user", email: "synthetic@example.invalid" });
+  else if (p === "/me/permissions") res = ok(identity);
+  else if (p === "/platform/tenants") res = ok(TENANTS, 1);
+  else if (p === "/platform/switch-tenant") res = ok({ tenantId: 1, code: "ACME", name: "Acme Logistics", header: "X-Tenant-Id" });
+  else if (p === "/roles" && request.method === "GET") res = ok(ROLES.map((r) => (r.id === 2 ? { ...r, permissionCodes: rolePerms[2] } : r)), ROLES.length);
+  else if (p === "/roles" && request.method === "POST") {
+    if (failCreateRole) [status, res] = err(409, "ROLE_CODE_TAKEN", "Role code already exists (MOCKED)");
+    else { status = 201; res = { code: 201, msg: "Created", data: { id: 77, code: body.code, description: body.description, protectedRole: false, permissionCodes: [] } }; }
+  } else if (m && request.method === "GET") res = ok({ roleId: Number(m[1]), roleCode: "x", fullAccess: m[1] === "1", editable: m[1] !== "1", permissionCodes: rolePerms[m[1]] ?? [] });
+  else if (m && request.method === "POST") { rolePerms[m[1]] = [...new Set([...(rolePerms[m[1]] ?? []), ...body.permissionCodes])]; res = ok({ roleId: Number(m[1]), permissionCodes: rolePerms[m[1]] }); }
+  else if (m && request.method === "DELETE") {
+    if (failDeletePerms) [status, res] = err(409, "OPERATION_NOT_ALLOWED", "Removal refused (MOCKED)");
+    else { const codes = u.searchParams.getAll("codes"); rolePerms[m[1]] = (rolePerms[m[1]] ?? []).filter((c) => !codes.includes(c)); res = ok({ roleId: Number(m[1]), permissionCodes: rolePerms[m[1]] }); }
+  } else if (p === "/permissions" && request.method === "GET") res = ok(CATALOG, CATALOG.length);
+  else if (p.startsWith("/permissions/") && request.method === "DELETE") [status, res] = err(409, "RESOURCE_IN_USE", "Permission in use (MOCKED)");
+  else res = ok(null);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name, full = false) {
+  let extra = {};
+  if (full) { const mm = await send("Page.getLayoutMetrics"); extra = { clip: { x: 0, y: 0, width: mm.cssContentSize.width, height: Math.min(mm.cssContentSize.height, 5000), scale: 1 }, captureBeyondViewport: true }; }
+  const r = await send("Page.captureScreenshot", { format: "png", ...extra });
+  fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64"));
+}
+async function typeInto(sel, text) { await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select && el.select(); return true; })()`); if (text) await send("Input.insertText", { text }); }
+const clickText = (t, scope = "button") => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(scope)})].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)})); if (!el) return false; el.click(); return true; })()`);
+const clickLabel = (l) => evaluate(`(() => { const el = [...document.querySelectorAll('[aria-label]')].find(b => b.offsetParent !== null && b.getAttribute('aria-label') === ${JSON.stringify(l)}); if (!el) return false; el.click(); return true; })()`);
+const esc = async () => { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500); };
+async function login(mode) {
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  if (mode === "platform") await clickText("Safe-Fare Admin");
+  else await typeInto("input[name=tenantCode]", "SYNTH");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in");
+  await sleep(3500);
+}
+const tableRows = () => evaluate(`[...document.querySelectorAll('main table tbody tr')].map(r => [...r.cells].map(c => c.innerText.trim().replace(/\\n/g, ' ')))`);
+const TXT = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)})?.innerText ?? '').slice(0, 2500)`);
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth; const r = e => e.getBoundingClientRect();
+  const vis = [...document.querySelectorAll('header *, main *, [role=dialog] *, [role=alertdialog] *')].filter(e => e.offsetParent !== null && r(e).width > 0);
+  const clipped = vis.filter(e => { let p = e.parentElement; while (p && p !== document.body) { if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } const b = r(e); return b.right > vw + 1 || b.left < -1; }).slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+  const small = [...document.querySelectorAll('main button, [role=dialog] button, [role=dialog] input[type=checkbox] ~ *, [role=alertdialog] button')].filter(e => e.offsetParent !== null && e.tagName === 'BUTTON').map(e => ({ t: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  const dlg = document.querySelector('[role=dialog]'); const db = dlg ? r(dlg) : null;
+  return { overflow: document.documentElement.scrollWidth > vw, clipped, small: small.slice(0, 6), dialog: db ? { inView: db.left >= -1 && db.right <= vw + 1, w: Math.round(db.width) } : null };
+})()`;
+const since = (i) => captured.slice(i).filter((c) => c.method !== "OPTIONS");
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => { const msg = JSON.parse(mm.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+
+  // 1) Roles list: global vs tenant, search, flags.
+  identity = IDS.sfa;
+  await viewport(1366, 768);
+  await login("platform");
+  let i = captured.length;
+  await go(`${APP}/drive-vision/platform/roles`, 3000);
+  R.rolesList = { global: (await tableRows()).map((r) => r.slice(0, 6).join(" | ")), calls: [...new Set(since(i).map((c) => `${c.method} ${c.path}${c.tenant ? " [tenant " + c.tenant + "]" : ""}`))] };
+  await shot("roles-list-1366x768", true);
+  await clickText("Tenant roles", "[aria-label='Role scope'] button, [role=radiogroup] button"); await sleep(400);
+  R.rolesList.tenantTab = (await tableRows()).map((r) => r.join(" | "));
+  await clickText("Global roles", "[aria-label='Role scope'] button, [role=radiogroup] button"); await sleep(300);
+  await typeInto("input[aria-label='Search roles']", "ops"); await sleep(300);
+  R.rolesList.searchOps = (await tableRows()).map((r) => r[1]);
+  await typeInto("input[aria-label='Search roles']", ""); await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); await sleep(300);
+  await clickText("Protected", "[role=radiogroup] button, [aria-label='Role flags'] button"); await sleep(300);
+  R.rolesList.protectedFilter = (await tableRows()).map((r) => r[1]);
+  await clickText("All", "[aria-label='Role flags'] button, [role=radiogroup] button"); await sleep(300);
+
+  // 2) Protected full-access ADMIN: edit/delete disabled; mapping read-only.
+  await clickLabel("Open role ADMIN"); await sleep(1500);
+  R.adminRole = { detail: await TXT("[data-testid=role-detail]"), editDisabled: await evaluate(`[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.includes('Edit description'))?.disabled ?? null`), deleteDisabled: await evaluate(`[...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.includes('Delete role'))?.disabled ?? null`), readOnly: await TXT("[data-testid=mapping-readonly]") };
+  await shot("role-admin-protected-1366x768");
+  await esc();
+
+  // 3) OPS_LEAD mapping: add device.update + remove driver.read → review → save (success) → re-read.
+  await clickLabel("Open role OPS_LEAD"); await sleep(1500);
+  await clickText("Available", "[role=dialog] [role=tab]"); await sleep(300);
+  await clickLabel("Add device.update"); await sleep(200);
+  await clickText("Assigned", "[role=dialog] [role=tab]"); await sleep(300);
+  await clickLabel("Keep driver.read"); await sleep(200);
+  R.mapping = { pendingBar: await TXT("[data-testid=mapping-pending]") };
+  await clickText("Review changes"); await sleep(800);
+  R.mapping.review = await TXT("[data-testid=mapping-review]");
+  await shot("mapping-review-1366x768");
+  i = captured.length;
+  await clickText("Save changes", "[role=alertdialog] button"); await sleep(2500);
+  R.mapping.writes = since(i).filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}${c.query} ${c.body ? JSON.stringify(c.body) : ""} tenant=${c.tenant}`);
+  R.mapping.reReads = since(i).filter((c) => c.method === "GET" && /\/roles/.test(c.path)).map((c) => c.path);
+  R.mapping.result = await TXT("[data-testid=mapping-result]");
+  R.mapping.assignedTab = await evaluate(`[...document.querySelectorAll('[role=dialog] [role=tab]')].map(t => t.textContent.trim())`);
+  await shot("mapping-saved-1366x768");
+
+  // 4) Partial failure: add ok, remove refused (409) → partial banner, server state shown.
+  failDeletePerms = true;
+  await clickText("Available", "[role=dialog] [role=tab]"); await sleep(300);
+  await clickLabel("Add alarm.read"); await sleep(200);
+  await clickText("Assigned", "[role=dialog] [role=tab]"); await sleep(300);
+  await clickLabel("Keep device.read"); await sleep(200);
+  await clickText("Review changes"); await sleep(700);
+  i = captured.length;
+  await clickText("Save changes", "[role=alertdialog] button"); await sleep(2500);
+  R.partial = { result: await TXT("[data-testid=mapping-result]"), writes: since(i).filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`), tabs: await evaluate(`[...document.querySelectorAll('[role=dialog] [role=tab]')].map(t => t.textContent.trim())`) };
+  failDeletePerms = false;
+  await shot("mapping-partial-1366x768");
+  await esc();
+
+  // 5) Create role: invalid code (no request) → valid → 409 ROLE_CODE_TAKEN → success.
+  await clickText("New global role"); await sleep(800);
+  i = captured.length;
+  await typeInto("#role-code", "x"); await clickText("Create role", "[role=dialog] button"); await sleep(400);
+  R.createRole = { invalid: await TXT("[data-testid=role-form]"), requestsAfterInvalid: since(i).filter((c) => c.method === "POST").length };
+  failCreateRole = true;
+  await typeInto("#role-code", "QA_LEAD"); await typeInto("#role-description", "Synthetic QA lead"); await clickText("Create role", "[role=dialog] button"); await sleep(1200);
+  R.createRole.conflict = (await TXT("[data-testid=role-form]")).split("\n")[0];
+  failCreateRole = false;
+  i = captured.length;
+  await clickText("Create role", "[role=dialog] button"); await sleep(1800);
+  R.createRole.post = since(i).filter((c) => c.method === "POST").map((c) => `${c.path} ${JSON.stringify(c.body)} tenant=${c.tenant}`);
+  await esc();
+
+  // 6) Catalogue: groups, search, scope filter, missing description, delete → 409 shown.
+  i = captured.length;
+  await go(`${APP}/drive-vision/platform/permissions`, 3000);
+  R.catalog = { groups: await evaluate(`[...document.querySelectorAll('[data-testid=permission-groups] summary')].map(s => s.innerText.replace(/\\n/g, ' '))`), calls: [...new Set(since(i).map((c) => `${c.method} ${c.path}${c.tenant ? " [tenant]" : ""}`))], missingDesc: (await TXT("main")).includes("No description provided by the backend.") };
+  await shot("catalog-1366x768", true);
+  await typeInto("input[aria-label='Search permissions']", "driver"); await sleep(300);
+  R.catalog.searchDriver = await evaluate(`[...document.querySelectorAll('[data-testid=permission-groups] li span.font-mono')].map(s => s.textContent)`);
+  await typeInto("input[aria-label='Search permissions']", ""); await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); await sleep(300);
+  await clickText("PLATFORM", "[aria-label='Filter by scope'] button"); await sleep(300);
+  R.catalog.platformScope = await evaluate(`[...document.querySelectorAll('[data-testid=permission-groups] li span.font-mono')].map(s => s.textContent)`);
+  await clickText("All scopes", "[aria-label='Filter by scope'] button"); await sleep(300);
+  await clickLabel("Delete driver.delete"); await sleep(700);
+  R.catalog.deleteWarning = await TXT("[data-testid=delete-usage-warning]");
+  i = captured.length;
+  await clickText("Delete permission", "[role=alertdialog] button"); await sleep(1500);
+  R.catalog.deleteRefused = { call: since(i).filter((c) => c.method === "DELETE").map((c) => c.path), dialogStillOpen: await evaluate(`!!document.querySelector('[role=alertdialog]')`) };
+  await esc();
+  await clickLabel("Edit role.manage"); await sleep(700);
+  await clickText("TENANT", "[role=dialog] [role=radiogroup] button"); await sleep(300);
+  R.catalog.scopeWarning = await TXT("[data-testid=scope-change-warning]");
+  await esc();
+
+  // 7) Tenant selected: global views stay platform-wide (no header) and unchanged.
+  await clickLabel("Tenant context: All tenants. Change tenant"); await sleep(1200);
+  await clickText("Acme Logistics", "[data-radix-popper-content-wrapper] li button"); await sleep(2500);
+  i = captured.length;
+  await evaluate(`(() => { const a = document.querySelector("a[href='/drive-vision/platform/roles']"); a && a.click(); return !!a; })()`); await sleep(2500);
+  R.tenantSelected = { switcher: await evaluate(`document.querySelector('[data-testid=tenant-switcher]')?.getAttribute('aria-label')`), roleCalls: since(i).filter((c) => ["/roles", "/permissions"].includes(c.path) || /^\/roles\//.test(c.path)).map((c) => `${c.method} ${c.path} tenant=${c.tenant}`), rows: (await tableRows()).map((r) => r[1]) };
+
+  // 8) Responsive.
+  R.responsive = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/platform/roles`, 2800);
+    const lr = await evaluate(LAYOUT);
+    await shot(`roles-${w}x${h}`, true);
+    await clickLabel("Open role OPS_LEAD"); await sleep(1500);
+    await clickText("Available", "[role=dialog] [role=tab]"); await sleep(300);
+    const ld = await evaluate(LAYOUT);
+    await shot(`role-editor-${w}x${h}`);
+    await esc();
+    await go(`${APP}/drive-vision/platform/permissions`, 2800);
+    const lc = await evaluate(LAYOUT);
+    await shot(`catalog-${w}x${h}`, true);
+    R.responsive[`${w}x${h}`] = { roles: { overflow: lr.overflow, clipped: lr.clipped.length, small: lr.small }, editor: { overflow: ld.overflow, dialog: ld.dialog, clipped: ld.clipped.length, small: ld.small }, catalog: { overflow: lc.overflow, clipped: lc.clipped.length, small: lc.small } };
+  }
+
+  // 9) Unauthorized: tenant ADMIN holding every code, Driver — denied, and no role/permission request initiated.
+  for (const [label, id] of [["tenantAdminAllCodes", IDS.tenantAdminAll], ["driver", IDS.driver]]) {
+    identity = id;
+    await viewport(1366, 768);
+    await login("tenant");
+    i = captured.length;
+    await go(`${APP}/drive-vision/platform/roles`, 2500);
+    const a = (await TXT("main")).slice(0, 40);
+    await go(`${APP}/drive-vision/platform/permissions`, 2500);
+    const b = (await TXT("main")).slice(0, 40);
+    R[label] = { roles: a, permissions: b, roleOrPermissionCalls: since(i).filter((c) => /^\/(roles|permissions)/.test(c.path)).length, navHasPlatformConfig: await evaluate(`!!document.querySelector("a[href='/drive-vision/platform/roles'], a[href='/drive-vision/platform/permissions']")`) };
+  }
+  R.anyTenantHeaderOnRoleAdmin = captured.filter((c) => /^\/(roles|permissions)/.test(c.path) && c.tenant).length;
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(R, null, 2));
+  console.log(JSON.stringify(R, null, 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

@@ -1,0 +1,292 @@
+{
+  "platformWide": {
+    "path": "/drive-vision/platform",
+    "switcher": "Tenant context: All tenants. Change tenant",
+    "badge": "Platform · all tenants",
+    "vehiclesAll": true,
+    "headersSent": 0
+  },
+  "driversNoTenant": {
+    "notice": true,
+    "disabledCreate": [
+      "New driver (disabled)"
+    ],
+    "enabledCreate": [],
+    "list": true
+  },
+  "switchToAcme": {
+    "popover": [
+      {
+        "t": "All tenantsPlatform-wide reads · no tena",
+        "disabled": false
+      },
+      {
+        "t": "Acme LogisticsACME",
+        "disabled": false
+      },
+      {
+        "t": "Blue Line CabsBLUE",
+        "disabled": false
+      },
+      {
+        "t": "Old Co TransportOLDCO · INACTIVE",
+        "disabled": true
+      }
+    ],
+    "switchCall": [
+      {
+        "body": {
+          "tenantId": 1
+        },
+        "tenantHeader": null
+      }
+    ],
+    "after": {
+      "switcher": "Tenant context: Acme Logistics. Change tenant",
+      "notice": false,
+      "enabledCreate": [
+        "New driver"
+      ],
+      "disabledCreate": [],
+      "showsAcme": true,
+      "showsAllTenantDriver": false
+    },
+    "driversRequestHeader": [
+      "1"
+    ],
+    "authCalls": 0
+  },
+  "reloadResetsSelection": {
+    "switcher": "Tenant context: All tenants. Change tenant",
+    "badge": "Platform · all tenants"
+  },
+  "dashboardAcme": {
+    "badge": "Tenant · Acme Logistics",
+    "vehiclesAcme": true,
+    "staleAll155": false,
+    "overviewHeaders": [
+      null,
+      "1"
+    ],
+    "tenantListHeaders": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "meHeaders": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "switchFailure": {
+    "before": "Working in Acme Logistics",
+    "after": "Working in Acme Logistics",
+    "error": "This tenant can't be selected: it doesn't exist or isn't active.",
+    "switcher": "Tenant context: Acme Logistics. Change tenant",
+    "calls": [
+      "POST /platform/switch-tenant {\"tenantId\":2}"
+    ]
+  },
+  "tenantsPage": {
+    "searchBlueRows": [
+      "Blue Line Cabs"
+    ],
+    "inactiveFilterRows": [
+      "Old Co Transport"
+    ]
+  },
+  "clear": {
+    "context": "All tenants (platform-wide)",
+    "switcher": "Tenant context: All tenants. Change tenant",
+    "driversHeaders": [
+      null
+    ],
+    "notice": true,
+    "disabledCreate": [
+      "New driver (disabled)"
+    ],
+    "staleAcme": false
+  },
+  "responsive": {
+    "320x640": {
+      "tenants": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [],
+        "switcher": {
+          "x": 126,
+          "w": 40,
+          "h": 40,
+          "inView": true
+        }
+      },
+      "switcherOpen": {
+        "overflow": false,
+        "popover": {
+          "left": 0,
+          "right": 294,
+          "w": 294,
+          "inView": true
+        },
+        "small": []
+      },
+      "drivers": {
+        "overflow": false,
+        "clipped": 0
+      }
+    },
+    "375x812": {
+      "tenants": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [],
+        "switcher": {
+          "x": 149,
+          "w": 62,
+          "h": 40,
+          "inView": true
+        }
+      },
+      "switcherOpen": {
+        "overflow": false,
+        "popover": {
+          "left": 0,
+          "right": 340,
+          "w": 340,
+          "inView": true
+        },
+        "small": []
+      },
+      "drivers": {
+        "overflow": false,
+        "clipped": 0
+      }
+    },
+    "390x844": {
+      "tenants": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [],
+        "switcher": {
+          "x": 164,
+          "w": 62,
+          "h": 40,
+          "inView": true
+        }
+      },
+      "switcherOpen": {
+        "overflow": false,
+        "popover": {
+          "left": 0,
+          "right": 340,
+          "w": 340,
+          "inView": true
+        },
+        "small": []
+      },
+      "drivers": {
+        "overflow": false,
+        "clipped": 0
+      }
+    },
+    "768x1024": {
+      "tenants": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [],
+        "switcher": {
+          "x": 424,
+          "w": 132,
+          "h": 40,
+          "inView": true
+        }
+      },
+      "switcherOpen": {
+        "overflow": false,
+        "popover": {
+          "left": 216,
+          "right": 556,
+          "w": 340,
+          "inView": true
+        },
+        "small": []
+      },
+      "drivers": {
+        "overflow": false,
+        "clipped": 0
+      }
+    },
+    "1024x768": {
+      "tenants": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [],
+        "switcher": {
+          "x": 676,
+          "w": 132,
+          "h": 40,
+          "inView": true
+        }
+      },
+      "switcherOpen": {
+        "overflow": false,
+        "popover": {
+          "left": 468,
+          "right": 808,
+          "w": 340,
+          "inView": true
+        },
+        "small": []
+      },
+      "drivers": {
+        "overflow": false,
+        "clipped": 0
+      }
+    },
+    "1440x900": {
+      "tenants": {
+        "overflow": false,
+        "clipped": 0,
+        "small": [],
+        "switcher": {
+          "x": 908,
+          "w": 132,
+          "h": 40,
+          "inView": true
+        }
+      },
+      "switcherOpen": {
+        "overflow": false,
+        "popover": {
+          "left": 700,
+          "right": 1040,
+          "w": 340,
+          "inView": true
+        },
+        "small": []
+      },
+      "drivers": {
+        "overflow": false,
+        "clipped": 0
+      }
+    }
+  },
+  "tenantAdmin": {
+    "landing": "/drive-vision/overview",
+    "switcher": null,
+    "tenantsPage": "You don't have access to this page\n\nYour account's permissio",
+    "drivers": {
+      "ownTenant": false,
+      "enabledCreate": [
+        "New driver"
+      ],
+      "notice": false
+    },
+    "tenantHeadersSent": 0,
+    "platformCalls": 0
+  },
+  "anyTenantQuery": 0
+}

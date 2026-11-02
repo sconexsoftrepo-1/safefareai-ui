@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { getTenantSelection, subscribeTenantSelection, tenantScopeKey } from "../api/tenant-context";
 
 /**
  * Minimal data-fetching hook for API reads.
@@ -8,6 +9,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * - Ignores responses for a superseded key or an unmounted component (no stale overwrites).
  * - `refetch` keeps the current data on screen while the new request runs.
  * Pass `key = null` to skip fetching. The fetcher must depend only on what the key encodes.
+ * - Tenant isolation (Phase 5): every key is prefixed with the Safe-Fare Admin's tenant scope ("all" or
+ *   "t:<id>"). A tenant switch changes every key, so old-tenant data is hidden at once, the new tenant is
+ *   fetched, and a late response from the previous tenant can never be shown.
  */
 export interface ApiQuery<T> {
   data: T | undefined;
@@ -31,7 +35,15 @@ interface Settled<T> {
   at: number;
 }
 
-export function useApiQuery<T>(key: string | null, fetcher: () => Promise<T>): ApiQuery<T> {
+const scopeSnapshot = () => tenantScopeKey(getTenantSelection());
+const serverScope = () => "all";
+
+/** The tenant-scoped form of a query key (exported for tests). */
+export const scopedKey = (scope: string, key: string | null) => (key === null ? null : `${scope}|${key}`);
+
+export function useApiQuery<T>(rawKey: string | null, fetcher: () => Promise<T>): ApiQuery<T> {
+  const scope = useSyncExternalStore(subscribeTenantSelection, scopeSnapshot, serverScope);
+  const key = scopedKey(scope, rawKey);
   const fetcherRef = useRef(fetcher);
   const [nonce, setNonce] = useState(0);
   const [settled, setSettled] = useState<Settled<T> | null>(null);

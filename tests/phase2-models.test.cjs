@@ -86,7 +86,7 @@ test("user request bodies omit empty optionals and keep the parent on edit", () 
 });
 
 test("role options: assignable only, but the user's current role stays listed", () => {
-  const roles = [{ id: 1, code: "PLATFORM_ADMIN", assignable: false }, { id: 2, code: "OPS", description: "Operations" }, { id: 3, code: "X", assignable: true }, { code: "NOID" }];
+  const roles = [{ id: 1, code: "ADMIN", assignable: false }, { id: 2, code: "OPS", description: "Operations" }, { id: 3, code: "X", assignable: true }, { code: "NOID" }];
   same(users.roleOptions(roles).map((o) => o.value), ["2", "3"]);
   same(users.roleOptions(roles, 1).map((o) => o.value), ["1", "2", "3"]);
   assert.equal(users.roleOptions(roles)[0].label, "OPS · Operations");

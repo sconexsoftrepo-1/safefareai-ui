@@ -7,7 +7,7 @@ import { Menu, Sparkles } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePreferences } from "@/features/drive-vision/hooks/use-preferences";
-import { canUseFeature } from "@/features/drive-vision/access/access-policy";
+import { canAccessPlatform, canUseFeature } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { findNavGroup } from "../navigation/nav-config";
 import { useNavGroups } from "../navigation/use-nav";
@@ -15,6 +15,7 @@ import { BrandMark } from "./sidebar";
 import { GlobalSearchTrigger } from "./global-search";
 import { NotificationCenter } from "./notification-center";
 import { UserProfileMenu } from "./user-profile-menu";
+import { TenantSwitcher } from "./tenant-switcher";
 import { useShell } from "./shell-context";
 import { HEADER_CONTROL, HEADER_ICON, HEADER_PILL } from "./header-styles";
 import { transitions } from "../shared/motion";
@@ -59,7 +60,10 @@ function SectionNav() {
 export function DriveVisionTopbar({ onOpenNav, onOpenSearch }: { onOpenNav: () => void; onOpenSearch: () => void }) {
   const prefs = usePreferences();
   const { assistantOpen, setAssistantOpen } = useShell();
-  const assistantAllowed = canUseFeature(useAccess(), "assistant");
+  const access = useAccess();
+  const assistantAllowed = canUseFeature(access, "assistant");
+  // The Safe-Fare Admin bar also holds the tenant switcher: glyph only below sm so it fits phones (390 px).
+  const compactBrand = canAccessPlatform(access);
 
   return (
     <header className="sticky top-0 z-40 bg-canvas/80 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/65">
@@ -72,13 +76,15 @@ export function DriveVisionTopbar({ onOpenNav, onOpenSearch }: { onOpenNav: () =
         </div>
         {/* Mobile: full lockup when there is room; glyph only on very narrow phones. */}
         <span className="md:hidden">
-          <BrandMark wordClassName="max-[379px]:hidden" />
+          <BrandMark wordClassName={compactBrand ? "max-sm:hidden" : "max-[379px]:hidden"} />
         </span>
 
         <div className="flex min-w-0 flex-1 justify-center">
           <SectionNav />
         </div>
 
+        {/* Safe-Fare Admin only (renders nothing for anyone else). */}
+        <TenantSwitcher />
         <div className={cn(HEADER_PILL, "gap-0.5 px-1.5")}>
           <GlobalSearchTrigger onOpen={onOpenSearch} />
           {prefs.assistantEnabled && assistantAllowed ? (

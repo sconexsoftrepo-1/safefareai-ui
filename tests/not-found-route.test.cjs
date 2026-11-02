@@ -12,8 +12,11 @@ const { computeAccess, decideRoute, screenForPath } = realm.require("features/dr
 const same = (got, want) => assert.equal(JSON.stringify(got), JSON.stringify(want));
 
 const APP_DIR = path.join(__dirname, "..", "src", "app", "drive-vision");
-const admin = computeAccess({ id: 1, role: { id: 1, code: "PLATFORM_ADMIN" }, permissions: [] }, null);
-const unmapped = computeAccess({ id: 2, role: { id: 2, code: "UNMAPPED" }, permissions: [] }, null);
+const { readIdentity } = realm.require("features/drive-vision/access/identity");
+const { IDENTITIES } = require("./helpers/identities.cjs");
+// V10 identities (GET /me/permissions): a tenant ADMIN, and an identity with no permission at all.
+const admin = computeAccess(readIdentity(IDENTITIES.tenantAdmin));
+const unmapped = computeAccess(readIdentity({ userId: 2, platform: false, roleCode: "UNMAPPED", permissions: [] }));
 
 /** Every page.tsx under app/drive-vision as a URL, dynamic segments filled with "1"; catch-alls skipped. */
 function pageRoutes(dir = APP_DIR, url = "/drive-vision") {
@@ -54,5 +57,5 @@ test("unmatched sub-paths of a screen stay behind that screen's grant", () => {
   // Admin: allowed, so the catch-all's not-found.tsx renders (inside the shell).
   same(decideRoute("authenticated", admin, "/drive-vision/vehicles/1/nope"), { kind: "allow", screen: "vehicles" });
   // No grant: the access-denied panel wins; the not-found page never mounts.
-  same(decideRoute("authenticated", unmapped, "/drive-vision/users/nope"), { kind: "forbidden", screen: "users", reason: "no-role" });
+  same(decideRoute("authenticated", unmapped, "/drive-vision/users/nope"), { kind: "forbidden", screen: "users", reason: "no-permissions" });
 });

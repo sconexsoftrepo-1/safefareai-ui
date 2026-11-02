@@ -23,6 +23,9 @@ export function useFleetReference({ protocols = false }: { protocols?: boolean }
     return {
       groups: groupsQ.data?.items ?? [],
       groupsQuery: groupsQ,
+      /** The device-model catalogue (undefined until loaded / on failure). */
+      models: modelsQ.data?.items,
+      modelsError: modelsQ.error,
       group: (id?: number) => (id === undefined ? "—" : (groupName.get(id) ?? `Group #${id}`)),
       model: (id?: number) => (id === undefined ? "—" : (modelName.get(id) ?? `Model #${id}`)),
       objectType: (id?: number) => (id === undefined ? "—" : (typeName.get(id) ?? `Type #${id}`)),

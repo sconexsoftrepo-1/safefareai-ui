@@ -1,0 +1,373 @@
+{
+  "rolesList": [
+    "ADMIN",
+    "FLEET_OWNER"
+  ],
+  "initial": {
+    "summary": "4 assigned of 15 available · 4 selected Reload",
+    "checked": [
+      "alarm.handle",
+      "alarm.read",
+      "device.read",
+      "driver.read"
+    ],
+    "disabledBoxes": 0,
+    "total": 15,
+    "groups": [
+      {
+        "g": "alarm",
+        "count": "2/5 selected",
+        "checked": false,
+        "indeterminate": true,
+        "disabled": false
+      },
+      {
+        "g": "device",
+        "count": "1/4 selected",
+        "checked": false,
+        "indeterminate": true,
+        "disabled": false
+      },
+      {
+        "g": "driver",
+        "count": "1/4 selected",
+        "checked": false,
+        "indeterminate": true,
+        "disabled": false
+      },
+      {
+        "g": "role",
+        "count": "0/1 selected",
+        "checked": false,
+        "indeterminate": false,
+        "disabled": false
+      },
+      {
+        "g": "tenant",
+        "count": "0/1 selected",
+        "checked": false,
+        "indeterminate": false,
+        "disabled": false
+      }
+    ],
+    "pending": null,
+    "result": null,
+    "selectAll": "Select all"
+  },
+  "single": {
+    "summary": "4 assigned of 15 available · 4 selected (+1 −1) Reload",
+    "checked": [
+      "alarm.handle",
+      "alarm.read",
+      "alarm.rule.create",
+      "driver.read"
+    ],
+    "disabledBoxes": 0,
+    "total": 15,
+    "groups": [
+      {
+        "g": "alarm",
+        "count": "3/5 selected",
+        "checked": false,
+        "indeterminate": true,
+        "disabled": false
+      },
+      {
+        "g": "device",
+        "count": "0/4 selected",
+        "checked": false,
+        "indeterminate": false,
+        "disabled": false
+      },
+      {
+        "g": "driver",
+        "count": "1/4 selected",
+        "checked": false,
+        "indeterminate": true,
+        "disabled": false
+      },
+      {
+        "g": "role",
+        "count": "0/1 selected",
+        "checked": false,
+        "indeterminate": false,
+        "disabled": false
+      },
+      {
+        "g": "tenant",
+        "count": "0/1 selected",
+        "checked": false,
+        "indeterminate": false,
+        "disabled": false
+      }
+    ],
+    "pending": "1  1 pending Discard Review changes",
+    "result": null,
+    "selectAll": "Select all"
+  },
+  "moduleSelect": {
+    "g": "device",
+    "count": "4/4 selected",
+    "checked": true,
+    "indeterminate": false,
+    "disabled": false
+  },
+  "moduleDeselect": {
+    "g": "device",
+    "count": "0/4 selected",
+    "checked": false,
+    "indeterminate": false,
+    "disabled": false
+  },
+  "search": {
+    "visible": 3,
+    "button": "Select shown",
+    "preserved": true,
+    "added": [
+      "alarm.rule.delete",
+      "alarm.rule.update"
+    ]
+  },
+  "selectAll": {
+    "checked": 15,
+    "total": 15
+  },
+  "deselectAll": {
+    "checked": 0,
+    "pending": "0  4 pending Discard Review changes"
+  },
+  "discarded": {
+    "checked": [
+      "alarm.handle",
+      "alarm.read",
+      "device.read",
+      "driver.read"
+    ],
+    "pending": null
+  },
+  "review": "2 to add · 1 to remove\n\nAdd (2): alarm.rule.create, alarm.rule.update\n\nRemove (1): driver.read\n\nHolders of this role lose frontend access tied to: driver.read.\n\nAdditions are sent first, then removals. The list is re-read from the server afterwards. Cancel returns to your selection unchanged.",
+  "afterCancel": "2  1 pending Discard Review changes",
+  "save": {
+    "requests": [
+      "POST /roles/5/permissions {\"permissionCodes\":[\"alarm.rule.create\",\"alarm.rule.update\"]} tenant=null",
+      "DELETE /roles/5/permissions?codes=driver.read tenant=null",
+      "GET /roles/5/permissions tenant=null",
+      "GET /roles tenant=null"
+    ],
+    "state": {
+      "summary": "5 assigned of 15 available · 5 selected Reload",
+      "checked": [
+        "alarm.handle",
+        "alarm.read",
+        "alarm.rule.create",
+        "alarm.rule.update",
+        "device.read"
+      ],
+      "disabledBoxes": 0,
+      "total": 15,
+      "groups": [
+        {
+          "g": "alarm",
+          "count": "4/5 selected",
+          "checked": false,
+          "indeterminate": true,
+          "disabled": false
+        },
+        {
+          "g": "device",
+          "count": "1/4 selected",
+          "checked": false,
+          "indeterminate": true,
+          "disabled": false
+        },
+        {
+          "g": "driver",
+          "count": "0/4 selected",
+          "checked": false,
+          "indeterminate": false,
+          "disabled": false
+        },
+        {
+          "g": "role",
+          "count": "0/1 selected",
+          "checked": false,
+          "indeterminate": false,
+          "disabled": false
+        },
+        {
+          "g": "tenant",
+          "count": "0/1 selected",
+          "checked": false,
+          "indeterminate": false,
+          "disabled": false
+        }
+      ],
+      "pending": null,
+      "result": "Permissions updated.",
+      "selectAll": "Select all"
+    }
+  },
+  "partial": {
+    "requests": [
+      "POST /roles/5/permissions",
+      "DELETE /roles/5/permissions?codes=alarm.handle"
+    ],
+    "state": {
+      "summary": "6 assigned of 15 available · 5 selected (+0 −1) Reload",
+      "checked": [
+        "alarm.read",
+        "alarm.rule.create",
+        "alarm.rule.update",
+        "device.create",
+        "device.read"
+      ],
+      "disabledBoxes": 0,
+      "total": 15,
+      "groups": [
+        {
+          "g": "alarm",
+          "count": "3/5 selected",
+          "checked": false,
+          "indeterminate": true,
+          "disabled": false
+        },
+        {
+          "g": "device",
+          "count": "2/4 selected",
+          "checked": false,
+          "indeterminate": true,
+          "disabled": false
+        },
+        {
+          "g": "driver",
+          "count": "0/4 selected",
+          "checked": false,
+          "indeterminate": false,
+          "disabled": false
+        },
+        {
+          "g": "role",
+          "count": "0/1 selected",
+          "checked": false,
+          "indeterminate": false,
+          "disabled": false
+        },
+        {
+          "g": "tenant",
+          "count": "0/1 selected",
+          "checked": false,
+          "indeterminate": false,
+          "disabled": false
+        }
+      ],
+      "pending": "0  1 pending Discard Review changes",
+      "result": "Partly saved: added 1; removing failed. The list below is the server's current state.  Removal refused (MOCKED)  Your unsaved selection is kept below — review and save again, or discard it.",
+      "selectAll": "Select all"
+    },
+    "changedView": 1
+  },
+  "protected": {
+    "readOnly": "Read-only: This role has full access (every permission); there is no list to edit.",
+    "disabledBoxes": 15,
+    "total": 15,
+    "selectAll": null,
+    "groupDisabled": true
+  },
+  "catalog": {
+    "groups": [
+      "alarm 5",
+      "device 4",
+      "driver 4",
+      "role 1",
+      "tenant 1"
+    ],
+    "create": [
+      "/permissions {\"code\":\"report.export\",\"description\":\"Export reports (synthetic)\",\"scope\":\"TENANT\"}"
+    ],
+    "roleWrites": 0,
+    "inEditor": {
+      "present": true,
+      "checked": false
+    }
+  },
+  "responsive": {
+    "320x568": {
+      "editor": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "review": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "390x844": {
+      "editor": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "review": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "768x1024": {
+      "editor": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "review": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "1024x768": {
+      "editor": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "review": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "1366x768": {
+      "editor": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "review": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "1920x1080": {
+      "editor": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "review": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    }
+  },
+  "unauthorized": {
+    "page": "You don't have access to this page\n\nYour",
+    "calls": 0
+  },
+  "anyTenantHeaderOnRoleAdmin": 0,
+  "anyReplace": 0
+}

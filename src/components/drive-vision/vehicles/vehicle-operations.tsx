@@ -4,6 +4,8 @@ import Link from "next/link";
 import { insightService } from "@/features/drive-vision/api/insight-service";
 import { operationsService } from "@/features/drive-vision/api/operations-service";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
+import { canViewWidget } from "@/features/drive-vision/access/access-policy";
+import { useAccess } from "@/features/drive-vision/access/use-access";
 import { formatDateTime, formatKm, formatNumber, formatSeconds } from "@/features/drive-vision/utils/format";
 import { Panel, PanelHeader } from "../shared/panel";
 import { LoadingSkeleton } from "../shared/feedback";
@@ -17,7 +19,9 @@ import { StatusBadge } from "../shared/status-badge";
  */
 export function VehicleAssignmentPanel({ id }: { id: number }) {
   const summaryQ = useApiQuery(`vehicle:${id}:summary`, () => insightService.vehicleSummary(id));
-  const assignQ = useApiQuery(`vehicle:${id}:assignments`, () => operationsService.deviceAssignments(id));
+  // GET /devices/{id}/driver-assignments needs driver.read (V10); without it the request isn't sent.
+  const canAssignments = canViewWidget(useAccess(), "vehicles.driverAssignments");
+  const assignQ = useApiQuery(canAssignments ? `vehicle:${id}:assignments` : null, () => operationsService.deviceAssignments(id));
   const s = summaryQ.data?.data;
   const current = s?.currentDriver;
   return (
@@ -63,7 +67,11 @@ export function VehicleAssignmentPanel({ id }: { id: number }) {
           </dl>
         )}
         <h3 className="mt-4 mb-1 text-[12px] font-semibold text-ink-muted">Assignment history</h3>
-        {assignQ.error ? (
+        {!canAssignments ? (
+          <p className="text-xs text-ink-muted" data-testid="vehicle-assignments-denied">
+            Needs driver.read.
+          </p>
+        ) : assignQ.error ? (
           <p className="text-xs text-danger">Unavailable</p>
         ) : !assignQ.data ? (
           <LoadingSkeleton variant="list" rows={2} />

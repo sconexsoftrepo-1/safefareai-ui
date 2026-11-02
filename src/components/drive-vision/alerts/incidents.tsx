@@ -231,7 +231,9 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                 <HandlingBadge alert={alert} />
               </DetailRow>
               <DetailRow label="Kind">{alert.kind ?? "—"}</DetailRow>
-              <DetailRow label="Driver">{alert.driverName ?? "—"}</DetailRow>
+              <DetailRow label="Driver (server)">
+                <span title="As reported by the server for this alert. The app never derives an alarm's driver from the vehicle's current assignment.">{alert.driverName ?? "—"}</span>
+              </DetailRow>
               <DetailRow label="Assignee">{alert.assigneeName ?? "—"}</DetailRow>
               <DetailRow label="Speed">{typeof alert.speedKmh === "number" ? `${alert.speedKmh} km/h` : "—"}</DetailRow>
               <DetailRow label="Location">{alert.address ?? (typeof alert.lat === "number" && typeof alert.lon === "number" ? `${alert.lat.toFixed(5)}, ${alert.lon.toFixed(5)}` : "—")}</DetailRow>
