@@ -96,6 +96,14 @@ export const fleetService = {
   },
 
   /**
+   * POST /api/v1/devices {DeviceRequest} → ApiResponseDeviceDto (`device.create`). Registers the device and may call
+   * the vendor (409 CONFIRMATION_REQUIRED for a chargeable registration; 502/504 = outcome unclear). Tenant-scoped.
+   */
+  async createDevice(body: DeviceRequest): Promise<DeviceDto> {
+    return (await api.post<DeviceDto>("/devices", body)).data ?? {};
+  },
+
+  /**
    * PUT /api/v1/devices/{id} {DeviceRequest} → ApiResponseDeviceDto (`device.update`). Full replace; may call the
    * vendor (502/503/504 VENDOR_*; 504 VENDOR_OUTCOME_UNKNOWN = re-read before retrying). Tenant-scoped (Phase 5).
    */

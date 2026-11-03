@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCheck, CircleSlash, FileVideo, Info, MessageSquarePlus, RotateCcw, ShieldCheck } from "lucide-react";
+import { CheckCheck, CircleSlash, FileVideo, MessageSquarePlus, RotateCcw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -295,9 +295,6 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                 </ol>
               )}
             </section>
-            <p className="flex items-start gap-1.5 text-xs text-ink-muted">
-              <Info className="mt-px size-3.5 shrink-0" aria-hidden /> The server decides which actions are allowed for the current status. Assigning alerts isn&apos;t available yet (the API contract for it is unclear).
-            </p>
           </div>
         )}
       </SlideOverPanel>

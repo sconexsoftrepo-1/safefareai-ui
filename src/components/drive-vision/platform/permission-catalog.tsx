@@ -21,7 +21,9 @@ import { StatusBadge } from "../shared/status-badge";
 import { SlideOverPanel } from "../shared/slide-over-panel";
 import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
+import { SegmentedControl } from "../shared/filter-bar";
 import { toast } from "../shared/toast-provider";
+import { RolePermissionMatrix } from "./role-permission-matrix";
 import { ALL, DESCRIPTION_MAX, PERMISSION_CODE_MAX, PERMISSION_SCOPES, codePrefix, filterPermissions, frontendUsage, groupByPrefix, scopeOptions, validatePermission, type FrontendUse } from "./role-permission-model";
 
 const describeUse = (u: FrontendUse) => `${u.kind} ${u.key}`;
@@ -34,14 +36,18 @@ function Usage({ code }: { code: string }) {
 
 /**
  * Permission Catalogue (Phase 7; server routePath /platform/permissions). Safe-Fare Admin with
- * permission.manage (platformOnly). Reads GET /permissions without a tenant header; create, edit
- * (description, scope) and delete use the V10 catalogue operations. Scope values TENANT | PLATFORM come from
- * the V10 request schemas; grouping uses the code prefix (derived from the code, not a backend module).
+ * permission.manage (platformOnly). Two views:
+ * - Role permissions (default): choose a role and tick its permissions in a module grid; Save sends the whole
+ *   list with PUT /roles/{id}/permissions (see role-permission-matrix.tsx).
+ * - Catalogue: reads GET /permissions without a tenant header; create, edit (description, scope) and delete use
+ *   the V10 catalogue operations. Scope values TENANT | PLATFORM come from the V10 request schemas; grouping
+ *   uses the code prefix (derived from the code, not a backend module).
  */
 export function PermissionCatalog() {
   const access = useAccess();
   const can = { create: canPerform(access, "permissions.create"), update: canPerform(access, "permissions.update"), del: canPerform(access, "permissions.delete") };
-  const listQ = useApiQuery("platform-permissions:list", () => roleAdminService.listPermissions());
+  const [tab, setTab] = useState<"roles" | "catalogue">("roles");
+  const listQ = useApiQuery(tab === "catalogue" ? "platform-permissions:list" : null, () => roleAdminService.listPermissions());
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState(ALL);
   const [prefix, setPrefix] = useState(ALL);
@@ -73,122 +79,141 @@ export function PermissionCatalog() {
         description={
           <span className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand-deep">Platform configuration · not tenant-scoped</span>
-            {listQ.data ? <span>{formatNumber(perms.length)} permissions</span> : null}
-            {listQ.data && listQ.updatedAt ? <span>Updated {formatTime(new Date(listQ.updatedAt))}</span> : null}
+            {tab === "catalogue" && listQ.data ? <span>{formatNumber(perms.length)} permissions</span> : null}
+            {tab === "catalogue" && listQ.data && listQ.updatedAt ? <span>Updated {formatTime(new Date(listQ.updatedAt))}</span> : null}
           </span>
         }
         actions={
-          <>
-            <Button variant="outline" onClick={listQ.refetch} disabled={listQ.loading || listQ.refreshing} aria-label="Refresh permissions">
-              <RefreshCw className={listQ.refreshing ? "animate-spin" : undefined} /> Refresh
-            </Button>
-            {can.create ? (
-              <Button onClick={() => setForm({ mode: "create" })}>
-                <Plus /> New permission
+          tab === "catalogue" ? (
+            <>
+              <Button variant="outline" onClick={listQ.refetch} disabled={listQ.loading || listQ.refreshing} aria-label="Refresh permissions">
+                <RefreshCw className={listQ.refreshing ? "animate-spin" : undefined} /> Refresh
               </Button>
-            ) : null}
-          </>
+              {can.create ? (
+                <Button onClick={() => setForm({ mode: "create" })}>
+                  <Plus /> New permission
+                </Button>
+              ) : null}
+            </>
+          ) : undefined
         }
       />
-      {listQ.error && listQ.data ? (
-        <p className="mb-3 rounded-xl bg-warning-soft px-3 py-2 text-[13px] text-warning" role="status">
-          Refresh failed — showing the catalogue from {listQ.updatedAt ? formatTime(new Date(listQ.updatedAt)) : "earlier"}.
-        </p>
-      ) : null}
+      <SegmentedControl
+        label="Permission view"
+        className="mb-3"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "roles", label: "Role permissions" },
+          { value: "catalogue", label: "Catalogue" },
+        ]}
+      />
 
-      <div className="mb-3 flex flex-col gap-2 @3xl:flex-row @3xl:items-center">
-        <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-line/70 bg-surface px-3 shadow-card">
-          <Search className="size-4 text-ink-subtle" aria-hidden />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search code or description" aria-label="Search permissions" className="h-11 min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
-        </label>
-        <div role="radiogroup" aria-label="Filter by scope" className="flex flex-wrap gap-1.5">
-          {[{ value: ALL, label: "All scopes", count: perms.length }, ...scopes].map((o) => (
-            <button key={o.value || "none"} type="button" role="radio" aria-checked={scope === o.value} onClick={() => setScope(o.value)} className={cn("min-h-10 rounded-full border px-3 text-[12.5px] font-medium", scope === o.value ? "border-ink bg-ink text-white" : "border-line/70 bg-surface text-ink-muted hover:text-ink")}>
-              {o.label} <span className="tabular opacity-70">{o.count}</span>
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center gap-2 text-[12.5px] text-ink-muted">
-          Code prefix
-          <select value={prefix} onChange={(e) => setPrefix(e.target.value)} aria-label="Filter by code prefix" className="h-10 rounded-xl border border-line/70 bg-surface px-2 text-[13px] text-ink">
-            <option value={ALL}>All</option>
-            {prefixes.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {tab === "roles" ? <RolePermissionMatrix /> : null}
 
-      {listQ.error && !listQ.data ? (
-        <Panel>
-          <ApiErrorState error={listQ.error} onRetry={listQ.refetch} title="Couldn't load the permission catalogue" />
-        </Panel>
-      ) : !listQ.data ? (
-        <Panel>
-          <LoadingSkeleton variant="table" rows={6} />
-        </Panel>
-      ) : perms.length === 0 ? (
-        <Panel>
-          <EmptyState icon={BookKey} title="No permissions returned" description="The server returned an empty catalogue." />
-        </Panel>
-      ) : shown === 0 ? (
-        <Panel>
-          <EmptyState icon={Search} title="No matching permissions" description="Change the search or filters." />
-        </Panel>
-      ) : (
-        <div className="space-y-3" data-testid="permission-groups">
-          {groups.map((g) => (
-            <Panel key={g.prefix} className="overflow-hidden">
-              <details open>
-                <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 px-4 text-[13px] font-semibold text-ink">
-                  <span className="font-mono">{g.prefix}</span>
-                  <span className="text-xs font-normal text-ink-muted tabular">{g.items.length}</span>
-                </summary>
-                <ul className="divide-y divide-line/70 border-t border-line/70">
-                  {g.items.map((p) => (
-                    <li key={p.code} className="flex flex-col gap-2 px-4 py-2.5 @3xl:flex-row @3xl:items-center">
-                      <div className="min-w-0 flex-1">
-                        <p className="flex flex-wrap items-center gap-1.5">
-                          <span className="font-mono text-[13px] text-ink">{p.code}</span>
-                          {p.scope ? (
-                            <StatusBadge size="sm" tone={p.scope.toUpperCase() === "PLATFORM" ? "brand" : "neutral"}>
-                              {p.scope}
-                            </StatusBadge>
-                          ) : (
-                            <StatusBadge size="sm" tone="warning">
-                              no scope
-                            </StatusBadge>
-                          )}
-                        </p>
-                        <p className="text-xs text-ink-muted">{p.description?.trim() || <span className="text-ink-subtle">No description provided by the backend.</span>}</p>
-                        <p className="text-[11.5px] text-ink-subtle">
-                          <Usage code={p.code!} />
-                        </p>
-                      </div>
-                      {can.update || can.del ? (
-                        <div className="flex shrink-0 gap-1.5">
-                          {can.update ? (
-                            <Button size="sm" variant="outline" className="min-h-9" onClick={() => setForm({ mode: "edit", perm: p })} aria-label={`Edit ${p.code}`}>
-                              <Pencil /> Edit
-                            </Button>
-                          ) : null}
-                          {can.del ? (
-                            <Button size="sm" variant="outline" className="min-h-9 text-danger" onClick={() => setDeleting(p)} aria-label={`Delete ${p.code}`}>
-                              <Trash2 /> Delete
-                            </Button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </details>
+      {tab === "catalogue" ? (
+        <>
+          {listQ.error && listQ.data ? (
+            <p className="mb-3 rounded-xl bg-warning-soft px-3 py-2 text-[13px] text-warning" role="status">
+              Refresh failed — showing the catalogue from {listQ.updatedAt ? formatTime(new Date(listQ.updatedAt)) : "earlier"}.
+            </p>
+          ) : null}
+
+          <div className="mb-3 flex flex-col gap-2 @3xl:flex-row @3xl:items-center">
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-line/70 bg-surface px-3 shadow-card">
+              <Search className="size-4 text-ink-subtle" aria-hidden />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search code or description" aria-label="Search permissions" className="h-11 min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
+            </label>
+            <div role="radiogroup" aria-label="Filter by scope" className="flex flex-wrap gap-1.5">
+              {[{ value: ALL, label: "All scopes", count: perms.length }, ...scopes].map((o) => (
+                <button key={o.value || "none"} type="button" role="radio" aria-checked={scope === o.value} onClick={() => setScope(o.value)} className={cn("min-h-10 rounded-full border px-3 text-[12.5px] font-medium", scope === o.value ? "border-ink bg-ink text-white" : "border-line/70 bg-surface text-ink-muted hover:text-ink")}>
+                  {o.label} <span className="tabular opacity-70">{o.count}</span>
+                </button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-[12.5px] text-ink-muted">
+              Code prefix
+              <select value={prefix} onChange={(e) => setPrefix(e.target.value)} aria-label="Filter by code prefix" className="h-10 rounded-xl border border-line/70 bg-surface px-2 text-[13px] text-ink">
+                <option value={ALL}>All</option>
+                {prefixes.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {listQ.error && !listQ.data ? (
+            <Panel>
+              <ApiErrorState error={listQ.error} onRetry={listQ.refetch} title="Couldn't load the permission catalogue" />
             </Panel>
-          ))}
-        </div>
-      )}
+          ) : !listQ.data ? (
+            <Panel>
+              <LoadingSkeleton variant="table" rows={6} />
+            </Panel>
+          ) : perms.length === 0 ? (
+            <Panel>
+              <EmptyState icon={BookKey} title="No permissions returned" description="The server returned an empty catalogue." />
+            </Panel>
+          ) : shown === 0 ? (
+            <Panel>
+              <EmptyState icon={Search} title="No matching permissions" description="Change the search or filters." />
+            </Panel>
+          ) : (
+            <div className="space-y-3" data-testid="permission-groups">
+              {groups.map((g) => (
+                <Panel key={g.prefix} className="overflow-hidden">
+                  <details open>
+                    <summary className="flex min-h-11 cursor-pointer items-center justify-between gap-2 px-4 text-[13px] font-semibold text-ink">
+                      <span className="font-mono">{g.prefix}</span>
+                      <span className="text-xs font-normal text-ink-muted tabular">{g.items.length}</span>
+                    </summary>
+                    <ul className="divide-y divide-line/70 border-t border-line/70">
+                      {g.items.map((p) => (
+                        <li key={p.code} className="flex flex-col gap-2 px-4 py-2.5 @3xl:flex-row @3xl:items-center">
+                          <div className="min-w-0 flex-1">
+                            <p className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-[13px] text-ink">{p.code}</span>
+                              {p.scope ? (
+                                <StatusBadge size="sm" tone={p.scope.toUpperCase() === "PLATFORM" ? "brand" : "neutral"}>
+                                  {p.scope}
+                                </StatusBadge>
+                              ) : (
+                                <StatusBadge size="sm" tone="warning">
+                                  no scope
+                                </StatusBadge>
+                              )}
+                            </p>
+                            <p className="text-xs text-ink-muted">{p.description?.trim() || <span className="text-ink-subtle">No description provided by the backend.</span>}</p>
+                            <p className="text-[11.5px] text-ink-subtle">
+                              <Usage code={p.code!} />
+                            </p>
+                          </div>
+                          {can.update || can.del ? (
+                            <div className="flex shrink-0 gap-1.5">
+                              {can.update ? (
+                                <Button size="sm" variant="outline" className="min-h-9" onClick={() => setForm({ mode: "edit", perm: p })} aria-label={`Edit ${p.code}`}>
+                                  <Pencil /> Edit
+                                </Button>
+                              ) : null}
+                              {can.del ? (
+                                <Button size="sm" variant="outline" className="min-h-9 text-danger" onClick={() => setDeleting(p)} aria-label={`Delete ${p.code}`}>
+                                  <Trash2 /> Delete
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </Panel>
+              ))}
+            </div>
+          )}
+        </>
+      ) : null}
 
       {form ? <PermissionForm key={form.perm?.code ?? "new"} mode={form.mode} perm={form.perm} onClose={() => setForm(null)} onSaved={() => (listQ.refetch(), setForm(null))} /> : null}
 

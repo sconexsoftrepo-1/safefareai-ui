@@ -160,9 +160,6 @@ export function DeviceEditPanel({
               ))}
             </dl>
           </section>
-          <p className="text-xs text-ink-muted">
-            Activation and service expiry are managed by the vendor and can&apos;t be changed. A cleared field is omitted from the update; whether the server then clears it isn&apos;t documented.
-          </p>
         </form>
       )}
     </SlideOverPanel>

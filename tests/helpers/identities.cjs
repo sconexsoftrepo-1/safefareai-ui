@@ -15,6 +15,15 @@ const PLATFORM_CODES = ["tenant.all"];
 /** Every tenant-level code in the spec (all codes except the platform one). */
 const TENANT_CODES = ALL_CODES.filter((c) => !PLATFORM_CODES.includes(c));
 const READ_CODES = TENANT_CODES.filter((c) => /\.read$/.test(c) && c !== "own.data.read");
+/**
+ * Tenant-level codes outside V10, from a backend-supplied contract (docs/contracts/vehicle-api.txt, 2026-11-03).
+ * Modelled as held by the admins (every tenant permission) and, for vehicle.read, by the viewer.
+ */
+const VEHICLE_CODES = ["vehicle.read", "vehicle.create", "vehicle.update", "vehicle.delete"];
+/** Same, from docs/contracts/passenger-counting-api.txt (2026-11-03). */
+const SENSOR_CODES = ["sensor.read", "sensor.ingest"];
+/** Every off-spec code the access policy uses. */
+const OFF_SPEC_CODES = [...VEHICLE_CODES, ...SENSOR_CODES];
 
 const DRIVER_SCREENS = [
   ["my_work", "/driver/work", "My Work"],
@@ -30,9 +39,9 @@ const ids = (extra) => ({ userId: 1, homeTenantId: 10, tenantId: 10, roleId: 1, 
 
 const IDENTITIES = {
   /** Safe-Fare Admin: platform true, no home tenant, no tenant selected. */
-  platformAdmin: ids({ userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES }),
+  platformAdmin: ids({ userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: [...ALL_CODES, ...OFF_SPEC_CODES] }),
   /** Tenant ADMIN: same role code, platform false, every tenant permission. */
-  tenantAdmin: ids({ userId: 2, platform: false, roleId: 2, roleCode: "ADMIN", permissions: TENANT_CODES }),
+  tenantAdmin: ids({ userId: 2, platform: false, roleId: 2, roleCode: "ADMIN", permissions: [...TENANT_CODES, ...OFF_SPEC_CODES] }),
   /** Live DRIVER fixture (2026-10-29) with the driver menu routePaths as V10 screens. */
   driver: ids({ userId: 9, platform: false, roleId: 4, roleCode: "DRIVER", permissions: ["driver.app", "own.data.read"], screens: DRIVER_SCREENS }),
   /** Synthetic: a fleet owner managing drivers, dispatch and workforce, reading the fleet. */
@@ -40,7 +49,7 @@ const IDENTITIES = {
   /** Synthetic: a dispatcher — dispatch and read-only fleet context. */
   dispatcher: ids({ userId: 4, platform: false, roleId: 6, roleCode: "TEST_DISPATCHER", permissions: ["device.read", "driver.read", "dispatch.read", "dispatch.create", "dispatch.update", "workforce.read"] }),
   /** Synthetic: read-only viewer — every *.read code, no writes. */
-  viewer: ids({ userId: 5, platform: false, roleId: 7, roleCode: "TEST_VIEWER", permissions: READ_CODES }),
+  viewer: ids({ userId: 5, platform: false, roleId: 7, roleCode: "TEST_VIEWER", permissions: [...READ_CODES, "vehicle.read", "sensor.read"] }),
 };
 
-module.exports = { SPEC, ALL_CODES, TENANT_CODES, READ_CODES, PLATFORM_CODES, DRIVER_SCREENS, IDENTITIES };
+module.exports = { SPEC, ALL_CODES, TENANT_CODES, READ_CODES, VEHICLE_CODES, SENSOR_CODES, OFF_SPEC_CODES, PLATFORM_CODES, DRIVER_SCREENS, IDENTITIES };

@@ -361,7 +361,6 @@ function TrackPlayback() {
                         {typeof current?.batteryPct === "number" ? ` · battery ${current.batteryPct}%` : ""}
                       </p>
                     </div>
-                    <p className="ml-auto max-w-56 text-right text-[11px] text-ink-subtle">Steps through recorded points; positions between points aren&apos;t interpolated.</p>
                   </div>
                   <div className="relative mt-4">
                     <div className="relative h-2 rounded-full bg-surface-muted">
@@ -436,9 +435,6 @@ function TrackPlayback() {
                 ) : null}
               </>
             )}
-            <p className="flex items-start gap-1.5 px-1 text-xs text-ink-muted">
-              <Info className="mt-px size-3.5 shrink-0" aria-hidden /> The API provides raw track points, not detected trips, so trip lists, idle time and trip summaries aren&apos;t shown.
-            </p>
           </div>
         </div>
       )}

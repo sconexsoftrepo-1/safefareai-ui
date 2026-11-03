@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Info, RefreshCw, ShieldAlert, SquareTerminal } from "lucide-react";
+import { RefreshCw, ShieldAlert, SquareTerminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import type { CommandDefinitionDto, CommandDto } from "@/features/drive-vision/api/types";
@@ -212,10 +212,6 @@ function TypesPanel({ q, types }: { q: { error: unknown; data: unknown; refetch:
           </ul>
         </Panel>
       ))}
-      <p className="flex items-start gap-1.5 px-1 text-xs text-ink-muted">
-        <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-        <span>Catalogue from GET /commands/types. Field formats are listed by the server but sending stays off.</span>
-      </p>
     </div>
   );
 }

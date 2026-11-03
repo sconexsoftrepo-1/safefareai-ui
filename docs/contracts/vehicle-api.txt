@@ -1,0 +1,128 @@
+VEHICLE APIs - FRONTEND REFERENCE
+=================================
+(Backend contract supplied 2026-11-03. Not in docs/openapi/api-docs-v10.json; the frontend registers these
+operations and the vehicle.* permission codes as off-spec in the access policy and contract tests.)
+
+Base path : /api/v1/vehicles
+Auth      : Authorization: Bearer <accessToken>        (every endpoint)
+Format    : JSON (Content-Type: application/json). Times are ISO-8601 UTC, e.g. "2026-11-03T08:15:30.123Z".
+Screen    : menu_key "vehicles", route "/vehicle-registry" (separate from the Devices screen "vehicles_assets").
+
+Safe-Fare (platform) admin only: pick the tenant with ?tenantId=<id> or header X-Tenant-Id: <id>.
+Create / update / delete REQUIRE a tenant (400 TENANT_REQUIRED otherwise). Tenant users never send it.
+
+
+ENDPOINTS
+---------
+  Method  Path                          Permission       Purpose
+  POST    /api/v1/vehicles              vehicle.create   Register a vehicle
+  GET     /api/v1/vehicles              vehicle.read     List all vehicles of the organisation (paged, filters)
+  GET     /api/v1/vehicles/available    vehicle.read     ACTIVE vehicles with no device fitted (paged)
+  GET     /api/v1/vehicles/{id}         vehicle.read     Vehicle details
+  PUT     /api/v1/vehicles/{id}         vehicle.update   Edit a vehicle (replaces all fields)
+  DELETE  /api/v1/vehicles/{id}         vehicle.delete   Delete a vehicle
+
+Show / hide buttons with the user's permissions: vehicle.read, vehicle.create, vehicle.update, vehicle.delete.
+
+
+RESPONSE ENVELOPE (all endpoints)
+---------------------------------
+{
+  "code": 200,              // always equals the HTTP status
+  "msg": "Success",
+  "data": ...,              // object, array or null
+  "total": null,            // total row count on list endpoints, null otherwise
+  "extend": null            // error details on errors (see ERRORS)
+}
+
+
+VEHICLE OBJECT (used in every response)
+---------------------------------------
+{
+  "id": 12,
+  "vehicleNumber": "TS09AB1234",
+  "vehicleType": "BUS",
+  "make": "Ashok Leyland",
+  "model": "Viking",
+  "yearOfManufacture": 2022,
+  "chassisNumber": "MAT123X",
+  "engineNumber": "ENG98765",
+  "color": "White",
+  "status": "ACTIVE",               // ACTIVE | INACTIVE
+  "remarks": "School route 4",
+  "deviceAssigned": true,           // true when a tracking device is fitted
+  "device": {                       // null when no device is fitted
+    "id": 345,                      // device id (GET /api/v1/devices/{id})
+    "name": "Bus 4",
+    "terminalNo": "13265326521"
+  },
+  "createdAt": "2026-11-03T08:15:30.123Z",
+  "updatedAt": "2026-11-03T08:15:30.123Z"
+}
+Optional fields that are not set are returned as null.
+List rows (GET /vehicles and /vehicles/available) also carry "tenantId" and "tenantName".
+
+
+REQUEST BODY (POST and PUT - same body)
+---------------------------------------
+  Field              Type     Required  Rules
+  vehicleNumber      string   YES       1-20 chars. Trimmed and stored UPPER-CASE. Unique in the organisation.
+  vehicleType        string   no        max 50 (e.g. BUS, VAN, CAR - free text)
+  make               string   no        max 100
+  model              string   no        max 100
+  yearOfManufacture  number   no        1900-2100 and not later than next year
+  chassisNumber      string   no        max 60, stored UPPER-CASE
+  engineNumber       string   no        max 60, stored UPPER-CASE
+  color              string   no        max 30
+  status             string   no        "ACTIVE" or "INACTIVE"; default "ACTIVE"
+  remarks            string   no        max 500
+
+Note: "ts09ab1234", " TS09AB1234 " and "TS09AB1234" are the SAME number.
+
+
+1) POST /api/v1/vehicles  - Register a vehicle
+   Minimum request: { "vehicleNumber": "TS09AB1234" }
+   Response 201: VEHICLE OBJECT (deviceAssigned false, device null)
+   Errors: 400 VALIDATION_FAILED · 400 INVALID_VALUE (future year) · 400 TENANT_REQUIRED · 409 DUPLICATE
+           (number already registered, including deleted vehicles)
+
+2) GET /api/v1/vehicles  - List all vehicles
+   Query (all optional): keyword (number, make, model, chassis or engine; contains, case-insensitive),
+   status ACTIVE|INACTIVE, vehicleType (exact), assigned true|false, pageNumber (default 1),
+   pageSize (default 20, max 100). Sorted by vehicleNumber. `total` = all matching rows.
+
+3) GET /api/v1/vehicles/available  - ACTIVE vehicles with no device fitted
+   Query (optional): keyword, pageNumber, pageSize. Same shape as GET /vehicles.
+   For the "Vehicle" dropdown when adding / editing a device.
+
+4) GET /api/v1/vehicles/{id}  - Vehicle details
+   Errors: 404 NOT_FOUND (unknown, deleted, or another organisation's)
+
+5) PUT /api/v1/vehicles/{id}  - Edit a vehicle
+   Same body as POST. ALL fields are replaced: an omitted optional field is cleared; omitted status
+   becomes "ACTIVE". A vehicle with a device fitted can be set INACTIVE (the device stays fitted).
+   Errors: 400 VALIDATION_FAILED / INVALID_VALUE · 404 NOT_FOUND · 409 DUPLICATE
+
+6) DELETE /api/v1/vehicles/{id}  - Delete a vehicle
+   The number stays reserved. Refused while a device is fitted (409 RESOURCE_IN_USE, msg names the
+   device): first unlink the device (PUT /api/v1/devices/{deviceId} with "unlinkVehicle": true) or
+   delete the device. Errors: 404 NOT_FOUND · 409 RESOURCE_IN_USE
+
+
+FITTING A DEVICE IN A VEHICLE (Devices screen)
+==============================================
+POST /api/v1/devices and PUT /api/v1/devices/{id} accept: vehicleId (number, from /vehicles/available)
+and, PUT only, unlinkVehicle (boolean). vehicleId omitted -> current vehicle kept; another vehicle ->
+device moves; unlinkVehicle true -> removed; both -> 400 INVALID_VALUE. Device responses include
+"vehicleId" (null when not fitted). Errors: 400 INVALID_REFERENCE · 409 OPERATION_NOT_ALLOWED (vehicle
+INACTIVE) · 409 RESOURCE_IN_USE (vehicle already has another device).
+
+
+ERRORS (all endpoints)
+======================
+{ "code": 409, "msg": "A vehicle with this number is already registered", "data": null, "total": null,
+  "extend": { "errorCode": "DUPLICATE", "fieldErrors": null, "requestId": "..." } }
+
+  400 VALIDATION_FAILED (fieldErrors: [{ field, message }]) · 400 INVALID_VALUE · 400 INVALID_REFERENCE
+  400 TENANT_REQUIRED · 401 UNAUTHENTICATED · 401 INVALID_TOKEN · 403 FORBIDDEN · 404 NOT_FOUND
+  409 DUPLICATE · 409 RESOURCE_IN_USE · 409 OPERATION_NOT_ALLOWED

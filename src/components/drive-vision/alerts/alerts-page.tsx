@@ -179,15 +179,12 @@ export function AlertsPage() {
         </FilterBar>
       </div>
 
-      <p className="mb-3 flex items-start gap-1.5 px-1 text-xs text-ink-muted">
-        <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-        <span>
-          {view.kind === "incidents"
-            ? "Incidents are the alerts the server tracks for handling: acknowledge, comment, resolve, dismiss or reopen them from the detail panel."
-            : "AI events and routine alarms are the raw device feeds (read-only). Handle alerts in the Incidents tab."}
-          {devicesQ.error || typesQ.error ? ` Couldn't load the ${[devicesQ.error && "device", typesQ.error && "alarm type"].filter(Boolean).join(" and ")} list for the filters.` : ""}
-        </span>
-      </p>
+      {devicesQ.error || typesQ.error ? (
+        <p className="mb-3 flex items-start gap-1.5 px-1 text-xs text-warning" role="status">
+          <Info className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>{`Couldn't load the ${[devicesQ.error && "device", typesQ.error && "alarm type"].filter(Boolean).join(" and ")} list for the filters.`}</span>
+        </p>
+      ) : null}
 
       {feed ? <DataSourceNotice source={listQ.data?.source} className="mb-3" /> : null}
 

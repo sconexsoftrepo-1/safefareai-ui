@@ -19,6 +19,9 @@
  * does run (sessionStorage — see api/session.ts). HSTS belongs on the TLS-terminating proxy.
  */
 
+/** The only site the app frames: the GPS vendor's live video player. */
+export const GPS_VIDEO_FRAME_ORIGIN = "https://y.gpstracktech.com";
+
 export interface SecurityHeaderEnv {
   NODE_ENV?: string;
   NEXT_PUBLIC_API_BASE_URL?: string;
@@ -79,7 +82,8 @@ export function reportOnlyCsp(env: SecurityHeaderEnv): string {
     ["connect-src", "'self'", ...connect, ...(dev ? ["ws:", "wss:"] : [])],
     ["worker-src", "'self'", "blob:"],
     ["child-src", "'self'", "blob:"],
-    ["frame-src", "'none'"],
+    // Live Monitoring's camera popup embeds the GPS vendor's player (components/drive-vision/monitoring/gps-video.ts).
+    ["frame-src", GPS_VIDEO_FRAME_ORIGIN],
     ["object-src", "'none'"],
     ["base-uri", "'self'"],
     ["form-action", "'self'"],

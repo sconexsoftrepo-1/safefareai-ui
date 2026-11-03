@@ -10,8 +10,9 @@ import type { CreatePermissionRequest, CreateRoleRequest, PermissionDto, RoleDto
  * to — or created inside — whichever tenant happens to be selected. (The Users page keeps its own,
  * tenant-scoped reads of /roles and /permissions in admin-service.ts; that behaviour is unchanged.)
  *
- * Not used (available in V10): GET /roles/{id}, PUT /roles/{id}/permissions (full replace — deltas are used
- * instead so concurrent edits aren't overwritten), GET /roles/permission-matrix, menus and screens.
+ * PUT /roles/{id}/permissions (full replace) saves the Permission Catalogue's role matrix; the Global Roles
+ * editor keeps sending deltas (POST / DELETE) so concurrent edits there aren't overwritten.
+ * Not used (available in V10): GET /roles/{id}, GET /roles/permission-matrix, menus and screens.
  */
 const PLATFORM = { tenant: "none" } as const;
 
@@ -44,6 +45,11 @@ export const roleAdminService = {
   /** POST /api/v1/roles/{id}/permissions {permissionCodes} → RolePermissionsDto (`role.permission.create`). */
   async addRolePermissions(id: number, permissionCodes: string[]): Promise<RolePermissionsDto> {
     return (await api.post<RolePermissionsDto>(`/roles/${id}/permissions`, { permissionCodes }, PLATFORM)).data ?? {};
+  },
+
+  /** PUT /api/v1/roles/{id}/permissions {permissionCodes} → RolePermissionsDto (`role.permission.update`). Replaces the whole list. */
+  async replaceRolePermissions(id: number, permissionCodes: string[]): Promise<RolePermissionsDto> {
+    return (await api.put<RolePermissionsDto>(`/roles/${id}/permissions`, { permissionCodes }, PLATFORM)).data ?? {};
   },
 
   /** DELETE /api/v1/roles/{id}/permissions?codes=a&codes=b → RolePermissionsDto (`role.permission.delete`). */

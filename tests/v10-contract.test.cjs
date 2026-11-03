@@ -101,6 +101,24 @@ test("static analysis found the frontend's BFF call sites", () => {
  */
 const OFF_SPEC_CALLS = {
   "POST /platform/tenants": "Tenant creation — contract from the backend team 2026-11-02; tests/tenant-create.test.cjs",
+  // Vehicle registry — contract from the backend team 2026-11-03 (docs/contracts/vehicle-api.txt); tests/vehicle-registry.test.cjs.
+  "GET /vehicles": "Vehicle list (keyword, status, vehicleType, assigned, paging)",
+  "GET /vehicles/available": "Active vehicles with no device fitted",
+  "GET /vehicles/{}": "Vehicle details",
+  "POST /vehicles": "Register a vehicle",
+  "PUT /vehicles/{}": "Edit a vehicle (full replace)",
+  "DELETE /vehicles/{}": "Delete a vehicle",
+  // Sensors / passenger counts — contract from the backend team 2026-11-03 (docs/contracts/passenger-counting-api.txt); tests/sensors.test.cjs.
+  "GET /sensors/types": "Sensor catalog",
+  "POST /sensors/readings": "Send sensor readings",
+  "GET /devices/{}/sensors/readings": "Raw readings of a bus",
+  "GET /devices/{}/stops": "Stop-wise passenger counts",
+  "GET /devices/{}/bms": "Original BMS records",
+  "GET /devices/{}/stops/comparison": "Sensor vs BMS reconciliation",
+  "GET /devices/{}/passenger-summary": "Passenger / capacity summary",
+  "POST /devices/{}/stops/recalculate": "Rebuild stop visits and alerts",
+  // Alcohol detection — contract from the backend team 2026-11-03 (docs/contracts/alcohol-detection-api.txt); tests/sensors.test.cjs.
+  "GET /devices/{}/sensors/alcohol": "Latest alcohol detection result",
 };
 
 test("every call site matches a V10 operation (method + path), except the documented off-spec calls", () => {
@@ -270,11 +288,13 @@ const CASES = [
   ["role permissions", (s) => s.roles.rolePermissions(4), { method: "GET", path: "/api/v1/roles/4/permissions" }],
   ["add role permissions", (s) => s.roles.addRolePermissions(4, ["device.read"]), { method: "POST", path: "/api/v1/roles/4/permissions", body: { permissionCodes: ["device.read"] } }],
   ["remove role permissions", (s) => s.roles.removeRolePermissions(4, ["device.read", "driver.read"]), { method: "DELETE", path: "/api/v1/roles/4/permissions", query: { codes: ["device.read", "driver.read"] } }],
+  ["replace role permissions", (s) => s.roles.replaceRolePermissions(4, ["device.read", "driver.read"]), { method: "PUT", path: "/api/v1/roles/4/permissions", body: { permissionCodes: ["device.read", "driver.read"] } }],
   ["admin permissions", (s) => s.roles.listPermissions(), { method: "GET", path: "/api/v1/permissions" }],
   ["create permission", (s) => s.roles.createPermission({ code: "report.export", description: "Export", scope: "TENANT" }), { method: "POST", path: "/api/v1/permissions", body: { code: "report.export", description: "Export", scope: "TENANT" } }],
   ["update permission", (s) => s.roles.updatePermission("report.export", { description: "Export", scope: "PLATFORM" }), { method: "PUT", path: "/api/v1/permissions/report.export", body: { description: "Export", scope: "PLATFORM" } }],
   ["delete permission", (s) => s.roles.deletePermission("report.export"), { method: "DELETE", path: "/api/v1/permissions/report.export" }],
   // device edit: full DeviceRequest, never confirmChargeableChange
+  ["create device", (s) => s.fleet.createDevice({ groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2 }), { method: "POST", path: "/api/v1/devices", body: { groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2 } }],
   ["update device", (s) => s.fleet.updateDevice(7, { groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2, remark: "x" }), { method: "PUT", path: "/api/v1/devices/7", body: { groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2, remark: "x" } }],
   // Safe-Fare Admin: the login body carries no tenantCode property at all.
   ["login (Safe-Fare Admin)", (s) => s.auth.login({ login: "admin", password: "p" }), { method: "POST", path: "/api/v1/auth/login", body: { login: "admin", password: "p" }, auth: false }, { signedIn: false }],

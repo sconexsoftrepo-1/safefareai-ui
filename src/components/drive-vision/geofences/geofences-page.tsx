@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useCan } from "@/features/drive-vision/access/use-access";
-import { Info, MapPinned, RefreshCw, Route, Trash2, TriangleAlert } from "lucide-react";
+import { MapPinned, RefreshCw, Route, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import { describeApiError } from "@/features/drive-vision/api/errors";
@@ -74,10 +74,6 @@ export function GeofencesPage() {
           </Button>
         }
       />
-      <p className="mb-3 flex items-start gap-1.5 px-1 text-xs text-ink-muted">
-        <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-        <span>Creating and editing geofences is off: the API requires rule-type codes whose meanings aren&apos;t documented yet. Rule codes are shown as returned.</span>
-      </p>
       <DataSourceNotice source={listQ.data?.source} className="mb-3" />
 
       <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">

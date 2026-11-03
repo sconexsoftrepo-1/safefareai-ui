@@ -1,6 +1,8 @@
 import {
+  Activity,
   Bell,
   BriefcaseBusiness,
+  BusFront,
   CalendarCheck2,
   ClipboardList,
   FileChartColumn,
@@ -73,6 +75,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Historical Video", screen: "video", href: SCREEN_ROUTES.video, icon: Cctv, description: "Camera playback and clips", subtitle: "Recorded camera footage by vehicle, channel and time" },
       { label: "Trips & Tracking", screen: "trips", href: SCREEN_ROUTES.trips, icon: Route, description: "Trip history and route playback", subtitle: "Trip history with route playback, stops and events" },
       { label: "Reports", screen: "reports", href: SCREEN_ROUTES.reports, icon: FileChartColumn, description: "Mileage, driving, parking and media reports", subtitle: "Mileage, driving, parking and media reports by device and date" },
+      { label: "Vehicles", screen: "vehicleRegistry", href: SCREEN_ROUTES.vehicleRegistry, icon: BusFront, description: "Vehicle registry: numbers, make, model and fitted device", subtitle: "Registered vehicles and the tracking device fitted in each" },
+      { label: "Sensors", screen: "sensors", href: SCREEN_ROUTES.sensors, icon: Activity, description: "Passenger counts: IR sensor vs BMS by stop", subtitle: "Stop-wise passenger counts, sensor vs BMS reconciliation and bus capacity" },
     ],
   },
   {

@@ -476,11 +476,6 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
               ) : eventsQ.error ? (
                 <p className="mt-2 text-xs text-danger">Safety events unavailable: {describeApiError(eventsQ.error)}</p>
               ) : null}
-              {eventsQ.data && eventsQ.data.items.length > 0 ? (
-                <p className="mt-1 text-[11.5px] text-ink-subtle" data-testid="driver-events-note">
-                  Events attributed to this driver by the server (GET /drivers/{"{id}"}/safety-events). The app doesn&apos;t link alarms to drivers itself.
-                </p>
-              ) : null}
             </section>
 
             <section aria-labelledby="dr-assign">

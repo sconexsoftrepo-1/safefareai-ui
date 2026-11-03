@@ -95,17 +95,16 @@ export function DailyTrendPanel({ rows }: { rows: TrendRow[] }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {rows.some((r) => r.trips === null || r.alarms === null) ? <p className="mt-1 text-[11px] text-ink-subtle">Bars for days without a value are drawn at zero; see the table for gaps.</p> : null}
       <details className="mt-2 text-xs">
         <summary className="cursor-pointer text-ink-muted hover:text-ink">Show as table</summary>
         <table className="mt-2 w-full text-left tabular">
-          <thead className="text-ink-subtle">
+          <thead className="dv-thead">
             <tr>
-              <th className="py-1 font-medium">Day</th>
-              <th className="py-1 text-right font-medium">Trips</th>
-              <th className="py-1 text-right font-medium">Distance</th>
-              <th className="py-1 text-right font-medium">Alarms</th>
-              <th className="py-1 text-right font-medium">Severe</th>
+              <th className="px-2 py-1.5">Day</th>
+              <th className="px-2 py-1.5 text-right">Trips</th>
+              <th className="px-2 py-1.5 text-right">Distance</th>
+              <th className="px-2 py-1.5 text-right">Alarms</th>
+              <th className="px-2 py-1.5 text-right">Severe</th>
             </tr>
           </thead>
           <tbody>

@@ -424,7 +424,7 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             <h2 id="mw-safety" className="mb-1 text-[16px] font-semibold text-ink">
               Safety score
             </h2>
-            <p className="mb-4 text-[12.5px] text-ink-muted">Last 30 days · computed by the server</p>
+            <p className="mb-4 text-[12.5px] text-ink-muted">Last 30 days</p>
             {scoreQ.error ? (
               <ApiErrorState error={scoreQ.error} onRetry={scoreQ.refetch} compact />
             ) : !scoreQ.data ? (

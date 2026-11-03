@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const { createRealm } = require("./helpers/load-ts.cjs");
 const contract = require("./helpers/v10-contract.cjs");
-const { SPEC, ALL_CODES, IDENTITIES, DRIVER_SCREENS } = require("./helpers/identities.cjs");
+const { SPEC, ALL_CODES, OFF_SPEC_CODES, IDENTITIES, DRIVER_SCREENS } = require("./helpers/identities.cjs");
 
 const realm = createRealm({ process: { env: {} } });
 const p = realm.require("features/drive-vision/access/access-policy");
@@ -70,13 +70,18 @@ test("tenantWrite is set exactly for the tenant-scoped writes (not /me, /notific
   }
 });
 
-test("every code the registries use exists in V10, except the documented observed driver.app", () => {
+test("every code the registries use exists in V10, except the documented observed driver.app and the off-spec vehicle / sensor codes", () => {
   const used = new Set();
   const add = (req) => [...(req.anyOf ?? []), ...(req.allOf ?? [])].forEach((c) => used.add(c));
   Object.values(p.SCREENS).forEach((d) => add(d.requires));
   Object.values(p.FEATURES).forEach(add);
   Object.values(p.ACTIONS).forEach((d) => add(d.requires));
-  same([...used].filter((c) => !ALL_CODES.includes(c)), ["driver.app"]);
+  same([...used].filter((c) => !ALL_CODES.includes(c)).sort(), ["driver.app", ...OFF_SPEC_CODES].sort());
+  // Codes outside V10 appear only on requirements whose every operation is off-spec (sourced contract).
+  const offSpecOnly = (req) => req.offSpec && req.operations.every((o) => req.offSpec.operations.includes(o));
+  for (const req of [...Object.values(p.SCREENS).map((d) => d.requires), ...Object.values(p.ACTIONS).map((d) => d.requires)]) {
+    if ([...(req.anyOf ?? []), ...(req.allOf ?? [])].some((c) => OFF_SPEC_CODES.includes(c))) assert.ok(offSpecOnly(req), req.operations.join(", "));
+  }
   assert.ok(p.SCREENS.myWork.requires.observed.codes.includes("driver.app"));
 });
 

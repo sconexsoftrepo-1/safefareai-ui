@@ -26,6 +26,10 @@
   --dv-brand-from: #f08a6b;
   --dv-brand-to: #d9442a;
 
+  /* Table header band — the muted panel colour with muted labels */
+  --dv-table-head: var(--dv-surface-muted);
+  --dv-table-head-ink: var(--dv-ink-muted);
+
   /* Supporting pastel surfaces (used sparingly, mostly as icon chips) */
   --dv-mint: #ddefe4;
   --dv-sky: #dce9f7;
