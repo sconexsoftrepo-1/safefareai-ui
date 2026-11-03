@@ -297,7 +297,7 @@ export function LoginScreen() {
                   </div>
                 </FormField>
               ) : (
-                // <p className="text-[13px] text-slate-600">Safe-Fare platform administrators sign in without a tenant code.</p>
+                <p className="text-[13px] text-slate-600">Safe-Fare platform administrators sign in without a tenant code.</p>
               )}
               <FormField id="login-user" label={LABELS.login} error={fieldErrors.login} required>
                 <div className="relative">
