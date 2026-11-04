@@ -1,0 +1,228 @@
+// Phase 6 enhancement — Create Tenant browser check (headless Edge via CDP). MOCKED: EVERY */api/v1/* request
+// is answered locally with SYNTHETIC data. Nothing reaches the BFF; no real credentials; no live tenant is created.
+const fs = require("fs");
+const path = require("path");
+const OUT = process.env.OUT_DIR;
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3112";
+const CDP = "http://127.0.0.1:9342";
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 10, tenantId: 10, roleId: 2, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+};
+// SYNTHETIC tenants.
+let TENANTS = [
+  { id: 1, code: "BASE", name: "Synthetic Base Tenant", status: "ACTIVE", timezone: "Asia/Kolkata", users: 4, devices: 10, drivers: 3, current: false },
+  { id: 2, code: "BLUE", name: "Blue Line Cabs", status: "ACTIVE", timezone: "Asia/Kolkata", users: 6, devices: 35, drivers: 22, current: false },
+  { id: 3, code: "OLD", name: "Old Co Transport", status: "INACTIVE", timezone: "Asia/Kolkata", users: 2, devices: 0, drivers: 0, current: false },
+];
+const BASE_TENANTS = TENANTS.slice();
+let identity = IDS.sfa;
+let createMode = "ok"; // ok | duplicate | validation | slow
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body: request.postData ?? null });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  let status = 200, body;
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  if (p === "/auth/login") body = ok({ accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 });
+  else if (p === "/me") body = ok({ id: identity.userId, displayName: "Synthetic user", email: "synthetic@example.invalid" });
+  else if (p === "/me/permissions") body = ok(identity);
+  else if (p === "/platform/tenants" && request.method === "GET") body = ok(TENANTS, TENANTS.length);
+  else if (p === "/platform/tenants" && request.method === "POST") {
+    const req = JSON.parse(request.postData);
+    if (createMode === "slow") await sleep(2500);
+    if (createMode === "duplicate") { status = 409; body = { code: 409, msg: "Tenant code already exists (MOCKED)", data: null, total: null, extend: { errorCode: "DUPLICATE", requestId: "mock-409" } }; }
+    else if (createMode === "validation") { status = 400; body = { code: 400, msg: "Request validation failed (MOCKED)", data: null, total: null, extend: { errorCode: "VALIDATION_FAILED", fieldErrors: [{ field: "s3Prefix", message: "must match the storage prefix format (MOCKED)" }], requestId: "mock-400" } }; }
+    else {
+      const t = { id: 9001 + TENANTS.length, code: req.code || req.name.replace(/[^A-Za-z]/g, "").slice(0, 6).toUpperCase(), name: req.name, status: req.status, timezone: req.timezone, s3Prefix: req.s3Prefix, users: 0, devices: 0, drivers: 0, current: false, createdAt: "2026-11-02T11:45:15.172Z", updatedAt: "2026-11-02T11:45:15.172Z" };
+      TENANTS = [...TENANTS, t];
+      status = 201; body = { code: 201, msg: "Success", data: t, total: null, extend: null };
+    }
+  } else if (p === "/reference/statuses") body = ok({ statusSets: [] });
+  else if (p === "/platform/switch-tenant") { const id = JSON.parse(request.postData).tenantId; const t = TENANTS.find((x) => x.id === id); body = ok({ tenantId: id, code: t.code, name: t.name, header: "X-Tenant-Id" }); }
+  else body = ok(null);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body)).toString("base64") });
+}
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function typeInto(sel, text) { await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select(); return true; })()`); if (text) await send("Input.insertText", { text }); else { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); } }
+const click = (sel) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+const clickText = (t, scope = "button") => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(scope)})].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)})); if (!el) return false; el.click(); return true; })()`);
+async function login(mode) {
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  if (mode === "platform") await clickText("Safe-Fare Admin");
+  else await typeInto("input[name=tenantCode]", "SYNTH");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in");
+  await sleep(3500);
+}
+const STATE = `(() => ({
+  createButton: !!document.querySelector('[data-testid=tenant-create-button]'),
+  form: !!document.querySelector('[data-testid=tenant-create-form]'),
+  review: document.querySelector('[data-testid=tenant-create-review-step]')?.innerText ?? null,
+  error: document.querySelector('[data-testid=tenant-create-error]')?.textContent.trim() ?? null,
+  fieldErrors: [...document.querySelectorAll('[role=dialog] p[id$=-error]')].map(e => e.id + ': ' + e.textContent.trim()),
+  values: Object.fromEntries([...document.querySelectorAll('[role=dialog] input, [role=dialog] select')].map(e => [e.id, e.value])),
+  source: document.querySelector('[data-testid=tenant-create-source]')?.innerText ?? null,
+  submit: (() => { const b = document.querySelector('[data-testid=tenant-create-submit]'); return b ? { text: b.textContent.trim(), disabled: b.disabled } : null; })(),
+  created: document.querySelector('[data-testid=tenant-created]')?.textContent.trim() ?? null,
+  dialogOpen: !!document.querySelector('[role=dialog]'),
+  context: document.querySelector('[data-testid=tenant-context]')?.textContent.trim() ?? null,
+  switcher: document.querySelector('[data-testid=tenant-switcher]')?.getAttribute('aria-label') ?? null,
+  rows: [...document.querySelectorAll('main table tbody tr')].map(r => r.cells[0]?.textContent.trim() + ' ' + (r.querySelector('td:nth-child(2) span')?.textContent.trim() ?? '')),
+  summary: [...document.querySelectorAll('[data-testid=tenant-summary] div')].map(d => d.innerText.replace(/\\n/g, ': ')),
+  toasts: [...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText.replace(/\\n/g, ' | ').slice(0, 160)),
+}))()`;
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth; const r = e => e.getBoundingClientRect();
+  const dlg = document.querySelector('[role=dialog]'); const db = dlg ? r(dlg) : null;
+  const visible = [...document.querySelectorAll('[role=dialog] *')].filter(e => e.offsetParent !== null && r(e).width > 0);
+  const clipped = visible.filter(e => { let p = e.parentElement; while (p && p !== document.body) { if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } const b = r(e); return b.right > vw + 1 || b.left < -1; }).length;
+  const small = [...document.querySelectorAll('[role=dialog] button, main button')].filter(e => e.offsetParent !== null).map(e => ({ t: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  return { overflow: document.documentElement.scrollWidth > vw, clipped, small, dialog: db ? { left: Math.round(db.left), right: Math.round(db.right), inView: db.left >= -1 && db.right <= vw + 1 } : null };
+})()`;
+const since = (i) => captured.slice(i).filter((c) => c.method !== "OPTIONS");
+const posts = (i) => since(i).filter((c) => c.method === "POST" && c.path === "/platform/tenants");
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => { const msg = JSON.parse(mm.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+
+  identity = IDS.sfa;
+  await viewport(1366, 768);
+  await login("platform");
+  await go(`${APP}/drive-vision/tenants`, 3000);
+  let s = await evaluate(STATE);
+  R.list = { createButton: s.createButton, rows: s.rows, summary: s.summary, context: s.context };
+  await shot("create-tenants-list-1366x768");
+
+  // Form defaults.
+  await click("[data-testid=tenant-create-button]"); await sleep(900);
+  s = await evaluate(STATE);
+  R.formDefaults = { values: s.values, source: s.source };
+  await shot("create-form-1366x768");
+
+  // Validation: empty name, invalid timezone.
+  await typeInto("#tc-timezone", "India Time");
+  await click("[data-testid=tenant-create-review]"); await sleep(500);
+  s = await evaluate(STATE);
+  R.validation = { fieldErrors: s.fieldErrors, stillOnForm: s.form, postsSent: posts(0).length };
+  await shot("create-validation-1366x768");
+
+  // Fill and review (code left empty).
+  await typeInto("#tc-name", "Synthetic Transport");
+  await typeInto("#tc-timezone", "Asia/Kolkata");
+  await click("[data-testid=tenant-create-review]"); await sleep(600);
+  s = await evaluate(STATE);
+  R.review = s.review;
+  await shot("create-review-1366x768");
+
+  // Submit (slow → loading state; double click sends once).
+  createMode = "slow";
+  let i = captured.length;
+  await evaluate(`(() => { const b = document.querySelector('[data-testid=tenant-create-submit]'); b.click(); b.click(); return true; })()`);
+  await sleep(500);
+  s = await evaluate(STATE);
+  R.loading = { submit: s.submit };
+  await shot("create-submitting-1366x768");
+  await sleep(4000);
+  s = await evaluate(STATE);
+  const sent = posts(i);
+  R.success = { postsSent: sent.length, body: sent[0] && JSON.parse(sent[0].body), tenantHeader: sent[0]?.tenant ?? null, query: sent[0]?.query ?? null, created: s.created, toasts: s.toasts, dialogOpen: s.dialogOpen, listRefetched: since(i).filter((c) => c.method === "GET" && c.path === "/platform/tenants").length, rows: s.rows, summary: s.summary, context: s.context, switcher: s.switcher, switchCalls: since(i).filter((c) => c.path === "/platform/switch-tenant").length };
+  await shot("create-success-1366x768");
+  await typeInto("input[aria-label='Search tenants']", "synthetic tr"); await sleep(400);
+  R.success.searchFindsNew = (await evaluate(STATE)).rows;
+  await typeInto("input[aria-label='Search tenants']", ""); await sleep(300);
+
+  // Backend errors: duplicate code (409) and field validation (400).
+  createMode = "duplicate";
+  await click("[data-testid=tenant-create-button]"); await sleep(900);
+  await typeInto("#tc-name", "Synthetic Dup");
+  await typeInto("#tc-code", "BLUE");
+  await click("[data-testid=tenant-create-review]"); await sleep(500);
+  i = captured.length;
+  await click("[data-testid=tenant-create-submit]"); await sleep(1800);
+  s = await evaluate(STATE);
+  R.duplicate = { error: s.error, fieldErrors: s.fieldErrors, backOnForm: s.form, created: s.created, toasts: s.toasts, posts: posts(i).length };
+  await shot("create-error-duplicate-1366x768");
+  createMode = "validation";
+  await typeInto("#tc-code", "");
+  await typeInto("#tc-s3", "bad prefix");
+  await click("[data-testid=tenant-create-review]"); await sleep(500);
+  await click("[data-testid=tenant-create-submit]"); await sleep(1800);
+  s = await evaluate(STATE);
+  R.validationError = { error: s.error, fieldErrors: s.fieldErrors, backOnForm: s.form };
+  await shot("create-error-validation-1366x768");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(600);
+  createMode = "ok";
+
+  // Create with a tenant selected: selection unchanged, no tenant header on the POST.
+  await clickText("Select", "main table button"); await sleep(2500);
+  const ctxBefore = (await evaluate(STATE)).context;
+  await click("[data-testid=tenant-create-button]"); await sleep(900);
+  await typeInto("#tc-name", "Synthetic Second");
+  await click("[data-testid=tenant-create-review]"); await sleep(500);
+  i = captured.length;
+  await click("[data-testid=tenant-create-submit]"); await sleep(2500);
+  s = await evaluate(STATE);
+  R.withSelection = { contextBefore: ctxBefore, contextAfter: s.context, postTenantHeader: posts(i)[0]?.tenant ?? null, created: s.created };
+  await clickText("Return to all tenants"); await sleep(1000);
+
+  // Responsive: form and review at every viewport.
+  R.responsive = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/tenants`, 2800);
+    const lp = await evaluate(LAYOUT);
+    await click("[data-testid=tenant-create-button]"); await sleep(900);
+    const lf = await evaluate(LAYOUT);
+    await shot(`create-form-${w}x${h}`);
+    await typeInto("#tc-name", "Synthetic Viewport");
+    await click("[data-testid=tenant-create-review]"); await sleep(500);
+    const lr = await evaluate(LAYOUT);
+    await shot(`create-review-${w}x${h}`);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500);
+    R.responsive[`${w}x${h}`] = { page: { overflow: lp.overflow, small: lp.small }, form: lf, review: lr };
+  }
+
+  // Tenant ADMIN: no route, no button, zero create requests.
+  identity = IDS.tenantAdmin;
+  await viewport(1366, 768);
+  i = captured.length;
+  await login("tenant");
+  await go(`${APP}/drive-vision/tenants`, 2500);
+  s = await evaluate(STATE);
+  R.tenantAdmin = { createButton: s.createButton, platformCalls: since(i).filter((c) => c.path.startsWith("/platform")).length, createPosts: posts(i).length };
+
+  R.allCreatePosts = captured.filter((c) => c.method === "POST" && c.path === "/platform/tenants").map((c) => ({ body: JSON.parse(c.body), tenantHeader: c.tenant, query: c.query }));
+  R.anyTenantQuery = captured.filter((c) => /tenantId=/.test(c.query)).length;
+  R.otherWrites = captured.filter((c) => !["GET", "OPTIONS"].includes(c.method) && !["/auth/login", "/platform/switch-tenant", "/platform/tenants"].includes(c.path)).map((c) => `${c.method} ${c.path}`);
+  fs.writeFileSync(path.join(OUT, "create-results.json"), JSON.stringify(R, null, 2));
+  console.log(JSON.stringify(R, null, 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

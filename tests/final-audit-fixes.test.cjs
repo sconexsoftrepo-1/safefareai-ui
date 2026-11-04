@@ -1,6 +1,6 @@
 // Regression tests for the final frontend audit fixes (docs/evidence/final-frontend-gap-audit.md):
 // GA-04 security headers, GA-10 profile menu, GA-11 stale demo wording, GA-12 notification links,
-// GA-13 driver password change, GA-14 menu failure state, GA-15 trip actions, GA-16 action policy.
+// GA-13 driver password change, GA-14 menu/identity failure (V10), GA-15 trip actions, GA-16 action policy (V10).
 // Pure functions and source checks only; no network.
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -19,77 +19,85 @@ const list = (set) => [...set].sort();
 const SRC = path.join(__dirname, "..", "src");
 const read = (rel) => fs.readFileSync(path.join(SRC, rel), "utf8");
 
-const ADMIN = { id: 1, role: { code: "PLATFORM_ADMIN" }, permissions: ["X"] };
-const DRIVER = { id: 9, role: { code: "DRIVER" }, permissions: ["driver.app", "own.data.read"] };
-const admin = p.computeAccess(ADMIN, null);
-const driver = p.computeAccess(DRIVER, null);
-const unknown = p.computeAccess({ id: 5, role: { code: "MANAGER" }, permissions: ["driver.app", "device.read"] }, null);
+const { IDENTITIES } = require("./helpers/identities.cjs");
+const idm = realm.require("features/drive-vision/access/identity");
+const accessFor = (raw) => p.computeAccess(idm.readIdentity(raw));
+// V10 identities (GET /me/permissions). "admin" = tenant ADMIN (every tenant permission).
+const admin = accessFor(IDENTITIES.tenantAdmin);
+const driver = accessFor(IDENTITIES.driver);
+const unknown = accessFor({ userId: 5, platform: false, roleCode: "MANAGER", permissions: ["driver.app", "unknown.code"] });
 
-// ── GA-16: central action policy ────────────────────────────────────────────
+// ── GA-16: central action policy (V10: actions follow permission codes) ─────
 
-test("GA-16: Admin keeps every fleet action it already had, and nothing of driver self-service", () => {
-  same(list(admin.actions), list(p.ALL_ACTIONS.filter((a) => a !== "driver.selfService")));
+test("GA-16: tenant ADMIN gets every fleet action, and nothing of driver self-service or platform configuration", () => {
+  // Phase 7: role / permission configuration lives on platform-only screens — never a tenant ADMIN's, even with the codes.
+  const platformAction = (a) => p.ACTIONS[a].screen !== null && p.SCREENS[p.ACTIONS[a].screen].platformOnly === true;
+  same(list(admin.actions), list(p.ALL_ACTIONS.filter((a) => a !== "driver.selfService" && !platformAction(a))));
+  for (const a of ["roles.create", "roles.update", "roles.delete", "rolePermissions.add", "rolePermissions.remove", "permissions.create", "permissions.update", "permissions.delete"]) assert.equal(p.canPerform(admin, a), false, a);
   assert.equal(p.canPerform(admin, "driver.selfService"), false);
 });
 
 test("GA-16: Driver gets only self-service, own password and own notifications", () => {
   same(list(driver.actions), ["account.password", "driver.selfService", "notifications.markRead"]);
-  for (const a of ["drivers.manage", "dispatch.manage", "swaps.decide", "leave.manage", "alerts.handle", "geofences.delete", "video.export", "users.manage", "settings.manage"]) assert.equal(p.canPerform(driver, a), false, a);
+  for (const a of ["drivers.create", "drivers.update", "drivers.delete", "dispatch.create", "dispatch.update", "swaps.decide", "leave.create", "leave.decide", "alerts.handle", "geofences.delete", "video.export", "users.create", "users.update", "settings.manage"]) assert.equal(p.canPerform(driver, a), false, a);
 });
 
 test("GA-16: a driver without driver.app can't open My Work, so its self-service action is dropped too", () => {
-  const d = p.computeAccess({ ...DRIVER, permissions: ["own.data.read"] }, null);
+  const d = accessFor({ ...IDENTITIES.driver, permissions: ["own.data.read"] });
   assert.equal(p.canPerform(d, "driver.selfService"), false);
   same(list(d.actions), ["account.password", "notifications.markRead"]);
 });
 
-test("GA-16: unmapped roles (MANAGER, Fleet Owner) get no actions, whatever permissions they carry", () => {
-  same(list(unknown.actions), []);
+test("GA-16: unrecognised role codes get no fleet action, whatever their label", () => {
+  same(list(unknown.actions).filter((a) => !["account.password", "notifications.markRead", "settings.manage"].includes(a)), []);
   same(list(p.NO_ACCESS.actions), []);
-  same([...p.ACCESS_POLICY.roleGrants["fleet-owner"].actions], []);
-  same(p.ACCESS_POLICY.actionGrants, {});
-  assert.equal(Object.hasOwn(p.ACCESS_POLICY.roleCodes, "MANAGER"), false);
 });
 
-test("GA-16: widening a screen grant never exposes its actions; an action also needs its screen", () => {
-  const base = p.ACCESS_POLICY;
-  // A future Fleet Owner with Drivers screen access but no action grant: read-only.
-  const screensOnly = { ...base, roleCodes: { ...base.roleCodes, TEST_FO: "fleet-owner" }, roleGrants: { ...base.roleGrants, "fleet-owner": { screens: ["drivers"], features: [] } } };
-  const fo = p.computeAccess({ role: { code: "TEST_FO" } }, null, screensOnly);
-  assert.equal(p.canAccessScreen(fo, "drivers"), true);
-  assert.equal(p.canPerform(fo, "drivers.manage"), false);
-  // An action grant by permission code works only on a screen the user can open.
-  const byCode = { ...screensOnly, actionGrants: { "drivers.manage": { permissions: ["test.drivers.write"] }, "users.manage": { permissions: ["test.drivers.write"] } } };
-  const fo2 = p.computeAccess({ role: { code: "TEST_FO" }, permissions: ["test.drivers.write"] }, null, byCode);
-  assert.equal(p.canPerform(fo2, "drivers.manage"), true);
-  assert.equal(p.canPerform(fo2, "users.manage"), false);
+test("GA-16: a screen grant never exposes its actions by itself; an action also needs its screen", () => {
+  // driver.read opens Drivers, but no write.
+  const reader = accessFor({ platform: false, roleCode: "R", permissions: ["driver.read"] });
+  assert.equal(p.canAccessScreen(reader, "drivers"), true);
+  for (const a of ["drivers.create", "drivers.update", "drivers.delete"]) assert.equal(p.canPerform(reader, a), false, a);
+  // A write code without the screen's read code offers nothing.
+  const writer = accessFor({ platform: false, roleCode: "R", permissions: ["driver.update", "user.update"] });
+  assert.equal(p.canPerform(writer, "drivers.update"), false);
+  assert.equal(p.canPerform(writer, "users.update"), false);
+  const both = accessFor({ platform: false, roleCode: "R", permissions: ["driver.read", "driver.update"] });
+  assert.equal(p.canPerform(both, "drivers.update"), true);
+  assert.equal(p.canPerform(both, "users.update"), false);
 });
 
 test("GA-16: every write entry point consults the action policy", () => {
   const uses = {
-    "components/drive-vision/drivers/drivers-page.tsx": ['useCan("drivers.manage")'],
-    "components/drive-vision/operations/dispatch-page.tsx": ['useCan("dispatch.manage")', 'useCan("swaps.decide")'],
-    "components/drive-vision/operations/workforce-page.tsx": ['useCan("leave.manage")'],
+    "components/drive-vision/drivers/drivers-page.tsx": ['useCan("drivers.create")', 'useCan("drivers.update")', 'useCan("drivers.delete")'],
+    "components/drive-vision/operations/dispatch-page.tsx": ['useCan("dispatch.create")', 'useCan("dispatch.update")', 'useCan("swaps.decide")'],
+    "components/drive-vision/operations/workforce-page.tsx": ['useCan("leave.create")', 'useCan("leave.decide")'],
     "components/drive-vision/alerts/incidents.tsx": ['useCan("alerts.handle")'],
     "components/drive-vision/geofences/geofences-page.tsx": ['useCan("geofences.delete")'],
     "components/drive-vision/video/video-workspace.tsx": ['useCan("video.export")'],
-    "components/drive-vision/users/users-page.tsx": ['useCan("users.manage")'],
+    "components/drive-vision/users/users-page.tsx": ['useCan("users.create")', 'useCan("users.update")'],
     "components/drive-vision/settings/settings-page.tsx": ['useCan("settings.manage")', 'useCan("account.password")'],
     "components/drive-vision/operations/my-work-page.tsx": ['canPerform(access, "driver.selfService")', 'canPerform(access, "account.password")'],
     "components/drive-vision/app-shell/notification-center.tsx": ['canPerform(access, "notifications.markRead")'],
   };
-  for (const [file, needles] of Object.entries(uses)) for (const n of needles) assert.ok(read(file).includes(n), `${file} uses ${n}`);
+  // Phase 5: useActionGate(x) (allowed / tenant-blocked) reads the same central policy as useCan(x).
+  const consults = (src, n) => src.includes(n) || (n.startsWith("useCan(") && src.includes(n.replace("useCan(", "useActionGate(")));
+  for (const [file, needles] of Object.entries(uses)) for (const n of needles) assert.ok(consults(read(file), n), `${file} uses ${n}`);
+  // The coarse pre-V10 keys are gone everywhere.
+  for (const file of Object.keys(uses)) for (const old of ['"drivers.manage"', '"dispatch.manage"', '"leave.manage"', '"users.manage"']) assert.ok(!read(file).includes(old), `${file} still uses ${old}`);
 });
 
 // ── GA-10: profile menu ─────────────────────────────────────────────────────
 
-test("GA-10: profile menu links follow screen access — Admin keeps both, Driver and unmapped roles get none", () => {
+test("GA-10: profile menu links follow screen access — Admin keeps both, Driver none, others what they may open", () => {
   same(p.profileMenuLinks(admin), [
     { screen: "settings", label: "Profile & preferences", href: "/drive-vision/settings" },
     { screen: "users", label: "Users & sub-accounts", href: "/drive-vision/users" },
   ]);
   same(p.profileMenuLinks(driver), []);
-  same(p.profileMenuLinks(unknown), []);
+  // V10: Settings needs only a signed-in identity with permission information; Users needs user.read.
+  same(p.profileMenuLinks(unknown), [{ screen: "settings", label: "Profile & preferences", href: "/drive-vision/settings" }]);
+  same(p.profileMenuLinks(p.NO_ACCESS), []);
   const menu = read("components/drive-vision/app-shell/user-profile-menu.tsx");
   assert.ok(menu.includes("profileMenuLinks(useAccess())"));
   assert.ok(!menu.includes('href="/drive-vision/settings"') && !menu.includes('href="/drive-vision/users"'), "no hard-coded screen links");
@@ -154,26 +162,27 @@ test("GA-13: the request body matches the spec's ChangePasswordRequest exactly (
   same(model.passwordRequest({ currentPassword: "a", newPassword: "b", confirmPassword: "b" }), { currentPassword: "a", newPassword: "b" });
 });
 
-// ── GA-14: menu failure ─────────────────────────────────────────────────────
+// ── GA-14 (V10): identity failure ───────────────────────────────────────────
+// Pre-V10 the driver menu came from GET /me/menus and could fail on its own (MenuLoadError + Retry).
+// Since V10 navigation comes from the identity (GET /me/permissions), which is loaded with the session:
+// if it fails, the AuthGate shows its retryable error and no shell or navigation renders at all.
+// Session-level behaviour is tested in auth-access.test.cjs / auth-login.test.cjs.
 
-test("GA-14: menu status is visible for drivers only: loading, ready, error", () => {
-  assert.equal(p.menuNavStatus(admin, null, "boom"), "not-used");
-  assert.equal(p.menuNavStatus(driver, null, null), "loading");
-  assert.equal(p.menuNavStatus(driver, [], null), "ready");
-  assert.equal(p.menuNavStatus(driver, null, "HTTP 503"), "error");
-  assert.equal(p.menuNavStatus(driver, [], "HTTP 503"), "error");
+test("GA-14: no separate menu-failure path remains; navigation is derived from the identity only", () => {
+  assert.ok(!fs.existsSync(path.join(SRC, "components/drive-vision/app-shell/menu-load-error.tsx")));
+  assert.ok(!read("components/drive-vision/app-shell/app-shell.tsx").includes("MenuLoadError"));
+  const nav = read("components/drive-vision/navigation/use-nav.ts");
+  assert.ok(nav.includes("useAccess()") && !/\bs\.menus\b|myMenus/.test(nav));
+  const store = read("features/drive-vision/store/auth-store.ts");
+  assert.ok(store.includes("authService.myPermissions()") && !store.includes("myMenus"));
 });
 
-test("GA-14: a failed menu adds no items — the static fallback is limited to the policy's screens", () => {
-  const groups = p.filterNavGroups([{ label: "My work", items: [{ screen: "myWork" }] }, { label: "Fleet", items: [{ screen: "drivers" }, { screen: "users" }] }], driver);
-  same(groups.map((g) => g.items.map((i) => i.screen)), [["myWork"]]);
-  same(p.menuNavEntries(null, driver), { items: [], unmapped: [] });
+test("GA-14: without an identity there is no navigation and every route is denied", () => {
+  same(p.filterNavGroups([{ label: "My work", items: [{ screen: "myWork" }] }, { label: "Fleet", items: [{ screen: "drivers" }] }], p.NO_ACCESS), []);
+  same(p.driverNavEntries(p.NO_ACCESS), []);
   // Direct navigation still follows the policy.
   same(p.decideRoute("authenticated", driver, "/drive-vision/my-work/leave"), { kind: "allow", screen: "myWork" });
   same(p.decideRoute("authenticated", driver, "/drive-vision/workforce"), { kind: "forbidden", screen: "workforce", reason: "no-access" });
-  const shell = read("components/drive-vision/app-shell/app-shell.tsx");
-  assert.ok(shell.includes("<MenuLoadError />"));
-  assert.ok(read("components/drive-vision/app-shell/menu-load-error.tsx").includes("retryMenus()"));
 });
 
 // ── GA-15: trip actions ─────────────────────────────────────────────────────

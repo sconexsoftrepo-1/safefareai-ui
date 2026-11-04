@@ -1,14 +1,16 @@
 // Request construction for the API families added to the spec on 2026-10-29 (dashboard, trips,
 // drivers, dispatch, workforce, driver app, safety, alerts, notifications, search, assistant,
 // geofence events). Runs the real API client and services against a stub fetch and checks every
-// call's method + path against the saved OpenAPI snapshot. MOCKED: nothing here talks to the BFF.
+// call's method + path against the V10 OpenAPI spec (docs/openapi/api-docs-v10.json; migrated from
+// the 2026-10-29 snapshot in Phase 1). Fleet, admin, account and auth requests and the type-level
+// contract are in v10-contract.test.cjs. MOCKED: nothing here talks to the BFF.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("path");
 const { createRealm } = require("./helpers/load-ts.cjs");
 const { MemoryStorage, createLockManager } = require("./helpers/browser-fakes.cjs");
 
-const SPEC = require(path.join(__dirname, "..", "docs", "openapi", "api-docs-2026-10-29.json"));
+const SPEC = require(path.join(__dirname, "..", "docs", "openapi", "api-docs-v10.json"));
 const same = (got, want) => assert.equal(JSON.stringify(got), JSON.stringify(want));
 const STORAGE_KEY = "safefare:session:v1";
 
@@ -184,20 +186,39 @@ for (const [label, call, want] of CASES) {
   });
 }
 
-test("every new-family operation in the snapshot is covered by a service request test", () => {
+test("every operation of these families in the V10 spec is covered by a service request test, or listed as not integrated", () => {
   const covered = new Set(CASES.map(([, , w]) => `${w.method} ${w.path.replace(/\/\d+(?=\/|$)/g, "/{}")}`));
   const NEW_TAGS = ["dashboard-controller", "trip-controller", "driver-controller", "dispatch-controller", "driver-app-controller", "workforce-controller", "safety-controller", "alert-controller", "notification-controller", "search-controller", "assistant-controller", "geofence-event-controller"];
-  // Deliberately not called from the UI: the spec's body for it is the driver-assignment schema (no assignee field).
+  // Deliberately not called from the UI: the spec's body for it is the driver-assignment schema (no assignee field). Unchanged in V10.
   const EXCLUDED = new Set(["POST /api/v1/alerts/{}/assign"]);
+  // Added in V10 and not integrated yet (no service method, no UI) — see docs/v10-api-frontend-mapping.md.
+  // Remove an entry when its service request test is added above.
+  const NOT_INTEGRATED_IN_V10 = new Set([
+    "POST /api/v1/trips", // trip.create — trip writes: Phase 7, needs approved test tenant
+    "PUT /api/v1/trips/{}", // trip.update
+    "DELETE /api/v1/trips/{}", // trip.delete
+    "GET /api/v1/alerts/{}/high-priority-steps", // alarm.read — incident drawer, Phase 7
+    "POST /api/v1/alerts/{}/high-priority-steps", // alarm.handle
+    "GET /api/v1/safety/heatmap", // alarm.read — Safety Analytics, Phase 7
+    "GET /api/v1/safety/false-positives", // alarm.read — Safety Analytics, Phase 7
+    "GET /api/v1/dashboard/fleet-health", // device.read — Overview, Phase 7
+  ]);
+  const inFamilies = new Set();
   const missing = [];
   for (const [p, ops] of Object.entries(SPEC.paths)) {
     for (const [m, op] of Object.entries(ops)) {
       if (!(op.tags ?? []).some((t) => NEW_TAGS.includes(t))) continue;
       const key = `${m.toUpperCase()} ${p.replace(/\{[^}]+\}/g, "{}")}`;
-      if (!covered.has(key) && !EXCLUDED.has(key)) missing.push(key);
+      inFamilies.add(key);
+      if (!covered.has(key) && !EXCLUDED.has(key) && !NOT_INTEGRATED_IN_V10.has(key)) missing.push(key);
     }
   }
   same(missing, []);
+  // The lists can't go stale: every listed operation exists in V10 and is still uncovered.
+  for (const key of [...EXCLUDED, ...NOT_INTEGRATED_IN_V10]) {
+    assert.ok(inFamilies.has(key), `${key} is a V10 operation of these families`);
+    assert.ok(!covered.has(key), `${key} now has a request test — remove it from the not-integrated list`);
+  }
 });
 
 test("an error envelope inside HTTP 200 is an error, not a success", async () => {

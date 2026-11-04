@@ -1,163 +1,114 @@
+// Access resolver mechanics (V10): identity parsing, deny-by-default, exact codes only, route decisions,
+// navigation ⇔ route agreement, search filtering. Pure functions; no network.
+// Role scenarios and the registry ↔ spec cross-check are in access-v10.test.cjs.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createRealm } = require("./helpers/load-ts.cjs");
+const { IDENTITIES } = require("./helpers/identities.cjs");
 
 const realm = createRealm({ process: { env: {} } });
 const policy = realm.require("features/drive-vision/access/access-policy");
-const { ACCESS_POLICY, ALL_SCREENS, NO_ACCESS, computeAccess, resolveAppRole, readPermissions, readMenuRouteKeys, screenForPath, canAccessPath, canUseFeature, homeScreen, filterNavGroups, decideRoute, visibleSearchResults, SCREEN_ROUTES } = policy;
-// Values cross the vm boundary; compare structurally via JSON.
+const idm = realm.require("features/drive-vision/access/identity");
+const { ALL_SCREENS, NO_ACCESS, SCREEN_ROUTES, computeAccess, screenForPath, canAccessPath, canUseFeature, homeScreen, filterNavGroups, decideRoute, visibleSearchResults } = policy;
 const same = (got, want) => assert.equal(JSON.stringify(got), JSON.stringify(want));
 const list = (set) => [...set].sort();
+const access = (raw) => computeAccess(idm.readIdentity(raw));
+const withPerms = (permissions, extra = {}) => access({ platform: false, roleCode: "TEST_ROLE", tenantId: 1, permissions, ...extra });
 
-const admin = { id: 1, displayName: "Admin", role: { id: 1, code: "PLATFORM_ADMIN", description: "Platform administrator" }, permissions: ["X"] };
+// ── Identity parsing ────────────────────────────────────────────────────────
 
-/** A test-only policy. Codes here are fixtures, not claims about the backend. */
-function testPolicy(overrides = {}) {
-  return {
-    roleCodes: { PLATFORM_ADMIN: "admin", TEST_DRIVER: "driver" },
-    roleGrants: {
-      admin: { screens: ALL_SCREENS, features: ["assistant", "recordSearch"] },
-      "fleet-owner": { screens: [], features: [] },
-      driver: { screens: ["settings"], features: [] },
-      unknown: { screens: [], features: [] },
-    },
-    screenGrants: { alerts: { permissions: ["perm.alerts.read"] }, trips: { menuRouteKeys: ["trips"] } },
-    ...overrides,
-  };
-}
+test("identity: V10 fields are read exactly; platform is true only for a literal true", () => {
+  const i = idm.readIdentity({ userId: 7, platform: true, homeTenantId: 3, tenantId: 4, roleId: 2, roleCode: "ADMIN", permissions: ["a", "b", "a"], screens: [] });
+  same({ ...i, permissions: list(i.permissions) }, { userId: 7, platform: true, homeTenantId: 3, tenantId: 4, roleId: 2, roleCode: "ADMIN", permissions: ["a", "b"], screens: [] });
+  for (const platform of [undefined, null, false, "true", 1, "yes", {}, [true]]) assert.equal(idm.readIdentity({ platform }).platform, false, JSON.stringify(platform));
+});
 
-// ── Default policy: nothing guessed ─────────────────────────────────────────
-
-test("default policy maps only the confirmed PLATFORM_ADMIN and DRIVER codes; the only screen grant is My Work via driver.app", () => {
-  // DRIVER confirmed 2026-10-29 from a live Driver login: role DRIVER, permission driver.app, driver menus.
-  same(ACCESS_POLICY.roleCodes, { PLATFORM_ADMIN: "admin", DRIVER: "driver" });
-  same(ACCESS_POLICY.screenGrants, { myWork: { permissions: ["driver.app"] } });
-  // The driver role itself grants nothing; Fleet Owner stays unmapped.
-  for (const role of ["fleet-owner", "driver", "unknown"]) {
-    same(ACCESS_POLICY.roleGrants[role].screens, []);
-    same(ACCESS_POLICY.roleGrants[role].features, []);
+test("identity: missing or malformed payload → no identity → no access", () => {
+  for (const raw of [null, undefined, "x", 5, [], [{ platform: true }], true]) {
+    assert.equal(idm.readIdentity(raw), null, JSON.stringify(raw));
+    same(list(access(raw).screens), []);
+    assert.equal(access(raw), NO_ACCESS);
   }
 });
 
-// ── Role resolution ─────────────────────────────────────────────────────────
-
-test("role codes map exactly; missing, malformed and unknown roles resolve to unknown", () => {
-  assert.equal(resolveAppRole(admin), "admin");
-  assert.equal(resolveAppRole({ role: { code: "DRIVER" } }), "driver");
-  for (const user of [
-    null,
-    undefined,
-    "PLATFORM_ADMIN",
-    {},
-    { role: null },
-    { role: "PLATFORM_ADMIN" },
-    { role: {} },
-    { role: { code: null } },
-    { role: { code: 7 } },
-    { role: { code: "" } },
-    { role: { code: "  " } },
-    { role: { code: "platform_admin" } },
-    { role: { code: " PLATFORM_ADMIN" } },
-    { role: { code: "FLEET_OWNER" } },
-    { role: { code: "driver" } },
-    { role: { code: "DRIVER " } },
-    { role: { code: "toString" } },
-    { role: { code: "__proto__" } },
-    // A description that looks privileged must not grant anything.
-    { role: { code: "SOMETHING", description: "Platform administrator" } },
-  ]) {
-    assert.equal(resolveAppRole(user), "unknown", JSON.stringify(user));
-  }
+test("identity: permissions are read defensively", () => {
+  const p = (permissions) => list(idm.readIdentity({ permissions }).permissions);
+  same(p(["a", "b", "a"]), ["a", "b"]);
+  same(p(undefined), []);
+  same(p(null), []);
+  same(p("a,b"), []);
+  same(p({ 0: "a" }), []);
+  same(p(["a", 1, null, "", { code: "b" }]), ["a"]);
 });
 
-test("permissions are read defensively", () => {
-  same(list(readPermissions({ permissions: ["a", "b", "a"] })), ["a", "b"]);
-  same(list(readPermissions({})), []);
-  same(list(readPermissions({ permissions: null })), []);
-  same(list(readPermissions({ permissions: "a,b" })), []);
-  same(list(readPermissions({ permissions: ["a", 1, null, "", { code: "b" }] })), ["a"]);
-  same(list(readPermissions(null)), []);
+test("identity: ids must be safe integers; role code must be a non-empty string", () => {
+  const i = idm.readIdentity({ userId: "1", tenantId: 1.5, homeTenantId: NaN, roleId: 2 ** 60, roleCode: "  " });
+  same([i.userId, i.tenantId, i.homeTenantId, i.roleId, i.roleCode], [null, null, null, null, null]);
 });
 
-test("menu route keys: nested, hidden/inactive skipped, malformed input tolerated", () => {
-  const menus = [
-    { routeKey: "dashboard", children: [{ routeKey: "trips" }, { routeKey: "hidden", visible: false }, null, 5] },
-    { routeKey: "off", active: false, children: [{ routeKey: "under-off" }] },
-    { routeKey: 42 },
-    "junk",
-  ];
-  same(list(readMenuRouteKeys(menus)), ["dashboard", "trips"]);
-  same(list(readMenuRouteKeys(null)), []);
-  same(list(readMenuRouteKeys({ routeKey: "x" })), []);
+test("identity: screens and operations parsed defensively; only allowed: true allows", () => {
+  const i = idm.readIdentity({
+    screens: [
+      { menuKey: "k", title: " T ", routePath: "/x", readOnly: true, operations: [{ operation: "CREATE", permissionCode: "c", allowed: true }, { operation: "DELETE", permissionCode: "d" }, { operation: "", allowed: true }, "junk"] },
+      null,
+      "s",
+      { readOnly: "yes" },
+    ],
+  });
+  same(i.screens, [
+    { menuKey: "k", title: "T", routePath: "/x", icon: null, readOnly: true, operations: [{ operation: "CREATE", permissionCode: "c", allowed: true }, { operation: "DELETE", permissionCode: "d", allowed: false }] },
+    { menuKey: null, title: null, routePath: null, icon: null, readOnly: false, operations: [] },
+  ]);
 });
 
-// ── Access computation ──────────────────────────────────────────────────────
+// ── Deny by default ─────────────────────────────────────────────────────────
 
-test("PLATFORM_ADMIN keeps every fleet screen and shell feature (regression)", () => {
-  const a = computeAccess(admin, null);
-  assert.equal(a.role, "admin");
-  same(list(a.screens), [...policy.FLEET_SCREENS].sort());
-  for (const s of ["overview", "drivers", "dispatch", "workforce", "alerts", "safety", "trips", "users"]) assert.equal(a.screens.has(s), true, s);
-  assert.equal(canUseFeature(a, "assistant"), true);
-  assert.equal(canUseFeature(a, "recordSearch"), true);
-  // Admin access doesn't depend on permissions[] being present.
-  same(list(computeAccess({ role: admin.role }, null).screens), [...policy.FLEET_SCREENS].sort());
-});
-
-test("driver self-service is never part of the admin grant; only a confirmed driver role code would open it", () => {
-  same([...policy.DRIVER_SELF_SERVICE_SCREENS], ["myWork"]);
-  same([...policy.FLEET_SCREENS].sort(), ALL_SCREENS.filter((s) => s !== "myWork").sort());
-  const a = computeAccess(admin, null);
-  assert.equal(a.screens.has("myWork"), false);
-  assert.equal(canAccessPath(a, "/drive-vision/my-work"), false);
-  same(decideRoute("authenticated", a, "/drive-vision/my-work"), { kind: "forbidden", screen: "myWork", reason: "no-access" });
-  // DRIVER maps to "driver", but the role alone grants no screen (My Work needs driver.app).
-  assert.equal(ACCESS_POLICY.roleCodes.DRIVER, "driver");
-  same([...ACCESS_POLICY.roleGrants.driver.screens], []);
-  // A test policy with a driver mapping opens it — the grant works once a code is confirmed.
-  const p = testPolicy({ roleGrants: { ...testPolicy().roleGrants, driver: { screens: ["myWork"], features: [] } } });
-  const d = computeAccess({ role: { code: "TEST_DRIVER" } }, null, p);
-  assert.equal(d.role, "driver");
-  same(list(d.screens), ["myWork"]);
-});
-
-test("new operations routes map to their screens", () => {
-  assert.equal(screenForPath("/drive-vision/dispatch"), "dispatch");
-  assert.equal(screenForPath("/drive-vision/workforce?tab=leave"), "workforce");
-  assert.equal(screenForPath("/drive-vision/my-work"), "myWork");
-});
-
-test("search results with no link are never reachable", () => {
-  const r = visibleSearchResults(computeAccess(admin, null), [], [{ href: null }, { href: "/drive-vision/drivers?driver=1" }]);
-  same(r.records, [{ href: "/drive-vision/drivers?driver=1" }]);
-});
-
-test("no user, unknown role or missing permissions → no screens, no features", () => {
-  for (const user of [null, undefined, {}, { role: { code: "FLEET_OWNER" }, permissions: ["devices:read", "alarms:read"] }, { role: { code: "DRIVER" } }, { permissions: ["*"] }]) {
-    const a = computeAccess(user, [{ routeKey: "dashboard" }, { routeKey: "alarms" }]);
+test("no identity or an empty permission set → no screens, no features, no actions", () => {
+  for (const a of [NO_ACCESS, access({}), withPerms([]), access({ platform: true, roleCode: "ADMIN" })]) {
     same(list(a.screens), []);
     same(list(a.features), []);
+    same(list(a.actions), []);
     assert.equal(homeScreen(a), null);
   }
 });
 
-test("screen grants open a screen by confirmed permission or menu routeKey only", () => {
-  const p = testPolicy();
-  const user = { role: { code: "UNMAPPED" }, permissions: ["perm.alerts.read"] };
-  same(list(computeAccess(user, null, p).screens), ["alerts"]);
-  same(list(computeAccess({ role: { code: "UNMAPPED" } }, [{ routeKey: "trips" }], p).screens), ["trips"]);
-  same(list(computeAccess({ role: { code: "UNMAPPED" } }, [{ routeKey: "trips", visible: false }], p).screens), []);
-  // A permission whose name merely resembles a screen grants nothing.
-  same(list(computeAccess({ role: { code: "UNMAPPED" }, permissions: ["alerts", "ALERTS_READ", "vehicles"] }, null, p).screens), []);
+test("only unrecognised codes → just the signed-in screen (Settings) and own-account actions", () => {
+  const a = withPerms(["devices:read", "alarms:read", "*", "admin", "ALL"]);
+  same(list(a.screens), ["settings"]);
+  same(list(a.features), []);
+  same(list(a.actions), ["account.password", "notifications.markRead", "settings.manage"]);
 });
 
-test("a mapped driver role gets only its listed screens — never driver workflows by default", () => {
-  const a = computeAccess({ role: { code: "TEST_DRIVER" } }, null, testPolicy());
-  assert.equal(a.role, "driver");
-  same(list(a.screens), ["settings"]);
-  for (const screen of ["drivers", "trips", "vehicles", "alerts", "users", "commands"]) assert.equal(a.screens.has(screen), false, screen);
-  assert.equal(canUseFeature(a, "assistant"), false);
-  assert.equal(canUseFeature(a, "recordSearch"), false);
+test("a role code alone grants nothing — ADMIN, PLATFORM_ADMIN, SUPER_ADMIN, DRIVER without permissions", () => {
+  for (const roleCode of ["ADMIN", "PLATFORM_ADMIN", "SUPER_ADMIN", "DRIVER", "FLEET_OWNER"]) {
+    for (const platform of [false, true]) {
+      const a = access({ roleCode, platform, permissions: [] });
+      same(list(a.screens), [], `${roleCode} platform=${platform}`);
+      same(list(a.actions), [], `${roleCode} platform=${platform}`);
+    }
+  }
+});
+
+test("only exact permission codes grant; look-alikes don't", () => {
+  same(list(withPerms(["alarm.read"]).screens), ["alerts", "safety", "settings"]);
+  for (const code of [" alarm.read", "alarm.read ", "ALARM.READ", "alarm", "alarm.read.extra", "alarm.*", "*", "alarm:read"]) {
+    same(list(withPerms([code]).screens), ["settings"], code);
+  }
+});
+
+test("prototype-chain and non-string codes never grant", () => {
+  for (const code of ["constructor", "hasOwnProperty", "__proto__", "valueOf", "toString"]) same(list(withPerms([code]).screens), ["settings"], code);
+  same(list(withPerms([["device.read"]]).screens), []);
+  same(list(withPerms([{ toString: () => "device.read" }]).screens), []);
+  same(list(access({ roleCode: { toString: () => "ADMIN" }, permissions: ["device.read"] }).screens).includes("overview"), true);
+  assert.equal(access({ roleCode: ["ADMIN"], permissions: [] }).roleCode, null);
+});
+
+test("server screens never widen access: an unmapped or foreign routePath opens nothing", () => {
+  const a = withPerms(["alarm.read"], { screens: [{ routePath: "/drive-vision/users", title: "Users" }, { routePath: "/dashboard" }, { routePath: "/admin/everything" }] });
+  same(list(a.screens), ["alerts", "safety", "settings"]);
+  same([...a.unmappedServerPaths], ["/admin/everything"]);
+  same(a.serverScreens, []);
 });
 
 // ── Routes ──────────────────────────────────────────────────────────────────
@@ -169,6 +120,8 @@ test("screenForPath matches whole segments and nested routes", () => {
   assert.equal(screenForPath("/drive-vision/vehicles/new"), "vehicles");
   assert.equal(screenForPath("/drive-vision/devices/commands"), "commands");
   assert.equal(screenForPath("/drive-vision/drivers?driver=d1"), "drivers");
+  assert.equal(screenForPath("/drive-vision/workforce?tab=leave"), "workforce");
+  assert.equal(screenForPath("/drive-vision/my-work/shifts"), "myWork");
   assert.equal(screenForPath("/drive-vision/overviewx"), null);
   assert.equal(screenForPath("/drive-vision/devices"), null);
   assert.equal(screenForPath("/drive-vision"), null);
@@ -177,22 +130,35 @@ test("screenForPath matches whole segments and nested routes", () => {
 });
 
 test("decideRoute: authentication first, then deny by default", () => {
-  const a = computeAccess(admin, null);
-  const none = computeAccess({ role: { code: "UNMAPPED" } }, null);
-  same(decideRoute("unknown", a, "/drive-vision/alerts"), { kind: "checking" });
+  const admin = access(IDENTITIES.tenantAdmin);
+  const none = withPerms([]);
+  same(decideRoute("unknown", admin, "/drive-vision/alerts"), { kind: "checking" });
   same(decideRoute("unauthenticated", NO_ACCESS, "/drive-vision/alerts"), { kind: "login", next: "/drive-vision/alerts" });
-  same(decideRoute("error", a, "/drive-vision/alerts"), { kind: "session-error" });
-  same(decideRoute("authenticated", a, "/drive-vision/vehicles/9"), { kind: "allow", screen: "vehicles" });
-  same(decideRoute("authenticated", a, "/drive-vision/nope"), { kind: "forbidden", screen: null, reason: "unknown-route" });
-  same(decideRoute("authenticated", none, "/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-role" });
-  // Authenticated, but /me hasn't produced a user (malformed payload) → still denied.
-  same(decideRoute("authenticated", computeAccess(null, null), "/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-role" });
-  const alertsOnly = computeAccess({ role: { code: "UNMAPPED" }, permissions: ["perm.alerts.read"] }, null, testPolicy());
+  same(decideRoute("error", admin, "/drive-vision/alerts"), { kind: "session-error" });
+  same(decideRoute("authenticated", admin, "/drive-vision/vehicles/9"), { kind: "allow", screen: "vehicles" });
+  same(decideRoute("authenticated", admin, "/drive-vision/nope"), { kind: "forbidden", screen: null, reason: "unknown-route" });
+  // Signed in with no identity at all → no permissions.
+  same(decideRoute("authenticated", NO_ACCESS, "/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-permissions" });
+  // An identity with an empty permission set opens nothing (not even Settings) → no permissions.
+  same(decideRoute("authenticated", none, "/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-permissions" });
+  same(decideRoute("authenticated", none, "/drive-vision/settings"), { kind: "forbidden", screen: "settings", reason: "no-permissions" });
+  // Some screen allowed, this one not → no access.
+  same(decideRoute("authenticated", withPerms(["alarm.read"]), "/drive-vision/overview"), { kind: "forbidden", screen: "overview", reason: "no-access" });
+  const alertsOnly = withPerms(["alarm.read"]);
   same(decideRoute("authenticated", alertsOnly, "/drive-vision/alerts"), { kind: "allow", screen: "alerts" });
   same(decideRoute("authenticated", alertsOnly, "/drive-vision/users"), { kind: "forbidden", screen: "users", reason: "no-access" });
   assert.equal(homeScreen(alertsOnly), "alerts");
   assert.equal(canAccessPath(alertsOnly, "/drive-vision/alerts?alarm=1"), true);
   assert.equal(canAccessPath(alertsOnly, "/drive-vision/vehicles/1"), false);
+});
+
+test("landing redirect: only from the generic landing pages, and only to an allowed screen", () => {
+  const alertsOnly = withPerms(["alarm.read"]);
+  assert.equal(policy.landingRedirect(alertsOnly, "/drive-vision"), "/drive-vision/alerts");
+  assert.equal(policy.landingRedirect(alertsOnly, "/drive-vision/overview/"), "/drive-vision/alerts");
+  assert.equal(policy.landingRedirect(alertsOnly, "/drive-vision/users"), null);
+  assert.equal(policy.landingRedirect(access(IDENTITIES.tenantAdmin), "/drive-vision/overview"), null);
+  assert.equal(policy.landingRedirect(NO_ACCESS, "/drive-vision/overview"), null);
 });
 
 // ── Navigation ──────────────────────────────────────────────────────────────
@@ -203,57 +169,21 @@ test("navigation shows only permitted items and drops empty groups", () => {
     { label: "Safety", items: [{ screen: "alerts" }, { screen: "safety" }] },
     { label: "Admin", items: [{ screen: "users" }, { screen: "settings" }] },
   ];
-  same(filterNavGroups(groups, computeAccess(admin, null)), groups);
-  const alertsOnly = computeAccess({ role: { code: "UNMAPPED" }, permissions: ["perm.alerts.read"] }, null, testPolicy());
-  same(filterNavGroups(groups, alertsOnly), [{ label: "Safety", items: [{ screen: "alerts" }] }]);
-  same(filterNavGroups(groups, computeAccess({ role: { code: "DRIVER" } }, null)), []);
+  same(filterNavGroups(groups, access(IDENTITIES.tenantAdmin)), groups);
+  same(filterNavGroups(groups, withPerms(["alarm.read"])), [
+    { label: "Safety", items: [{ screen: "alerts" }, { screen: "safety" }] },
+    { label: "Admin", items: [{ screen: "settings" }] },
+  ]);
+  same(filterNavGroups(groups, NO_ACCESS), []);
 });
 
 test("every nav route in the app maps to a screen in the policy", () => {
-  // nav-config imports lucide-react, so check the route table it is built from instead.
-  for (const screen of ALL_SCREENS) assert.equal(screenForPath(policy.SCREEN_ROUTES[screen]), screen, screen);
+  for (const screen of ALL_SCREENS) assert.equal(screenForPath(SCREEN_ROUTES[screen]), screen, screen);
 });
 
-// ── Phase 1B hardening ──────────────────────────────────────────────────────
-
-test("only exact permission codes and menu routeKeys grant; look-alikes and other menu fields don't", () => {
-  const p = testPolicy();
-  const grants = (user, menus) => list(computeAccess({ role: { code: "UNMAPPED" }, ...user }, menus, p).screens);
-  for (const perm of [" perm.alerts.read", "perm.alerts.read ", "PERM.ALERTS.READ", "perm.alerts", "perm.alerts.read.extra", "perm.alerts.*", "*"]) {
-    same(grants({ permissions: [perm] }, null), []);
-  }
-  for (const menu of [
-    { routeKey: "Trips" },
-    { routeKey: " trips" },
-    { routePath: "/drive-vision/trips" },
-    { menuKey: "trips", title: "Trips" },
-    { requiredPermissionCode: "perm.alerts.read" },
-    { routeKey: "dashboard", title: "Trips & Tracking" },
-  ]) {
-    same(grants({}, [menu]), []);
-  }
-  // Permission *descriptions* (e.g. from GET /permissions) are never consulted.
-  same(grants({ permissions: [{ code: "perm.alerts.read", description: "alerts" }] }, null), []);
-});
-
-test("a role code can't grant through the prototype chain or a non-string", () => {
-  for (const code of ["constructor", "hasOwnProperty", "__proto__", "valueOf"]) {
-    same(list(computeAccess({ role: { code } }, null).screens), []);
-  }
-  same(list(computeAccess({ role: { code: ["PLATFORM_ADMIN"] } }, null).screens), []);
-  same(list(computeAccess({ role: { code: { toString: () => "PLATFORM_ADMIN" } } }, null).screens), []);
-});
-
-test("navigation and route authorisation agree for every screen", () => {
+test("navigation and route authorisation agree for every screen and identity", () => {
   const groups = [{ label: "All", items: ALL_SCREENS.map((screen) => ({ screen })) }];
-  const p = testPolicy();
-  const samples = [
-    computeAccess(admin, null),
-    computeAccess(null, null),
-    computeAccess({ role: { code: "FLEET_OWNER" } }, null),
-    computeAccess({ role: { code: "UNMAPPED" }, permissions: ["perm.alerts.read"] }, [{ routeKey: "trips" }], p),
-    computeAccess({ role: { code: "TEST_DRIVER" } }, null, p),
-  ];
+  const samples = [NO_ACCESS, withPerms([]), withPerms(["alarm.read", "driver.read"]), ...Object.values(IDENTITIES).map(access)];
   for (const a of samples) {
     const inNav = filterNavGroups(groups, a).flatMap((g) => g.items.map((i) => i.screen)).sort();
     const routable = ALL_SCREENS.filter((s) => decideRoute("authenticated", a, SCREEN_ROUTES[s]).kind === "allow").sort();
@@ -261,16 +191,19 @@ test("navigation and route authorisation agree for every screen", () => {
   }
 });
 
-test("search hides sample records and pages the user can't open", () => {
+// ── Search ──────────────────────────────────────────────────────────────────
+
+test("search hides records and pages the user can't open; records need the recordSearch feature", () => {
   const pages = [{ href: "/drive-vision/alerts" }, { href: "/drive-vision/users" }];
-  const records = [{ href: "/drive-vision/vehicles/v1" }, { href: "/drive-vision/drivers?driver=d1" }, { href: "/drive-vision/alerts?alarm=a1" }];
-  same(visibleSearchResults(computeAccess(admin, null), pages, records), { pages, records });
-  same(visibleSearchResults(computeAccess({ role: { code: "FLEET_OWNER" } }, null), pages, records), { pages: [], records: [] });
-  // Screen access alone doesn't unlock sample records (needs the recordSearch feature).
-  const alertsOnly = computeAccess({ role: { code: "UNMAPPED" }, permissions: ["perm.alerts.read"] }, null, testPolicy());
+  const records = [{ href: "/drive-vision/vehicles/v1" }, { href: "/drive-vision/drivers?driver=d1" }, { href: "/drive-vision/alerts?alarm=a1" }, { href: null }];
+  same(visibleSearchResults(access(IDENTITIES.tenantAdmin), pages, records), { pages, records: records.slice(0, 3) });
+  same(visibleSearchResults(NO_ACCESS, pages, records), { pages: [], records: [] });
+  // alarm.read opens Alerts, but record search needs device.read (GET /search).
+  const alertsOnly = withPerms(["alarm.read"]);
+  assert.equal(canUseFeature(alertsOnly, "recordSearch"), false);
   same(visibleSearchResults(alertsOnly, pages, records), { pages: [{ href: "/drive-vision/alerts" }], records: [] });
   // With the feature, records still need an openable target screen.
-  const featureOnly = computeAccess({ role: { code: "UNMAPPED" }, permissions: ["perm.alerts.read"] }, null, testPolicy({ roleGrants: { ...testPolicy().roleGrants, unknown: { screens: [], features: ["recordSearch"] } } }));
-  same(visibleSearchResults(featureOnly, pages, records).records, [{ href: "/drive-vision/alerts?alarm=a1" }]);
-  same(visibleSearchResults(computeAccess(admin, null), [{ href: "/drive-vision/nope" }], [{ href: "https://evil.test/drive-vision/alerts" }]), { pages: [], records: [] });
+  const searcher = withPerms(["alarm.read", "device.read"]);
+  same(visibleSearchResults(searcher, pages, records).records, [{ href: "/drive-vision/vehicles/v1" }, { href: "/drive-vision/alerts?alarm=a1" }]);
+  same(visibleSearchResults(access(IDENTITIES.tenantAdmin), [{ href: "/drive-vision/nope" }], [{ href: "https://evil.test/drive-vision/alerts" }]), { pages: [], records: [] });
 });

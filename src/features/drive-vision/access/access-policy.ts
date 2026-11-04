@@ -1,13 +1,21 @@
-import type { CurrentUserDto, MenuNodeDto } from "../api/types";
+import { identityKind, type Identity, type IdentityKind, type IdentityScreen } from "./identity";
+import { isTenantId } from "../api/tenant-context";
 
 /**
- * Frontend access policy: which screens and shell features a signed-in user may open.
+ * Frontend access policy (V10): one resolver from the signed-in user's identity (GET /api/v1/me/permissions)
+ * to the screens, shell features and actions the UI offers.
  *
- * This is a convenience layer, not security. The BFF must still authorise every request;
- * hiding a screen here never isolates data. Everything is deny-by-default: a screen opens
- * only through a grant listed below, and grants are added only once the backend confirms
- * them (see docs/missing-backend-apis.md #2, #3). Never infer access from a role's
- * description or display name.
+ * This is a convenience layer, not security: the BFF authorises every request. It is deny-by-default:
+ * - Screens, features and actions open only through the **exact V10 permission codes** listed in the
+ *   registries below. Each entry names the V10 operation whose documented "Required permission" it
+ *   mirrors; tests/access-v10.test.cjs checks every code against docs/openapi/api-docs-v10.json.
+ * - Platform access comes only from `identity.platform === true` (never from a role code). V10 merges the
+ *   old PLATFORM_ADMIN / SUPER_ADMIN into ADMIN; `platform` is what separates the Safe-Fare Admin from a
+ *   tenant ADMIN.
+ * - A role code never grants anything. It only narrows: the driver app (My Work) is for DRIVER logins.
+ * - The server's `screens` list can only narrow (read-only screens, operations with `allowed: false`) and
+ *   shape navigation (titles, order). It never opens a screen the permissions don't.
+ * - Missing or malformed identity data means no access.
  *
  * Pure module (no React) so tests can load it directly.
  */
@@ -16,6 +24,14 @@ export const DV_BASE = "/drive-vision";
 
 /** Every routed screen. Nested routes (e.g. /vehicles/[id]) belong to their parent screen. */
 export const SCREEN_ROUTES = {
+  /** Safe-Fare Admin platform dashboard (Phase 4). First, so it is the platform admin's home screen. */
+  platform: `${DV_BASE}/platform`,
+  /** Safe-Fare Admin tenant management and selection (Phase 5). */
+  tenants: `${DV_BASE}/tenants`,
+  /** Safe-Fare Admin global roles and role-permission mapping (Phase 7; server routePath /platform/roles). */
+  roles: `${DV_BASE}/platform/roles`,
+  /** Safe-Fare Admin permission catalogue (Phase 7; server routePath /platform/permissions). */
+  permissions: `${DV_BASE}/platform/permissions`,
   overview: `${DV_BASE}/overview`,
   monitoring: `${DV_BASE}/monitoring`,
   video: `${DV_BASE}/video`,
@@ -37,183 +53,536 @@ export const SCREEN_ROUTES = {
 export type ScreenKey = keyof typeof SCREEN_ROUTES;
 export const ALL_SCREENS = Object.keys(SCREEN_ROUTES) as ScreenKey[];
 
+// ── Requirements ─────────────────────────────────────────────────────────────
+
 /**
- * Driver self-service (/driver/* endpoints, resolved from the caller's own token). Never part of
- * an admin or fleet grant: an administrator is not a driver, and granting it would only produce
- * server errors or, worse, act on whichever driver record the backend links to that login.
+ * What a screen, feature or action needs. `anyOf` / `allOf` are exact V10 permission codes;
+ * `signedIn` = V10 "Required permission: none (any signed-in user)". `operations` are the V10
+ * operations ("METHOD /api/v1/path") the requirement mirrors — the evidence, checked by tests.
  */
-export const DRIVER_SELF_SERVICE_SCREENS: readonly ScreenKey[] = ["myWork"];
+export interface Requirement {
+  anyOf?: readonly string[];
+  allOf?: readonly string[];
+  signedIn?: true;
+  operations: readonly string[];
+  /** Codes required beyond the spec, with where they were observed (documented in the permission matrix). */
+  observed?: { codes: readonly string[]; source: string };
+  /**
+   * Operations in `operations` that are NOT in the V10 spec, with where their contract came from. Their
+   * permission is undocumented, so the requirement's codes are an explicit, documented assumption.
+   */
+  offSpec?: { operations: readonly string[]; source: string };
+}
 
-/** Fleet-management screens: everything except driver self-service. */
-export const FLEET_SCREENS: readonly ScreenKey[] = ALL_SCREENS.filter((s) => !DRIVER_SELF_SERVICE_SCREENS.includes(s));
+/**
+ * Who a screen is for, besides its permissions:
+ * - `all`    — anyone holding the permissions.
+ * - `driver` — the driver app: only driver logins (role DRIVER, not platform). An administrator holding
+ *              the same codes is not a driver; `/driver/**` answers only for a user linked to a driver profile.
+ * - `staff`  — not shown to driver logins (their profile and password live in My Work).
+ */
+export type Audience = "all" | "driver" | "staff";
 
-/** Shell features that aren't routes: the assistant (GET/POST /assistant/*) and record results in global search (GET /search). */
+export interface ScreenDef {
+  requires: Requirement;
+  audience: Audience;
+  /** Platform screens additionally need `identity.platform === true`. */
+  platformOnly?: boolean;
+}
+
+export const SCREENS: Readonly<Record<ScreenKey, ScreenDef>> = {
+  // Platform administration = platform === true AND tenant.all (see canAccessPlatform). Never a tenant ADMIN.
+  platform: { audience: "staff", platformOnly: true, requires: { anyOf: ["tenant.all"], operations: ["GET /api/v1/platform/tenants"] } },
+  tenants: { audience: "staff", platformOnly: true, requires: { anyOf: ["tenant.all"], operations: ["GET /api/v1/platform/tenants", "POST /api/v1/platform/switch-tenant"] } },
+  // Phase 7. Product rule: only the Safe-Fare Admin configures roles and permissions in the frontend, so both
+  // screens are platformOnly (platform === true) on top of their V10 codes — a tenant ADMIN holding the same
+  // codes never sees them.
+  roles: { audience: "staff", platformOnly: true, requires: { anyOf: ["role.read"], operations: ["GET /api/v1/roles"] } },
+  // The catalogue screen is the catalogue's management screen: it needs permission.manage (stricter than the
+  // read, which V10 also allows with role.permission.read).
+  permissions: {
+    audience: "staff",
+    platformOnly: true,
+    requires: { anyOf: ["permission.manage"], operations: ["POST /api/v1/permissions", "PUT /api/v1/permissions/{code}", "DELETE /api/v1/permissions/{code}"] },
+  },
+  overview: { audience: "all", requires: { anyOf: ["device.read"], operations: ["GET /api/v1/dashboard/overview"] } },
+  monitoring: { audience: "all", requires: { anyOf: ["device.read"], operations: ["GET /api/v1/monitor/realtime"] } },
+  video: { audience: "all", requires: { anyOf: ["video.playback"], operations: ["GET /api/v1/devices/{id}/recordings"] } },
+  trips: { audience: "all", requires: { anyOf: ["track.read"], operations: ["GET /api/v1/trips"] } },
+  reports: { audience: "all", requires: { anyOf: ["report.read"], operations: ["GET /api/v1/reports/mileage"] } },
+  vehicles: { audience: "all", requires: { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] } },
+  drivers: { audience: "all", requires: { anyOf: ["driver.read"], operations: ["GET /api/v1/drivers"] } },
+  dispatch: { audience: "all", requires: { anyOf: ["dispatch.read"], operations: ["GET /api/v1/dispatches"] } },
+  workforce: { audience: "all", requires: { anyOf: ["workforce.read"], operations: ["GET /api/v1/shifts", "GET /api/v1/leave-requests"] } },
+  alerts: { audience: "all", requires: { anyOf: ["alarm.read"], operations: ["GET /api/v1/alerts"] } },
+  safety: { audience: "all", requires: { anyOf: ["alarm.read"], operations: ["GET /api/v1/safety/analytics"] } },
+  geofences: { audience: "all", requires: { anyOf: ["geofence.read"], operations: ["GET /api/v1/geofences"] } },
+  // V10: even the command history needs command.send.
+  commands: { audience: "all", requires: { anyOf: ["command.send"], operations: ["GET /api/v1/commands"] } },
+  users: { audience: "all", requires: { anyOf: ["user.read"], operations: ["GET /api/v1/users"] } },
+  settings: { audience: "staff", requires: { signedIn: true, operations: ["GET /api/v1/me/preferences", "PATCH /api/v1/me"] } },
+  myWork: {
+    audience: "driver",
+    requires: {
+      allOf: ["own.data.read", "driver.app"],
+      operations: ["GET /api/v1/driver/me"],
+      observed: { codes: ["driver.app"], source: "requiredPermissionCode of every driver menu in GET /me/menus, live DRIVER login 2026-10-29" },
+    },
+  },
+};
+
+/** Shell features that aren't routes. */
 export type FeatureKey = "assistant" | "recordSearch";
 export const ALL_FEATURES: FeatureKey[] = ["assistant", "recordSearch"];
 
-/**
- * State-changing actions (buttons, forms, destructive actions). Each lives on one screen and is
- * offered only when the role grants the action *and* the user may open that screen, so widening a
- * screen grant (e.g. a future Fleet Owner) never exposes its write actions by itself.
- * `null` = shell-level (not tied to a screen).
- */
-export const ACTION_SCREENS = {
-  /** Drivers: create / edit / delete, assign vehicle, end assignment. */
-  "drivers.manage": "drivers",
-  /** Dispatch: conflict check, create / edit, cancel, request swap. */
-  "dispatch.manage": "dispatch",
-  /** Dispatch: approve / reject swap requests. */
-  "swaps.decide": "dispatch",
-  /** Workforce: request leave for a driver, approve / reject leave. */
-  "leave.manage": "workforce",
-  /** Alerts: acknowledge, comment, resolve, dismiss, reopen incidents. */
-  "alerts.handle": "alerts",
-  "geofences.delete": "geofences",
-  "video.export": "video",
-  /** Users: create / edit, enable / disable, unlock, reset password. */
-  "users.manage": "users",
-  /** Profile edit and workspace preferences (PATCH /me, PUT /me/preferences). */
-  "settings.manage": "settings",
-  /** My Work: shift, trip, leave, checklist and contact changes (/driver/*). */
-  "driver.selfService": "myWork",
-  /** Own password (POST /me/password); offered in Settings and My Profile. */
-  "account.password": null,
-  /** Own notification read state (POST /notifications/*). */
-  "notifications.markRead": null,
-} as const satisfies Record<string, ScreenKey | null>;
-
-export type ActionKey = keyof typeof ACTION_SCREENS;
-export const ALL_ACTIONS = Object.keys(ACTION_SCREENS) as ActionKey[];
-
-export type AppRole = "admin" | "fleet-owner" | "driver" | "unknown";
-
-export interface AccessPolicy {
-  /** Backend role code (exact, case-sensitive) → app role. Confirmed codes only. */
-  roleCodes: Readonly<Record<string, AppRole>>;
-  /** Screens, features and actions each app role gets without a per-item permission. */
-  roleGrants: Readonly<Record<AppRole, { screens: readonly ScreenKey[]; features: readonly FeatureKey[]; actions?: readonly ActionKey[] }>>;
-  /** Per-screen grants from `/me` permissions[] or a `/me/menus` routeKey. Confirmed values only. */
-  screenGrants: Readonly<Partial<Record<ScreenKey, { permissions?: readonly string[]; menuRouteKeys?: readonly string[] }>>>;
-  /** Per-action grants from `/me` permissions[]. Confirmed codes only (none are documented yet). */
-  actionGrants?: Readonly<Partial<Record<ActionKey, { permissions?: readonly string[] }>>>;
-}
-
-/** Permission the BFF gives Driver logins for the driver app (/me permissions, /me/menus requiredPermissionCode). */
-export const DRIVER_APP_PERMISSION = "driver.app";
-
-/**
- * Current policy (2026-10-29).
- * - `PLATFORM_ADMIN` keeps every fleet screen. It never gets driver self-service (My Work).
- * - `DRIVER` → "driver". Confirmed from a signed-in Driver login on the dev BFF (2026-10-29):
- *   `/me` role `{ code: "DRIVER", description: "Driver" }`, permissions `["driver.app", "own.data.read"]`,
- *   and `/me/menus` returns seven driver-app items requiring `driver.app`. The role itself grants no
- *   screen; My Work opens only through the `driver.app` permission, and only for the driver role
- *   (see computeAccess). No fleet screen or shell feature is granted to drivers.
- * - Fleet Owner: no role code confirmed → no mapping, no grants.
- * - Menus never grant access on their own; they only shape navigation (see menuNavEntries).
- * - Actions (2026-10-31): each role keeps exactly the actions it already had. Admin: every
- *   fleet-screen action it was already shown. Driver: self-service, own password, own
- *   notifications. Which permission code authorises each operation is undocumented (Admin's 21
- *   codes weren't catalogued), so `actionGrants` is empty and nothing is inferred from codes. The
- *   BFF still authorises every request.
- */
-const FLEET_ACTIONS: readonly ActionKey[] = ALL_ACTIONS.filter((a) => a !== "driver.selfService");
-
-export const ACCESS_POLICY: AccessPolicy = {
-  roleCodes: {
-    PLATFORM_ADMIN: "admin",
-    DRIVER: "driver",
-  },
-  roleGrants: {
-    admin: { screens: FLEET_SCREENS, features: ALL_FEATURES, actions: FLEET_ACTIONS },
-    "fleet-owner": { screens: [], features: [], actions: [] },
-    driver: { screens: [], features: [], actions: ["driver.selfService", "account.password", "notifications.markRead"] },
-    unknown: { screens: [], features: [], actions: [] },
-  },
-  screenGrants: {
-    myWork: { permissions: [DRIVER_APP_PERMISSION] },
-  },
-  actionGrants: {},
+export const FEATURES: Readonly<Record<FeatureKey, Requirement>> = {
+  assistant: { anyOf: ["device.read"], operations: ["GET /api/v1/assistant/prompts", "POST /api/v1/assistant/ask"] },
+  recordSearch: { anyOf: ["device.read"], operations: ["GET /api/v1/search"] },
 };
 
+/**
+ * Dashboard widgets that read data on their own (Phase 4 platform dashboard). The page is gated by its
+ * screen; each widget additionally needs the code its V10 operations document, so a widget the identity
+ * can't read shows "no permission" instead of firing a request that would answer 403.
+ */
+export type WidgetKey =
+  | "platform.tenants"
+  | "dashboard.fleet"
+  | "dashboard.safety"
+  | "dashboard.groups"
+  | "roles.permissions"
+  | "permissions.catalog"
+  | "drivers.safety"
+  | "drivers.deviceChoices"
+  | "vehicles.driverAssignments";
+export const ALL_WIDGETS: WidgetKey[] = ["platform.tenants", "dashboard.fleet", "dashboard.safety", "dashboard.groups", "roles.permissions", "permissions.catalog", "drivers.safety", "drivers.deviceChoices", "vehicles.driverAssignments"];
+/** Widgets that are platform administration: they also need platform === true. */
+const PLATFORM_WIDGETS: ReadonlySet<WidgetKey> = new Set<WidgetKey>(["roles.permissions", "permissions.catalog"]);
+
+export const WIDGETS: Readonly<Record<WidgetKey, Requirement>> = {
+  "platform.tenants": { anyOf: ["tenant.all"], operations: ["GET /api/v1/platform/tenants"] },
+  "dashboard.fleet": { anyOf: ["device.read"], operations: ["GET /api/v1/dashboard/overview", "GET /api/v1/dashboard/fleet-status", "GET /api/v1/dashboard/trends"] },
+  "dashboard.safety": { anyOf: ["alarm.read"], operations: ["GET /api/v1/dashboard/safety-events"] },
+  "dashboard.groups": { anyOf: ["group.read"], operations: ["GET /api/v1/groups"] },
+  /** A role's assigned permissions (Global Roles → permissions). */
+  "roles.permissions": { anyOf: ["role.permission.read"], operations: ["GET /api/v1/roles/{id}/permissions"] },
+  /** The permission catalogue (used by the role-permission editor and the catalogue screen). */
+  "permissions.catalog": { anyOf: ["role.permission.read", "permission.manage"], operations: ["GET /api/v1/permissions"] },
+  /** Phase 8 — a driver's safety score and events (driver drawer). */
+  "drivers.safety": { anyOf: ["alarm.read"], operations: ["GET /api/v1/drivers/{id}/safety-score", "GET /api/v1/drivers/{id}/safety-events"] },
+  /** Phase 8 — the vehicle list behind the assign dialog's vehicle picker. */
+  "drivers.deviceChoices": { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] },
+  /** Phase 8 — a vehicle's driver assignments (vehicle detail, assign dialog). */
+  "vehicles.driverAssignments": { anyOf: ["driver.read"], operations: ["GET /api/v1/devices/{id}/driver-assignments"] },
+};
+
+export interface ActionDef {
+  /** The screen the action lives on (null = shell-level). The action is offered only where the screen is. */
+  screen: ScreenKey | null;
+  requires: Requirement;
+  /**
+   * Tenant-scoped write: V10 answers 400 TENANT_REQUIRED when the Safe-Fare Admin sends it without a
+   * tenant. Informational until tenant selection exists (Phase 5) — see needsTenantSelection().
+   */
+  tenantWrite: boolean;
+  /**
+   * Phase 5 classification of a tenant write (see docs/phase5-tenant-implementation-plan.md §2):
+   * A CREATE_REQUIRES_SELECTED_TENANT · B EXISTING_RECORD_UPDATE · C EXISTING_RECORD_DELETE.
+   */
+  tenantClass?: TenantClass;
+}
+
+export type TenantClass = "CREATE_REQUIRES_SELECTED_TENANT" | "EXISTING_RECORD_UPDATE" | "EXISTING_RECORD_DELETE";
+
+/** State-changing actions (buttons, forms). One entry per V10 permission boundary. */
+export const ACTIONS = {
+  "drivers.create": { screen: "drivers", tenantWrite: true, tenantClass: "CREATE_REQUIRES_SELECTED_TENANT", requires: { anyOf: ["driver.create"], operations: ["POST /api/v1/drivers"] } },
+  /** Edit, assign a vehicle, end an assignment. */
+  "drivers.update": {
+    screen: "drivers",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_UPDATE",
+    requires: { anyOf: ["driver.update"], operations: ["PUT /api/v1/drivers/{id}", "POST /api/v1/drivers/{id}/assignments", "POST /api/v1/drivers/{id}/assignments/{assignmentId}/end"] },
+  },
+  "drivers.delete": { screen: "drivers", tenantWrite: true, tenantClass: "EXISTING_RECORD_DELETE", requires: { anyOf: ["driver.delete"], operations: ["DELETE /api/v1/drivers/{id}"] } },
+  "dispatch.create": { screen: "dispatch", tenantWrite: true, tenantClass: "CREATE_REQUIRES_SELECTED_TENANT", requires: { anyOf: ["dispatch.create"], operations: ["POST /api/v1/dispatches"] } },
+  /** Edit, cancel, request a swap. */
+  "dispatch.update": {
+    screen: "dispatch",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_UPDATE",
+    requires: { anyOf: ["dispatch.update"], operations: ["PUT /api/v1/dispatches/{id}", "POST /api/v1/dispatches/{id}/cancel", "POST /api/v1/dispatches/{id}/swap-requests"] },
+  },
+  "swaps.decide": { screen: "dispatch", tenantWrite: true, tenantClass: "EXISTING_RECORD_UPDATE", requires: { anyOf: ["dispatch.update"], operations: ["POST /api/v1/swap-requests/{id}/approve", "POST /api/v1/swap-requests/{id}/reject"] } },
+  /** Request leave on behalf of a driver. */
+  "leave.create": { screen: "workforce", tenantWrite: true, tenantClass: "CREATE_REQUIRES_SELECTED_TENANT", requires: { anyOf: ["workforce.create"], operations: ["POST /api/v1/leave-requests"] } },
+  "leave.decide": { screen: "workforce", tenantWrite: true, tenantClass: "EXISTING_RECORD_UPDATE", requires: { anyOf: ["workforce.update"], operations: ["POST /api/v1/leave-requests/{id}/approve", "POST /api/v1/leave-requests/{id}/reject"] } },
+  /** Acknowledge, comment, resolve, dismiss, reopen. */
+  "alerts.handle": {
+    screen: "alerts",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_UPDATE",
+    requires: {
+      anyOf: ["alarm.handle"],
+      operations: ["POST /api/v1/alerts/{id}/acknowledge", "POST /api/v1/alerts/{id}/comments", "POST /api/v1/alerts/{id}/resolve", "POST /api/v1/alerts/{id}/dismiss", "POST /api/v1/alerts/{id}/reopen"],
+    },
+  },
+  "geofences.delete": { screen: "geofences", tenantWrite: true, tenantClass: "EXISTING_RECORD_DELETE", requires: { anyOf: ["geofence.delete"], operations: ["DELETE /api/v1/geofences/{id}"] } },
+  "video.export": { screen: "video", tenantWrite: true, tenantClass: "CREATE_REQUIRES_SELECTED_TENANT", requires: { anyOf: ["video.playback"], operations: ["POST /api/v1/video/exports"] } },
+  "users.create": { screen: "users", tenantWrite: true, tenantClass: "CREATE_REQUIRES_SELECTED_TENANT", requires: { anyOf: ["user.create"], operations: ["POST /api/v1/users"] } },
+  /** Edit, enable / disable, unlock, reset password. */
+  "users.update": {
+    screen: "users",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_UPDATE",
+    requires: { anyOf: ["user.update"], operations: ["PUT /api/v1/users/{id}", "PATCH /api/v1/users/{id}/status", "POST /api/v1/users/{id}/unlock", "POST /api/v1/users/{id}/password"] },
+  },
+  /** Own profile and workspace preferences. */
+  "settings.manage": { screen: "settings", tenantWrite: false, requires: { signedIn: true, operations: ["PATCH /api/v1/me", "PUT /api/v1/me/preferences"] } },
+  /** My Work: shift, trip, leave, checklist and contact changes (/driver/**). */
+  "driver.selfService": {
+    screen: "myWork",
+    tenantWrite: false,
+    requires: {
+      anyOf: ["own.data.read"],
+      operations: [
+        "PATCH /api/v1/driver/me",
+        "POST /api/v1/driver/shifts/start",
+        "POST /api/v1/driver/shifts/end",
+        "POST /api/v1/driver/leave-requests",
+        "POST /api/v1/driver/leave-requests/{id}/cancel",
+        "POST /api/v1/driver/dispatches/{id}/accept",
+        "POST /api/v1/driver/dispatches/{id}/start",
+        "POST /api/v1/driver/dispatches/{id}/complete",
+        "POST /api/v1/driver/dispatches/{id}/decline",
+        "POST /api/v1/driver/dispatches/{id}/swap-requests",
+        "POST /api/v1/driver/checklists",
+      ],
+    },
+  },
+  /** Own password; offered in Settings and My Profile. */
+  "account.password": { screen: null, tenantWrite: false, requires: { signedIn: true, operations: ["POST /api/v1/me/password"] } },
+  // Phase 7 — platform administration. Not tenant writes (tenantWrite false): global roles and the catalogue
+  // have no tenant, so they aren't blocked in all-tenants mode and are sent without a tenant header.
+  "roles.create": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.manage"], operations: ["POST /api/v1/roles"] } },
+  "roles.update": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.manage"], operations: ["PUT /api/v1/roles/{id}"] } },
+  "roles.delete": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.manage"], operations: ["DELETE /api/v1/roles/{id}"] } },
+  "rolePermissions.add": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.permission.create"], operations: ["POST /api/v1/roles/{id}/permissions"] } },
+  "rolePermissions.remove": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.permission.delete"], operations: ["DELETE /api/v1/roles/{id}/permissions"] } },
+  "permissions.create": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["permission.manage"], operations: ["POST /api/v1/permissions"] } },
+  "permissions.update": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["permission.manage"], operations: ["PUT /api/v1/permissions/{code}"] } },
+  "permissions.delete": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["permission.manage"], operations: ["DELETE /api/v1/permissions/{code}"] } },
+  /**
+   * Create a platform tenant. Platform-wide (no tenant header, not blocked in all-tenants mode). The operation
+   * isn't in V10; tenant.all (the only tenant code, required by the tenants screen) is assumed until confirmed.
+   */
+  "tenants.create": {
+    screen: "tenants",
+    tenantWrite: false,
+    requires: {
+      anyOf: ["tenant.all"],
+      operations: ["POST /api/v1/platform/tenants"],
+      offSpec: { operations: ["POST /api/v1/platform/tenants"], source: "Contract from the backend team, 2026-11-02 (not in api-docs-v10.json); permission not documented — tenant.all assumed" },
+    },
+  },
+  /**
+   * Edit a device's descriptive fields (PUT /devices/{id}; full replace). Tenant write, class B. Model, protocol,
+   * cameras, terminal, group and object type are resent unchanged (possible vendor charges / transfer).
+   */
+  "devices.update": { screen: "vehicles", tenantWrite: true, tenantClass: "EXISTING_RECORD_UPDATE", requires: { anyOf: ["device.update"], operations: ["PUT /api/v1/devices/{id}"] } },
+  /** Own notification read state. */
+  "notifications.markRead": {
+    screen: null,
+    tenantWrite: false,
+    requires: { signedIn: true, operations: ["POST /api/v1/notifications/{id}/read", "POST /api/v1/notifications/{id}/unread", "POST /api/v1/notifications/read-all"] },
+  },
+} as const satisfies Record<string, ActionDef>;
+
+export type ActionKey = keyof typeof ACTIONS;
+
+/**
+ * Existing-record writes (class B/C) the backend has CONFIRMED resolve the tenant from the record, so a
+ * Safe-Fare Admin may send them without a selected tenant. Empty: V10 documents TENANT_REQUIRED for
+ * create/update/delete, and the 2026-11-02 clarification ("where supported") names no operation.
+ * Add an action here only with backend confirmation.
+ */
+export const RECORD_TENANT_RESOLUTION_CONFIRMED: ReadonlySet<ActionKey> = new Set<ActionKey>();
+export const ALL_ACTIONS = Object.keys(ACTIONS) as ActionKey[];
+
+/** The policy the resolver applies; tests pass their own registries (e.g. a platform-only screen). */
+export interface AccessPolicy {
+  screens: Readonly<Partial<Record<ScreenKey, ScreenDef>>>;
+  features: Readonly<Record<FeatureKey, Requirement>>;
+  actions: Readonly<Partial<Record<ActionKey, ActionDef>>>;
+}
+
+export const ACCESS_POLICY: AccessPolicy = { screens: SCREENS, features: FEATURES, actions: ACTIONS };
+
+// ── Server screens (V10 `MyScreenDto.routePath`) → app routes ───────────────
+
+export interface ScreenRoute {
+  screen: ScreenKey;
+  href: string;
+}
+
+/**
+ * Backend `routePath` → app route. Only values the backend has actually returned are listed, plus the
+ * app's own routes (a backend that sends `/drive-vision/…` maps 1:1). Anything else is "unmapped": it
+ * opens nothing and is reported, never guessed.
+ * - `/driver/*`: GET /me/menus for a live DRIVER login, 2026-10-29 (docs/evidence/phase3-new-api-integration.md).
+ * - `/dashboard`, `/alarms`, `/reports`: GET /me/menus for the admin login, 2026-10-27 (docs/missing-backend-apis.md #3).
+ * `null` = known path with no page in this app (driver notifications live in the header bell).
+ */
+export const SERVER_ROUTE_PATHS: Readonly<Record<string, ScreenRoute | null>> = {
+  "/driver/work": { screen: "myWork", href: SCREEN_ROUTES.myWork },
+  "/driver/shifts": { screen: "myWork", href: `${SCREEN_ROUTES.myWork}/shifts` },
+  "/driver/leave": { screen: "myWork", href: `${SCREEN_ROUTES.myWork}/leave` },
+  "/driver/checklist": { screen: "myWork", href: `${SCREEN_ROUTES.myWork}/checklist` },
+  "/driver/safety": { screen: "myWork", href: `${SCREEN_ROUTES.myWork}/safety` },
+  "/driver/profile": { screen: "myWork", href: `${SCREEN_ROUTES.myWork}/profile` },
+  "/driver/notifications": null,
+  "/dashboard": { screen: "overview", href: SCREEN_ROUTES.overview },
+  "/alarms": { screen: "alerts", href: SCREEN_ROUTES.alerts },
+  "/reports": { screen: "reports", href: SCREEN_ROUTES.reports },
+  // Platform screens returned for the Safe-Fare Admin by GET /me/permissions (supplied 2026-11-02).
+  "/platform/roles": { screen: "roles", href: SCREEN_ROUTES.roles },
+  "/platform/permissions": { screen: "permissions", href: SCREEN_ROUTES.permissions },
+  "/tenants": { screen: "tenants", href: SCREEN_ROUTES.tenants },
+};
+
+const normalisePath = (p: string) => p.split(/[?#]/)[0].replace(/\/+$/, "") || "/";
+
+/** The app route for a backend routePath; `undefined` = unmapped, `null` = known, no page. */
+export function routeForServerPath(routePath: string | null): ScreenRoute | null | undefined {
+  if (routePath === null) return undefined;
+  const p = normalisePath(routePath);
+  if (Object.hasOwn(SERVER_ROUTE_PATHS, p)) return SERVER_ROUTE_PATHS[p];
+  // The app's own routes map to themselves (exact screen route or a known nested route).
+  const screen = screenForPath(p);
+  if (screen !== null && p.startsWith(DV_BASE)) return { screen, href: p };
+  return undefined;
+}
+
+// ── Access ───────────────────────────────────────────────────────────────────
+
+export interface ServerScreenEntry extends ScreenRoute {
+  title: string | null;
+  /** Server order (MyScreenDto has no sortOrder). */
+  index: number;
+}
+
 export interface Access {
-  role: AppRole;
-  /** Raw backend role code, when it's a non-empty string. Shown on the no-access screen. */
+  identity: Identity | null;
+  kind: IdentityKind;
+  /** `identity.platform === true`. */
+  platform: boolean;
   roleCode: string | null;
+  /**
+   * Effective tenant. Tenant users: identity.tenantId (from the token; a selection is ignored, so it can't be
+   * overridden). Safe-Fare Admin: the selected tenant (Phase 5), null in platform-wide mode.
+   */
+  tenantId: number | null;
+  /** Tenant writes the identity may perform but that need a selected tenant first (Safe-Fare Admin, platform-wide mode). */
+  tenantBlockedActions: ReadonlySet<ActionKey>;
   permissions: ReadonlySet<string>;
   screens: ReadonlySet<ScreenKey>;
   features: ReadonlySet<FeatureKey>;
   actions: ReadonlySet<ActionKey>;
+  /** Server screens that mapped to an app route the user may open, in server order. */
+  serverScreens: readonly ServerScreenEntry[];
+  /** Server routePaths with no app mapping (reported, never opened). */
+  unmappedServerPaths: readonly string[];
 }
 
-export const NO_ACCESS: Access = { role: "unknown", roleCode: null, permissions: new Set(), screens: new Set(), features: new Set(), actions: new Set() };
+export const NO_ACCESS: Access = {
+  identity: null,
+  kind: "none",
+  platform: false,
+  roleCode: null,
+  tenantId: null,
+  tenantBlockedActions: new Set(),
+  permissions: new Set(),
+  screens: new Set(),
+  features: new Set(),
+  actions: new Set(),
+  serverScreens: [],
+  unmappedServerPaths: [],
+};
 
-/** Role code from an untrusted `/me` payload, or null when missing or malformed. */
-export function readRoleCode(user: unknown): string | null {
-  if (!user || typeof user !== "object") return null;
-  const role = (user as { role?: unknown }).role;
-  if (!role || typeof role !== "object") return null;
-  const code = (role as { code?: unknown }).code;
-  return typeof code === "string" && code.trim() !== "" ? code : null;
+/**
+ * Whether `identity` satisfies a requirement. No identity satisfies nothing; an empty requirement is
+ * invalid. A `signedIn` requirement also needs *some* permission information: an identity with an empty
+ * permission set (missing, malformed, or none granted) opens nothing at all, not even Settings.
+ */
+export function meets(identity: Identity | null, req: Requirement | undefined): boolean {
+  if (!identity || !req) return false;
+  const has = (c: string) => identity.permissions.has(c);
+  const any = req.anyOf && req.anyOf.length ? req.anyOf.some(has) : null;
+  const all = req.allOf && req.allOf.length ? req.allOf.every(has) : null;
+  if (any === null && all === null) return req.signedIn === true && identity.permissions.size > 0;
+  return (any ?? true) && (all ?? true);
 }
 
-/** String permission codes from `/me`; anything else (missing, not an array, non-strings) is dropped. */
-export function readPermissions(user: unknown): Set<string> {
-  const raw = user && typeof user === "object" ? (user as { permissions?: unknown }).permissions : undefined;
-  return new Set(Array.isArray(raw) ? raw.filter((p): p is string => typeof p === "string" && p !== "") : []);
+/** Driver logins: role DRIVER and not platform. Narrows (to the driver app); never grants. */
+const isDriverLogin = (identity: Identity) => !identity.platform && identityKind(identity) === "driver";
+
+function audienceAllows(identity: Identity, audience: Audience) {
+  if (audience === "driver") return isDriverLogin(identity);
+  if (audience === "staff") return !isDriverLogin(identity);
+  return true;
 }
 
-/** Every routeKey in a `/me/menus` tree (visible + active nodes only). Tolerates malformed input. */
-export function readMenuRouteKeys(menus: unknown): Set<string> {
-  const keys = new Set<string>();
-  const visit = (nodes: unknown, depth: number) => {
-    if (!Array.isArray(nodes) || depth > 10) return;
-    for (const node of nodes) {
-      if (!node || typeof node !== "object") continue;
-      const n = node as MenuNodeDto & { children?: unknown };
-      if (n.visible === false || n.active === false) continue;
-      if (typeof n.routeKey === "string" && n.routeKey !== "") keys.add(n.routeKey);
-      visit(n.children, depth + 1);
+/** Frontend tenant context passed to the resolver (Phase 5). Only read for platform identities. */
+export interface TenantContextInput {
+  selectedTenantId?: number | null;
+}
+
+export function computeAccess(identity: Identity | null | undefined, policy: AccessPolicy = ACCESS_POLICY, tenant: TenantContextInput = {}): Access {
+  if (!identity) return NO_ACCESS;
+  // Platform identities work in the selected tenant (or none); tenant users always in their own.
+  const tenantId = identity.platform ? (isTenantId(tenant.selectedTenantId) ? tenant.selectedTenantId : null) : identity.tenantId;
+
+  const screens = new Set<ScreenKey>();
+  for (const key of ALL_SCREENS) {
+    const def = policy.screens[key];
+    if (!def) continue;
+    if (def.platformOnly && !identity.platform) continue;
+    if (!audienceAllows(identity, def.audience)) continue;
+    if (meets(identity, def.requires)) screens.add(key);
+  }
+
+  // Server screens: map routePaths; collect read-only screens and explicitly denied operation codes.
+  const serverScreens: ServerScreenEntry[] = [];
+  const unmapped: string[] = [];
+  const readOnly = new Set<ScreenKey>();
+  const denied = new Map<ScreenKey, Set<string>>();
+  identity.screens.forEach((s: IdentityScreen, index) => {
+    const route = routeForServerPath(s.routePath);
+    if (route === undefined) {
+      if (s.routePath !== null) unmapped.push(s.routePath);
+      return;
     }
+    if (route === null) return;
+    if (s.readOnly) readOnly.add(route.screen);
+    for (const op of s.operations) {
+      if (op.allowed || !op.permissionCode) continue;
+      if (!denied.has(route.screen)) denied.set(route.screen, new Set());
+      denied.get(route.screen)!.add(op.permissionCode);
+    }
+    if (screens.has(route.screen) && !serverScreens.some((e) => e.href === route.href)) serverScreens.push({ ...route, title: s.title, index });
+  });
+
+  const actions = new Set<ActionKey>();
+  for (const key of ALL_ACTIONS) {
+    const def = policy.actions[key];
+    if (!def || !meets(identity, def.requires)) continue;
+    if (def.screen !== null) {
+      if (!screens.has(def.screen)) continue; // an action is offered only on a screen the user can open
+      if (readOnly.has(def.screen)) continue;
+      const codes = [...(def.requires.anyOf ?? []), ...(def.requires.allOf ?? [])];
+      const deniedHere = denied.get(def.screen);
+      if (deniedHere && codes.length > 0 && codes.every((c) => deniedHere.has(c))) continue;
+    }
+    actions.add(key);
+  }
+
+  // Safe-Fare Admin without a tenant: tenant writes would answer 400 TENANT_REQUIRED, so they aren't offered.
+  const tenantBlockedActions = new Set<ActionKey>();
+  if (identity.platform && tenantId === null) {
+    for (const key of [...actions]) {
+      if (policy.actions[key]?.tenantWrite && !RECORD_TENANT_RESOLUTION_CONFIRMED.has(key)) {
+        actions.delete(key);
+        tenantBlockedActions.add(key);
+      }
+    }
+  }
+
+  const features = new Set<FeatureKey>(ALL_FEATURES.filter((f) => meets(identity, policy.features[f])));
+
+  return {
+    identity,
+    kind: identityKind(identity),
+    platform: identity.platform,
+    roleCode: identity.roleCode,
+    tenantId,
+    tenantBlockedActions,
+    permissions: identity.permissions,
+    screens,
+    features,
+    actions,
+    serverScreens,
+    unmappedServerPaths: unmapped,
   };
-  visit(menus, 0);
-  return keys;
 }
 
-export function resolveAppRole(user: unknown, policy: AccessPolicy = ACCESS_POLICY): AppRole {
-  const code = readRoleCode(user);
-  return code !== null && Object.hasOwn(policy.roleCodes, code) ? policy.roleCodes[code] : "unknown";
+// ── Checks (the only way components ask) ─────────────────────────────────────
+
+export const hasPermission = (access: Access, code: string) => access.permissions.has(code);
+export const canAccessScreen = (access: Access, screen: ScreenKey) => access.screens.has(screen);
+export const canUseFeature = (access: Access, feature: FeatureKey) => access.features.has(feature);
+export const canPerform = (access: Access, action: ActionKey) => access.actions.has(action);
+
+/** Platform administration: Safe-Fare Admin (`platform === true`) holding `tenant.all` (GET /platform/tenants). */
+export const PLATFORM_PERMISSION = "tenant.all";
+export const canAccessPlatform = (access: Access) => access.platform && access.permissions.has(PLATFORM_PERMISSION);
+
+/**
+ * Whether tenant-scoped requests have a tenant: tenant users always do (it comes from their token);
+ * the Safe-Fare Admin only once `identity.tenantId` is set (tenant selection, Phase 5).
+ */
+export const hasTenantContext = (access: Access) => access.identity !== null && (!access.platform || access.tenantId !== null);
+
+/** True when the action is a tenant-scoped write the server would reject (TENANT_REQUIRED) for lack of a tenant. */
+export function needsTenantSelection(access: Access, action: ActionKey, policy: AccessPolicy = ACCESS_POLICY): boolean {
+  return policy.actions[action]?.tenantWrite === true && !hasTenantContext(access) && !RECORD_TENANT_RESOLUTION_CONFIRMED.has(action);
 }
 
-export function computeAccess(user: CurrentUserDto | null | undefined, menus: MenuNodeDto[] | null | undefined, policy: AccessPolicy = ACCESS_POLICY): Access {
-  if (!user) return NO_ACCESS;
-  const role = resolveAppRole(user, policy);
-  const permissions = readPermissions(user);
-  const routeKeys = readMenuRouteKeys(menus);
-  const grant = policy.roleGrants[role];
+/** Why an action isn't offered: "tenant" = permitted but needs a selected tenant; "permission" = not permitted; null = offered. */
+export function actionBlock(access: Access, action: ActionKey): "tenant" | "permission" | null {
+  if (access.actions.has(action)) return null;
+  return access.tenantBlockedActions.has(action) ? "tenant" : "permission";
+}
 
-  const screens = new Set<ScreenKey>(grant.screens);
-  for (const screen of ALL_SCREENS) {
-    const g = policy.screenGrants[screen];
-    if (!g) continue;
-    if (g.permissions?.some((p) => permissions.has(p)) || g.menuRouteKeys?.some((k) => routeKeys.has(k))) screens.add(screen);
+/** Screens with at least one tenant write the identity could perform once a tenant is selected. */
+export function tenantBlockedScreens(access: Access, policy: AccessPolicy = ACCESS_POLICY): Set<ScreenKey> {
+  const out = new Set<ScreenKey>();
+  for (const key of access.tenantBlockedActions) {
+    const screen = policy.actions[key]?.screen;
+    if (screen) out.add(screen);
   }
-  // Driver self-service is for driver logins only, whatever permissions or menus another role carries.
-  if (role !== "driver") for (const s of DRIVER_SELF_SERVICE_SCREENS) screens.delete(s);
+  return out;
+}
 
-  const actions = new Set<ActionKey>(grant.actions ?? []);
-  for (const action of ALL_ACTIONS) if (policy.actionGrants?.[action]?.permissions?.some((p) => permissions.has(p))) actions.add(action);
-  // An action is only offered on a screen the user can open.
-  for (const action of [...actions]) {
-    const screen = ACTION_SCREENS[action];
-    if (screen !== null && !screens.has(screen)) actions.delete(action);
-  }
-  return { role, roleCode: readRoleCode(user), permissions, screens, features: new Set(grant.features), actions };
+/** Whether a dashboard widget's own data may be requested. Platform widgets also need platform access. */
+export function canViewWidget(access: Access, widget: WidgetKey): boolean {
+  if (widget === "platform.tenants" && !canAccessPlatform(access)) return false;
+  if (PLATFORM_WIDGETS.has(widget) && !access.platform) return false;
+  return meets(access.identity, WIDGETS[widget]);
+}
+
+/**
+ * Whose data tenant-scoped reads return, from the identity alone (no request is changed):
+ * - `all-tenants` — Safe-Fare Admin with no tenant selected: V10 reads without X-Tenant-Id cover every tenant.
+ * - `tenant`      — a tenant user (tenant from the token), or a Safe-Fare Admin with a tenant set.
+ * - `none`        — no identity.
+ */
+export type DataScope = "all-tenants" | "tenant" | "none";
+export function dataScope(access: Access): DataScope {
+  if (!access.identity) return "none";
+  return access.platform && access.tenantId === null ? "all-tenants" : "tenant";
+}
+
+/** Where to go after sign-in when no `next` was requested: the platform dashboard for platform admins, else Overview, else the first allowed screen. */
+export function defaultLanding(access: Access): string | null {
+  if (access.screens.has("platform")) return SCREEN_ROUTES.platform;
+  if (access.screens.has("overview")) return SCREEN_ROUTES.overview;
+  const home = homeScreen(access);
+  return home ? SCREEN_ROUTES[home] : null;
 }
 
 /** The screen a pathname belongs to (longest route prefix on a segment boundary), or null. */
 export function screenForPath(pathname: string): ScreenKey | null {
-  const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "");
+  const path = normalisePath(pathname);
   let best: ScreenKey | null = null;
   for (const screen of ALL_SCREENS) {
     const route = SCREEN_ROUTES[screen];
@@ -222,9 +591,11 @@ export function screenForPath(pathname: string): ScreenKey | null {
   return best;
 }
 
-export const canAccessScreen = (access: Access, screen: ScreenKey) => access.screens.has(screen);
-export const canUseFeature = (access: Access, feature: FeatureKey) => access.features.has(feature);
-export const canPerform = (access: Access, action: ActionKey) => access.actions.has(action);
+/** A path is reachable only when it belongs to a known screen the user may open. Unknown paths are denied. */
+export function canAccessPath(access: Access, pathname: string): boolean {
+  const screen = screenForPath(pathname);
+  return screen !== null && access.screens.has(screen);
+}
 
 /** In-app link targets that are kept only when the user may open them (profile menu, notification footer). */
 export function reachableHref(access: Access, href: string | null): string | null {
@@ -241,16 +612,9 @@ export function profileMenuLinks(access: Access): { screen: ScreenKey; label: st
   return PROFILE_MENU_LINKS.filter((l) => canAccessScreen(access, l.screen)).map((l) => ({ ...l, href: SCREEN_ROUTES[l.screen] }));
 }
 
-/** A path is reachable only when it belongs to a known screen the user may open. Unknown paths are denied. */
-export function canAccessPath(access: Access, pathname: string): boolean {
-  const screen = screenForPath(pathname);
-  return screen !== null && access.screens.has(screen);
-}
-
 /**
  * Search results the user may see: page results for openable screens; record results only with
- * the `recordSearch` grant and only into openable screens. The server scopes GET /search, but a
- * hit is still dropped when it would link to a screen this user can't open.
+ * the `recordSearch` feature and only into openable screens.
  */
 export function visibleSearchResults<R extends { href: string | null }>(access: Access, pages: readonly R[], records: readonly R[]): { pages: R[]; records: R[] } {
   const reachable = (r: R) => r.href !== null && canAccessPath(access, r.href);
@@ -274,11 +638,12 @@ export type RouteDecision =
   | { kind: "login"; next: string }
   | { kind: "session-error" }
   | { kind: "allow"; screen: ScreenKey }
-  | { kind: "forbidden"; screen: ScreenKey | null; reason: "unknown-route" | "no-access" | "no-role" };
+  | { kind: "forbidden"; screen: ScreenKey | null; reason: "unknown-route" | "no-access" | "no-permissions" };
 
 /**
- * What a /drive-vision route renders. Authentication is decided first (AuthGate), then the
- * screen grant (shell). Anything that can't be verified is denied.
+ * What a /drive-vision route renders. Authentication is decided first (AuthGate), then the screen
+ * grant. Anything that can't be verified is denied. `no-permissions` = signed in, but the identity
+ * opens no screen at all (missing / malformed identity, or no matching permission).
  */
 export function decideRoute(status: AuthStatusInput, access: Access, pathname: string): RouteDecision {
   if (status === "unknown") return { kind: "checking" };
@@ -287,84 +652,7 @@ export function decideRoute(status: AuthStatusInput, access: Access, pathname: s
   const screen = screenForPath(pathname);
   if (screen === null) return { kind: "forbidden", screen: null, reason: "unknown-route" };
   if (access.screens.has(screen)) return { kind: "allow", screen };
-  return { kind: "forbidden", screen, reason: access.screens.size === 0 && access.role === "unknown" ? "no-role" : "no-access" };
-}
-
-// ── Menu-driven navigation (/me/menus) ───────────────────────────────────────
-
-/**
- * Backend menu routeKey → app route. `routePath` values from the BFF (e.g. `/driver/work`) are the
- * backend's own paths and don't exist in this app, so items are matched by `routeKey`. Each item has
- * its own route under the My Work screen (`/drive-vision/my-work/<section>`, mirroring the backend's
- * `/driver/<section>`), so the access guard for `myWork` covers all of them. `null` = no page yet.
- */
-export const MENU_ROUTES: Readonly<Record<string, string | null>> = {
-  my_work: SCREEN_ROUTES.myWork,
-  my_shifts: `${SCREEN_ROUTES.myWork}/shifts`,
-  my_leave: `${SCREEN_ROUTES.myWork}/leave`,
-  shift_checklist: `${SCREEN_ROUTES.myWork}/checklist`,
-  my_safety: `${SCREEN_ROUTES.myWork}/safety`,
-  my_profile: `${SCREEN_ROUTES.myWork}/profile`,
-  // Notifications live in the header bell (GET /notifications); there is no notifications page.
-  driver_notifications: null,
-};
-
-export interface MenuNavEntry {
-  routeKey: string;
-  title: string;
-  href: string;
-  sortOrder: number;
-}
-
-/**
- * Navigation entries from an untrusted `/me/menus` tree. Only visible + active nodes count (a hidden
- * or inactive parent hides its children); a node with a `requiredPermissionCode` needs that code in
- * the user's permissions; its routeKey must map to an app route; and that route must be a screen the
- * access policy already allows — so a menu can never widen access. Ordered by `sortOrder` (missing →
- * last), then server order. `unmapped` lists routeKeys that would be shown but have no page.
- */
-export function menuNavEntries(menus: unknown, access: Access, routes: Readonly<Record<string, string | null>> = MENU_ROUTES): { items: MenuNavEntry[]; unmapped: string[] } {
-  const found: (MenuNavEntry & { index: number })[] = [];
-  const unmapped: string[] = [];
-  const seen = new Set<unknown>();
-  let index = 0;
-  const visit = (nodes: unknown, depth: number) => {
-    if (!Array.isArray(nodes) || depth > 10) return;
-    for (const node of nodes) {
-      if (!node || typeof node !== "object" || seen.has(node)) continue;
-      seen.add(node);
-      const n = node as MenuNodeDto & { children?: unknown };
-      if (n.visible === false || n.active === false) continue;
-      const required = typeof n.requiredPermissionCode === "string" && n.requiredPermissionCode !== "" ? n.requiredPermissionCode : null;
-      if (required !== null && !access.permissions.has(required)) continue;
-      if (typeof n.routeKey === "string" && n.routeKey !== "") {
-        const href = Object.hasOwn(routes, n.routeKey) ? routes[n.routeKey] : null;
-        if (href === null) unmapped.push(n.routeKey);
-        else if (canAccessPath(access, href) && !found.some((f) => f.href === href)) {
-          const title = typeof n.title === "string" && n.title.trim() ? n.title.trim() : typeof n.menuKey === "string" && n.menuKey ? n.menuKey : n.routeKey;
-          const sortOrder = typeof n.sortOrder === "number" && Number.isFinite(n.sortOrder) ? n.sortOrder : Number.POSITIVE_INFINITY;
-          found.push({ routeKey: n.routeKey, title, href, sortOrder, index: index++ });
-        }
-      }
-      visit(n.children, depth + 1);
-    }
-  };
-  visit(menus, 0);
-  found.sort((a, b) => a.sortOrder - b.sortOrder || a.index - b.index);
-  return { items: found.map((e) => ({ routeKey: e.routeKey, title: e.title, href: e.href, sortOrder: e.sortOrder })), unmapped };
-}
-
-/**
- * State of the `/me/menus` response for navigation. Only drivers' navigation is built from it
- * ("not-used" otherwise). On "error" the caller shows a visible, retryable error and keeps only
- * the policy-filtered static navigation: a failed menu never produces extra items.
- */
-export type MenuNavStatus = "not-used" | "loading" | "ready" | "error";
-
-export function menuNavStatus(access: Access, menus: unknown, menusError: string | null): MenuNavStatus {
-  if (access.role !== "driver") return "not-used";
-  if (menusError !== null) return "error";
-  return menus === null || menus === undefined ? "loading" : "ready";
+  return { kind: "forbidden", screen, reason: access.screens.size === 0 ? "no-permissions" : "no-access" };
 }
 
 /**
@@ -373,24 +661,57 @@ export function menuNavStatus(access: Access, menus: unknown, menusError: string
  * screen keep showing the access-denied panel, so a typed URL is never silently rewritten.
  */
 export function landingRedirect(access: Access, pathname: string): string | null {
-  const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "");
+  const path = normalisePath(pathname);
   if (path !== DV_BASE && path !== SCREEN_ROUTES.overview) return null;
   if (access.screens.has("overview")) return null;
   const home = homeScreen(access);
   return home ? SCREEN_ROUTES[home] : null;
 }
 
+// ── Driver navigation ────────────────────────────────────────────────────────
+
+export interface DriverNavEntry {
+  /** Backend routePath this entry corresponds to. */
+  routePath: string;
+  title: string;
+  href: string;
+}
+
+/** The driver app's sections, in the order and with the titles the backend menu used (2026-10-29). */
+export const DRIVER_SECTIONS: readonly DriverNavEntry[] = [
+  { routePath: "/driver/work", title: "My Work", href: SCREEN_ROUTES.myWork },
+  { routePath: "/driver/shifts", title: "My Shifts", href: `${SCREEN_ROUTES.myWork}/shifts` },
+  { routePath: "/driver/leave", title: "My Leave", href: `${SCREEN_ROUTES.myWork}/leave` },
+  { routePath: "/driver/checklist", title: "Shift Checklist", href: `${SCREEN_ROUTES.myWork}/checklist` },
+  { routePath: "/driver/safety", title: "My Safety", href: `${SCREEN_ROUTES.myWork}/safety` },
+  { routePath: "/driver/profile", title: "My Profile", href: `${SCREEN_ROUTES.myWork}/profile` },
+];
+
+/**
+ * Driver navigation. When the server's `screens` map to driver sections, those entries are used in
+ * server order with the server's titles; otherwise every section is listed. Empty unless the user may
+ * open My Work, so the screens list can never widen access.
+ */
+export function driverNavEntries(access: Access): DriverNavEntry[] {
+  if (!access.screens.has("myWork")) return [];
+  const fromServer: DriverNavEntry[] = [];
+  for (const e of [...access.serverScreens].sort((a, b) => a.index - b.index)) {
+    const section = e.screen === "myWork" ? DRIVER_SECTIONS.find((s) => s.href === e.href) : undefined;
+    if (section && !fromServer.some((f) => f.href === section.href)) fromServer.push({ ...section, title: e.title ?? section.title });
+  }
+  return fromServer.length ? fromServer : [...DRIVER_SECTIONS];
+}
+
 /**
  * The nav item to highlight: the longest item href that equals the path or is its parent on a
- * segment boundary (query and hash ignored). Computed from the items actually shown, so menu-built
- * driver items highlight themselves rather than the static My Work entry.
+ * segment boundary (query and hash ignored).
  */
 export function activeNavHref(hrefs: readonly string[], pathname: string): string | null {
-  const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "");
+  const path = normalisePath(pathname);
   let best: string | null = null;
   for (const href of hrefs) {
-    const h = href.split(/[?#]/)[0].replace(/\/+$/, "");
-    if ((path === h || path.startsWith(`${h}/`)) && (best === null || h.length > best.split(/[?#]/)[0].length)) best = href;
+    const h = normalisePath(href);
+    if ((path === h || path.startsWith(`${h}/`)) && (best === null || h.length > normalisePath(best).length)) best = href;
   }
   return best;
 }

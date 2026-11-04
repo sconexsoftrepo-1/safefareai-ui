@@ -58,17 +58,20 @@ export function ConfirmDialog({
             <AlertPrimitive.Overlay asChild forceMount>
               <motion.div className="fixed inset-0 z-50 bg-overlay backdrop-blur-[2px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transitions.fast} />
             </AlertPrimitive.Overlay>
-            <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center p-4">
+            {/* minmax(0,1fr): an implicit auto column grows to the content's min-content width and overflowed 320 px screens.
+                my-auto on the panel centres it when it fits and lets tall dialogs scroll from the top instead of being cut off. */}
+            <div className="pointer-events-none fixed inset-0 z-50 grid grid-cols-[minmax(0,1fr)] justify-items-center overflow-y-auto p-4">
               <AlertPrimitive.Content asChild forceMount onCloseAutoFocus={restoreFocus}>
                 <motion.div
-                  className="pointer-events-auto w-full max-w-md rounded-[26px] border border-line/60 bg-surface p-6 shadow-pop outline-none"
+                  className="pointer-events-auto my-auto w-full max-w-md rounded-[26px] border border-line/60 bg-surface p-6 shadow-pop outline-none"
                   initial={{ opacity: 0, scale: 0.96, y: 6 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.97, y: 4 }}
                   transition={transitions.base}
                 >
                   <div className="flex gap-4">
-                    <div className={cn("grid size-10 shrink-0 place-items-center rounded-full", tone === "danger" ? "bg-danger-soft text-danger" : "bg-brand-tint text-brand-deep")}>
+                    {/* Decorative; hidden on very narrow screens so forms inside the dialog get the full width. */}
+                    <div className={cn("grid size-10 shrink-0 place-items-center rounded-full max-[399px]:hidden", tone === "danger" ? "bg-danger-soft text-danger" : "bg-brand-tint text-brand-deep")}>
                       <TriangleAlert className="size-5" aria-hidden />
                     </div>
                     <div className="min-w-0">

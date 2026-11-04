@@ -1,0 +1,225 @@
+// Phase 6 browser validation (headless Edge via CDP). EVERY */api/v1/* request is answered locally with
+// SYNTHETIC data; nothing reaches the BFF, no credentials are used, no writes are sent.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser-p6");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3110";
+const CDP = "http://127.0.0.1:9340";
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 10, tenantId: 10, roleId: 2, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+  driver: { userId: 9, platform: false, homeTenantId: 10, tenantId: 10, roleId: 4, roleCode: "DRIVER", permissions: ["driver.app", "own.data.read"], screens: [] },
+};
+// SYNTHETIC tenant list: 30 tenants, mixed statuses, some missing fields/counts.
+const TENANTS = Array.from({ length: 30 }, (_, i) => {
+  const id = i + 1;
+  const t = { id, code: `T${String(id).padStart(2, "0")}`, name: `Synthetic Tenant ${String(id).padStart(2, "0")}`, status: id % 7 === 0 ? "INACTIVE" : "ACTIVE", timezone: "Asia/Kolkata", users: id * 2, devices: id * 5, drivers: id, current: false };
+  if (id === 1) Object.assign(t, { name: "Acme Logistics", code: "ACME" });
+  if (id === 2) Object.assign(t, { name: "Blue Line Cabs", code: "BLUE" });
+  if (id === 3) { t.status = undefined; t.users = undefined; t.devices = null; t.timezone = undefined; t.name = "Missing Fields Co"; t.code = "MISS"; }
+  if (id === 4) t.status = "SUSPENDED";
+  return t;
+});
+const CATALOG = { statusSets: [{ name: "dispatch", field: "DispatchRow.status", values: ["PENDING", "DONE"] }, { name: "tenant", field: "TenantDto.status", values: ["ACTIVE", "INACTIVE", "ARCHIVED"], notes: "SYNTHETIC catalogue" }] };
+const DRIVERS = { all: [{ id: 11, name: "All-tenant Driver" }], 1: [{ id: 21, name: "Acme Driver" }], 2: [{ id: 31, name: "Blue Driver" }] };
+let identity = IDS.sfa;
+let tenantsMode = "ok"; // ok | error | empty
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body: request.postData ?? null });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  let status = 200, body;
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  if (p === "/auth/login") body = ok({ accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 });
+  else if (p === "/me") body = ok({ id: identity.userId, displayName: "Synthetic user", email: "synthetic@example.invalid" });
+  else if (p === "/me/permissions") body = ok(identity);
+  else if (p === "/platform/tenants") {
+    if (tenantsMode === "error") { status = 503; body = { code: 503, msg: "Database unavailable (MOCKED)", data: null, total: null, extend: { errorCode: "SERVICE_UNAVAILABLE", requestId: "mock-503" } }; }
+    else if (tenantsMode === "empty") body = ok([], 0);
+    else body = ok(TENANTS, TENANTS.length);
+  } else if (p === "/reference/statuses") body = ok(CATALOG);
+  else if (p === "/platform/switch-tenant") { const id = JSON.parse(request.postData).tenantId; const t = TENANTS.find((x) => x.id === id); body = ok({ tenantId: id, code: t.code, name: t.name, header: "X-Tenant-Id" }); }
+  else if (p === "/drivers") { const d = DRIVERS[th ?? "all"] ?? []; body = ok(d, d.length); }
+  else body = ok(null);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body)).toString("base64") });
+}
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name, full = false) {
+  let extra = {};
+  if (full) { const mm = await send("Page.getLayoutMetrics"); extra = { clip: { x: 0, y: 0, width: mm.cssContentSize.width, height: Math.min(mm.cssContentSize.height, 5000), scale: 1 }, captureBeyondViewport: true }; }
+  const r = await send("Page.captureScreenshot", { format: "png", ...extra });
+  fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64"));
+}
+async function typeInto(sel, text) { await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select(); return true; })()`); if (text) await send("Input.insertText", { text }); else { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); } }
+const click = (sel) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+const clickText = (t, scope = "button") => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(scope)})].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)})); if (!el) return false; el.click(); return true; })()`);
+const clickLabel = (l) => evaluate(`(() => { const el = [...document.querySelectorAll('[aria-label]')].find(b => b.offsetParent !== null && b.getAttribute('aria-label') === ${JSON.stringify(l)}); if (!el) return false; el.click(); return true; })()`);
+async function login(mode) {
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  if (mode === "platform") await clickText("Safe-Fare Admin");
+  else await typeInto("input[name=tenantCode]", "SYNTH");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in");
+  await sleep(3500);
+}
+const rows = () => evaluate(`[...document.querySelectorAll('main table tbody tr')].map(r => ({ id: r.cells[0]?.textContent.trim(), name: r.querySelector('td:nth-child(2) span')?.textContent.trim(), status: r.cells[2]?.textContent.trim(), users: r.cells[4]?.textContent.trim(), devices: r.cells[5]?.textContent.trim(), drivers: r.cells[6]?.textContent.trim(), action: r.cells[7]?.textContent.trim() }))`);
+const STATE = `(() => ({
+  path: location.pathname,
+  switcher: document.querySelector('[data-testid=tenant-switcher]')?.getAttribute('aria-label') ?? null,
+  context: document.querySelector('[data-testid=tenant-context]')?.textContent.trim() ?? null,
+  summary: [...document.querySelectorAll('[data-testid=tenant-summary] div')].map(d => d.innerText.replace(/\\n/g, ': ')),
+  filters: [...document.querySelectorAll('[aria-label="Filter by status"] button')].map(b => b.textContent.trim()),
+  range: document.querySelector('[data-testid=tenant-page-range]')?.textContent.trim() ?? null,
+  stale: document.querySelector('[data-testid=tenant-stale]')?.textContent.trim() ?? null,
+  unsupported: !!document.querySelector('[data-testid=tenant-unsupported]'),
+  detail: document.querySelector('[data-testid=tenant-detail]')?.innerText ?? null,
+  alerts: [...document.querySelectorAll('main [role=alert]')].map(e => e.textContent.trim().slice(0, 120)),
+  heading: document.querySelector('main h1, main h2, main p.text-sm.font-semibold')?.textContent.trim() ?? null,
+  text: (document.querySelector('main')?.innerText ?? '').slice(0, 3000),
+}))()`;
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth; const r = e => e.getBoundingClientRect();
+  const visible = [...document.querySelectorAll('header *, main *, [role=dialog] *, [data-radix-popper-content-wrapper] *')].filter(e => e.offsetParent !== null && r(e).width > 0);
+  const clipped = visible.filter(e => { let p = e.parentElement; while (p && p !== document.body) { if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } const b = r(e); return b.right > vw + 1 || b.left < -1; }).slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+  const small = [...document.querySelectorAll('header button, main button, [role=dialog] button, [data-radix-popper-content-wrapper] button')].filter(e => e.offsetParent !== null).map(e => ({ t: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  const dlg = document.querySelector('[role=dialog]'); const db = dlg ? r(dlg) : null;
+  return { overflow: document.documentElement.scrollWidth > vw, sw: document.documentElement.scrollWidth, vw, clipped, small: small.slice(0, 6), dialog: db ? { left: Math.round(db.left), right: Math.round(db.right), inView: db.left >= -1 && db.right <= vw + 1 } : null };
+})()`;
+const since = (i) => captured.slice(i).filter((c) => c.method !== "OPTIONS");
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => { const msg = JSON.parse(mm.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+
+  // 1) List rendering, summary, filters, missing data, paging.
+  identity = IDS.sfa;
+  await viewport(1366, 768);
+  await login("platform");
+  let i = captured.length;
+  await go(`${APP}/drive-vision/tenants`, 3000);
+  const s0 = await evaluate(STATE);
+  const r0 = await rows();
+  R.list = { summary: s0.summary, filters: s0.filters, range: s0.range, rowsOnPage1: r0.length, firstRows: r0.slice(0, 4), missingRow: r0.find((r) => r.name === "Missing Fields Co"), unsupportedNote: s0.unsupported, tenantListHeaders: since(i).filter((c) => c.path === "/platform/tenants").map((c) => c.tenant), calls: [...new Set(since(i).map((c) => `${c.method} ${c.path}`))] };
+  await shot("tenants-list-1366x768", true);
+  await clickLabel("Next page"); await sleep(400);
+  const s1 = await evaluate(STATE);
+  R.paging = { page2Range: s1.range, page2Rows: (await rows()).length };
+
+  // Search and status filter (including a documented-but-unused catalogue status).
+  await typeInto("input[aria-label='Search tenants']", "blue"); await sleep(300);
+  R.search = { blue: (await rows()).map((r) => r.name), range: (await evaluate(STATE)).range };
+  await typeInto("input[aria-label='Search tenants']", "miss"); await sleep(300);
+  R.search.miss = (await rows()).map((r) => r.name);
+  await typeInto("input[aria-label='Search tenants']", ""); await sleep(300);
+  await clickText("INACTIVE", "[aria-label='Filter by status'] button"); await sleep(300);
+  R.filter = { inactive: (await rows()).map((r) => `${r.name}:${r.action}`) };
+  await clickText("ARCHIVED", "[aria-label='Filter by status'] button"); await sleep(300);
+  R.filter.archived = { rows: (await rows()).length, empty: (await evaluate(STATE)).text.includes("No matching tenants") };
+  await clickText("No status", "[aria-label='Filter by status'] button"); await sleep(300);
+  R.filter.noStatus = (await rows()).map((r) => r.name);
+  await clickText("All", "[aria-label='Filter by status'] button"); await sleep(300);
+
+  // 2) Details drawer (from list data) — viewing doesn't select; select from drawer → switcher follows.
+  await clickLabel("Details for Missing Fields Co"); await sleep(800);
+  const d0 = await evaluate(STATE);
+  R.details = { missingFields: d0.detail, switcherBefore: d0.switcher };
+  await shot("tenant-detail-missing-1366x768");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500);
+  await clickLabel("Details for Acme Logistics"); await sleep(800);
+  i = captured.length;
+  await evaluate(`(() => { const b = [...document.querySelectorAll('[role=dialog] button')].find(x => x.getAttribute('aria-label') === 'Select Acme Logistics'); b && b.click(); return !!b; })()`);
+  await sleep(2500);
+  const d1 = await evaluate(STATE);
+  R.selectFromPage = { switcherAfter: d1.switcher, context: d1.context, switchCalls: since(i).filter((c) => c.path === "/platform/switch-tenant").map((c) => ({ body: c.body, tenantHeader: c.tenant })), detailNowSays: (d1.detail || "").includes("Selected in this tab") };
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500);
+
+  // 3) Switch via top-bar → page reflects it (shared state); then tenant data on Drivers (client-side nav), no stale data.
+  await click("[data-testid=tenant-switcher]"); await sleep(1200);
+  await clickText("Blue Line Cabs", "[data-radix-popper-content-wrapper] li button"); await sleep(2500);
+  const r1 = await rows();
+  R.sharedState = { pageSelectedRow: r1.filter((r) => r.action === "Selected").map((r) => r.name), context: (await evaluate(STATE)).context };
+  i = captured.length;
+  await click("a[href='/drive-vision/drivers']"); await sleep(2500);
+  const dv = await evaluate(STATE);
+  R.noStale = { driversHeader: since(i).filter((c) => c.path === "/drivers").map((c) => c.tenant), showsBlue: dv.text.includes("Blue Driver"), showsAcme: dv.text.includes("Acme Driver"), showsAll: dv.text.includes("All-tenant Driver") };
+  await click("a[href='/drive-vision/tenants']"); await sleep(2500);
+  await clickText("Return to all tenants"); await sleep(1200);
+  R.returnToAll = { context: (await evaluate(STATE)).context, switcher: (await evaluate(STATE)).switcher };
+
+  // 4) Errors: initial failure → error panel (not empty); refresh failure with data → stale notice; empty list.
+  tenantsMode = "error";
+  await go(`${APP}/drive-vision/tenants`, 3000);
+  const e0 = await evaluate(STATE);
+  R.errorInitial = { alerts: e0.alerts, emptyStateShown: e0.text.includes("No tenants returned") };
+  await shot("tenants-error-1366x768");
+  tenantsMode = "ok";
+  await clickText("Try again"); await sleep(2000);
+  tenantsMode = "error";
+  await clickLabel("Refresh tenants"); await sleep(2000);
+  const e1 = await evaluate(STATE);
+  R.errorRefresh = { stale: e1.stale, rowsStillShown: (await rows()).length };
+  tenantsMode = "empty";
+  await go(`${APP}/drive-vision/tenants`, 3000);
+  R.empty = { text: (await evaluate(STATE)).text.includes("No tenants returned") };
+  tenantsMode = "ok";
+
+  // 5) Responsive at the Phase 6 viewports: list, drawer, switcher.
+  R.responsive = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/tenants`, 2800);
+    const l = await evaluate(LAYOUT);
+    await shot(`tenants-${w}x${h}`, true);
+    const opened = w >= 1024 ? await clickLabel("Details for Acme Logistics") : await evaluate(`(() => { const b = [...document.querySelectorAll('main ul[aria-label=Tenants] button')].find(x => x.offsetParent !== null && x.getAttribute('aria-label') === 'Details for Acme Logistics'); b && b.click(); return !!b; })()`);
+    await sleep(900);
+    const ld = await evaluate(LAYOUT);
+    await shot(`tenant-detail-${w}x${h}`);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500);
+    await click("[data-testid=tenant-switcher]"); await sleep(1000);
+    const ls = await evaluate(LAYOUT);
+    const pop = await evaluate(`(() => { const p = document.querySelector('[data-radix-popper-content-wrapper]'); if (!p) return null; const b = p.getBoundingClientRect(); return { inView: b.left >= 0 && b.right <= document.documentElement.clientWidth }; })()`);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(300);
+    R.responsive[`${w}x${h}`] = { list: { overflow: l.overflow, clipped: l.clipped.length, small: l.small }, detail: { opened, overflow: ld.overflow, dialog: ld.dialog, small: ld.small }, switcher: { overflow: ls.overflow, popover: pop } };
+  }
+
+  // 6) Access: tenant ADMIN and Driver denied; no switcher; no platform calls.
+  for (const [label, id] of [["tenantAdmin", IDS.tenantAdmin], ["driver", IDS.driver]]) {
+    identity = id;
+    await viewport(1366, 768);
+    i = captured.length;
+    await login("tenant");
+    await go(`${APP}/drive-vision/tenants`, 2500);
+    const a = await evaluate(STATE);
+    R[label] = { switcher: a.switcher, page: a.text.slice(0, 50), platformCalls: since(i).filter((c) => c.path.startsWith("/platform")).length, tenantHeaders: since(i).filter((c) => c.tenant).length };
+  }
+  R.anyTenantQuery = captured.filter((c) => /tenantId=/.test(c.query)).length;
+  R.anyWrite = captured.filter((c) => !["GET", "OPTIONS"].includes(c.method) && !["/auth/login", "/platform/switch-tenant"].includes(c.path)).map((c) => `${c.method} ${c.path}`);
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(R, null, 2));
+  console.log(JSON.stringify(R, null, 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

@@ -13,7 +13,7 @@ import { operationsService } from "@/features/drive-vision/api/operations-servic
 import { insightService } from "@/features/drive-vision/api/insight-service";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
-import type { AssignmentDto, DriverDto } from "@/features/drive-vision/api/types";
+import type { AssignmentDto, DriverDto, DriverRow } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { formatDate, formatDateTime, formatKm, formatNumber, initials } from "@/features/drive-vision/utils/format";
 import { PageHeader } from "../shared/page-header";
@@ -27,17 +27,24 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
-import { useCan } from "@/features/drive-vision/access/use-access";
+import { useAccess, useActionGate, useCan } from "@/features/drive-vision/access/use-access";
+import { canViewWidget, dataScope } from "@/features/drive-vision/access/access-policy";
+import { TenantRequiredButton } from "../shared/tenant-required";
 import type { Errors } from "../settings/settings-model";
 import {
   DRIVER_MAX,
+  EMPTY_ASSIGN_FORM,
   EMPTY_DRIVER_FORM,
   LICENCE_META,
+  activeAssignments,
   assignRequestBody,
   driverFormFrom,
   driverRequestBody,
+  endRequestBody,
+  reviewAssignment,
   validateAssignForm,
   validateDriverForm,
+  validateEndAt,
   type AssignForm,
   type DriverField,
   type DriverForm,
@@ -88,7 +95,8 @@ const vehicleOf = (a?: AssignmentDto) => (a ? a.deviceName || a.terminalNo || (a
 export function DriversPage() {
   const params = useSearchParams();
   const [tab, setTab] = useState<Tab>(params.get("licence") ? "licences" : "drivers");
-  const canManage = useCan("drivers.manage");
+  const createGate = useActionGate("drivers.create");
+  const canCreate = createGate.allowed;
   const [searchInput, setSearchInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<"all" | "ACTIVE" | "INACTIVE">("all");
@@ -115,8 +123,11 @@ export function DriversPage() {
   );
   const expiryQ = useApiQuery(tab === "licences" ? `drivers:licence-expiries:${withinDays}` : null, () => operationsService.licenceExpiries(Number(withinDays)));
   const filtered = keyword !== "" || status !== "all";
+  // Safe-Fare Admin in all-tenants mode: rows of every tenant — show which tenant (V10 tenant columns).
+  const allTenants = dataScope(useAccess()) === "all-tenants";
 
-  const columns: DataTableColumn<DriverDto>[] = [
+  const columns: DataTableColumn<DriverRow>[] = [
+    { id: "id", header: "ID", hideBelow: "lg", cell: (d) => <span className="font-mono text-xs text-ink-muted">{d.id ?? "—"}</span> },
     {
       id: "name",
       header: "Driver",
@@ -133,8 +144,27 @@ export function DriversPage() {
       ),
     },
     { id: "licence", header: "Licence", cell: (d) => <LicenceBadge driver={d} /> },
-    { id: "vehicle", header: "Current vehicle", hideBelow: "md", cell: (d) => vehicleOf(d.currentAssignment) ?? <span className="text-ink-subtle">Unassigned</span> },
+    {
+      id: "vehicle",
+      header: "Assignment",
+      hideBelow: "md",
+      cell: (d) =>
+        d.currentAssignment ? (
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="truncate">{vehicleOf(d.currentAssignment)}</span>
+            {d.currentAssignment.active === true ? (
+              <StatusBadge size="sm" tone="success">
+                Active
+              </StatusBadge>
+            ) : null}
+          </span>
+        ) : (
+          <span className="text-ink-subtle">Unassigned</span>
+        ),
+    },
     { id: "phone", header: "Phone", hideBelow: "lg", cell: (d) => d.phone ?? "—" },
+    { id: "email", header: "Email", hideBelow: "xl", cell: (d) => <span className="truncate">{d.email ?? "—"}</span> },
+    ...(allTenants ? [{ id: "tenant", header: "Tenant", hideBelow: "md" as const, cell: (d: DriverRow) => d.tenantName ?? (d.tenantId !== undefined ? `Tenant ${d.tenantId}` : "—") }] : []),
     { id: "status", header: "Status", cell: (d) => <DriverStatusBadge status={d.status} /> },
   ];
 
@@ -150,10 +180,12 @@ export function DriversPage() {
             <Button variant="outline" onClick={activeQ.refetch} disabled={activeQ.loading}>
               <RefreshCw className={activeQ.refreshing ? "animate-spin" : undefined} /> Refresh
             </Button>
-            {canManage ? (
+            {canCreate ? (
               <Button onClick={() => setFormMode("create")}>
                 <Plus /> New driver
               </Button>
+            ) : createGate.tenantBlocked ? (
+              <TenantRequiredButton label="New driver" />
             ) : null}
           </>
         }
@@ -171,7 +203,7 @@ export function DriversPage() {
         />
         {tab === "drivers" ? (
           <FilterBar className="max-sm:w-full">
-            <SearchInput label="Search drivers" value={searchInput} onChange={setSearchInput} placeholder="Name, licence or phone" className="w-full max-sm:basis-full sm:w-64" />
+            <SearchInput label="Search drivers" value={searchInput} onChange={setSearchInput} placeholder="Search drivers" className="w-full max-sm:basis-full sm:w-64" />
             <FilterSelect
               label="Status"
               className="max-sm:flex-1"
@@ -278,14 +310,27 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
     const to = new Date();
     return { from: new Date(to.getTime() - SCORE_WINDOW_DAYS * 86_400_000).toISOString(), to: to.toISOString() };
   });
-  const scoreQ = useApiQuery(id !== null ? `drivers:score:${id}:${scoreWindow.from}` : null, () => insightService.driverScore(id!, scoreWindow));
-  const eventsQ = useApiQuery(id !== null ? `drivers:events:${id}:${scoreWindow.from}` : null, () => insightService.driverSafetyEvents(id!, { ...scoreWindow, pageNumber: 1, pageSize: 5 }));
+  const safetyAllowed = canViewWidget(useAccess(), "drivers.safety");
+  const scoreQ = useApiQuery(id !== null && safetyAllowed ? `drivers:score:${id}:${scoreWindow.from}` : null, () => insightService.driverScore(id!, scoreWindow));
+  const eventsQ = useApiQuery(id !== null && safetyAllowed ? `drivers:events:${id}:${scoreWindow.from}` : null, () => insightService.driverSafetyEvents(id!, { ...scoreWindow, pageNumber: 1, pageSize: 5 }));
   const [pending, setPending] = useState<Pending | null>(null);
-  const [assign, setAssign] = useState<AssignForm>({ deviceId: "", from: "", replaceCurrent: false });
-  const canManage = useCan("drivers.manage");
-  const devicesQ = useApiQuery(pending?.kind === "assign" ? "drivers:devices" : null, () => fleetService.listAllDevices());
+  const [assign, setAssign] = useState<AssignForm>(EMPTY_ASSIGN_FORM);
+  const [replaceAck, setReplaceAck] = useState(false);
+  const [endAt, setEndAt] = useState("");
+  // V10: edit and (end) assignments need driver.update; delete needs driver.delete.
+  const canUpdate = useCan("drivers.update");
+  const canDelete = useCan("drivers.delete");
+  // Secondary reads need their own V10 codes; without them the request isn't sent at all.
+  const access = useAccess();
+  const can = { safety: canViewWidget(access, "drivers.safety"), devices: canViewWidget(access, "drivers.deviceChoices"), deviceAssignments: canViewWidget(access, "vehicles.driverAssignments") };
+  const devicesQ = useApiQuery(pending?.kind === "assign" && can.devices ? "drivers:devices" : null, () => fleetService.listAllDevices());
+  const chosenDevice = pending?.kind === "assign" && /^\d+$/.test(assign.deviceId) ? Number(assign.deviceId) : null;
+  const deviceAssignQ = useApiQuery(chosenDevice !== null && can.deviceAssignments ? `drivers:device-assignments:${chosenDevice}:${version}` : null, () => operationsService.deviceAssignments(chosenDevice!));
   const driver = detailQ.data;
   const assignErrors = validateAssignForm(assign);
+  const review = reviewAssignment(activeAssignments(assignQ.data?.items), activeAssignments(deviceAssignQ.data?.items), assign, id ?? -1);
+  const endError = pending?.kind === "end" ? validateEndAt(endAt, pending.assignment) : null;
+  const chosenName = (devicesQ.data?.items ?? []).find((d) => String(d.id) === assign.deviceId);
   const refresh = () => {
     setVersion((v) => v + 1);
     onChanged();
@@ -303,10 +348,12 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
       if (pending.kind === "assign") {
         const a = await operationsService.assignVehicle(id, assignRequestBody(assign));
         toast.success(`Assigned to ${vehicleOf(a) ?? "vehicle"}`);
-        setAssign({ deviceId: "", from: "", replaceCurrent: false });
+        setAssign(EMPTY_ASSIGN_FORM);
+        setReplaceAck(false);
       } else {
-        await operationsService.endAssignment(id, pending.assignment.id!, {});
+        await operationsService.endAssignment(id, pending.assignment.id!, endRequestBody(endAt));
         toast.success("Assignment ended");
+        setEndAt("");
       }
       refresh();
     } catch (err) {
@@ -326,17 +373,23 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
         title={driver?.name ?? (id !== null ? `Driver ${id}` : "")}
         description={driver?.licence?.number ? `Licence ${driver.licence.number}` : undefined}
         footer={
-          driver && canManage ? (
+          driver && (canUpdate || canDelete) ? (
             <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="outline" className="text-danger" onClick={() => setPending({ kind: "delete" })}>
-                <Trash2 /> Delete
-              </Button>
-              <Button variant="outline" onClick={() => setPending({ kind: "assign" })}>
-                <Truck /> Assign vehicle
-              </Button>
-              <Button onClick={onEdit}>
-                <Pencil /> Edit
-              </Button>
+              {canDelete ? (
+                <Button variant="outline" className="text-danger" onClick={() => setPending({ kind: "delete" })}>
+                  <Trash2 /> Delete
+                </Button>
+              ) : null}
+              {canUpdate ? (
+                <>
+                  <Button variant="outline" onClick={() => (setAssign(EMPTY_ASSIGN_FORM), setReplaceAck(false), setPending({ kind: "assign" }))}>
+                    <Truck /> Assign vehicle
+                  </Button>
+                  <Button onClick={onEdit}>
+                    <Pencil /> Edit
+                  </Button>
+                </>
+              ) : null}
             </div>
           ) : undefined
         }
@@ -382,7 +435,9 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
               <h3 id="dr-score" className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold">
                 <ShieldCheck className="size-4 text-brand" aria-hidden /> Safety · last {SCORE_WINDOW_DAYS} days
               </h3>
-              {scoreQ.error ? (
+              {!can.safety ? (
+                <p className="text-[13px] text-ink-muted">Needs alarm.read to show safety data.</p>
+              ) : scoreQ.error ? (
                 <ApiErrorState error={scoreQ.error} onRetry={scoreQ.refetch} compact />
               ) : !scoreQ.data ? (
                 <LoadingSkeleton variant="list" rows={2} />
@@ -421,6 +476,11 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
               ) : eventsQ.error ? (
                 <p className="mt-2 text-xs text-danger">Safety events unavailable: {describeApiError(eventsQ.error)}</p>
               ) : null}
+              {eventsQ.data && eventsQ.data.items.length > 0 ? (
+                <p className="mt-1 text-[11.5px] text-ink-subtle" data-testid="driver-events-note">
+                  Events attributed to this driver by the server (GET /drivers/{"{id}"}/safety-events). The app doesn&apos;t link alarms to drivers itself.
+                </p>
+              ) : null}
             </section>
 
             <section aria-labelledby="dr-assign">
@@ -445,8 +505,8 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
                         </span>
                       </span>
                       {a.active ? <StatusBadge size="sm" tone="success">Active</StatusBadge> : null}
-                      {a.active && a.id !== undefined && canManage ? (
-                        <Button variant="ghost" size="sm" onClick={() => setPending({ kind: "end", assignment: a })}>
+                      {a.active && a.id !== undefined && canUpdate ? (
+                        <Button variant="ghost" size="sm" onClick={() => (setEndAt(""), setPending({ kind: "end", assignment: a }))}>
                           <Link2Off /> End
                         </Button>
                       ) : null}
@@ -469,16 +529,31 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
             ? "Removes the driver record on the server. What happens to its assignments, dispatches and history is decided by the server."
             : pending?.kind === "assign"
               ? "Creates an assignment on the server. The server rejects it if the vehicle or driver is already assigned, unless you choose to replace the current assignment."
-              : "Ends the assignment now on the server."
+              : "Ends the assignment on the server — now, or at the time you set."
         }
-        confirmLabel={pending?.kind === "delete" ? "Delete driver" : pending?.kind === "assign" ? "Assign" : "End assignment"}
-        confirmDisabled={pending?.kind === "assign" && Object.keys(assignErrors).length > 0}
+        confirmLabel={pending?.kind === "delete" ? "Delete driver" : pending?.kind === "assign" ? (review.replaces ? "Replace and assign" : "Assign") : "End assignment"}
+        confirmDisabled={
+          pending?.kind === "assign" ? Object.keys(assignErrors).length > 0 || !can.devices || (review.replaces && !replaceAck) || (chosenDevice !== null && can.deviceAssignments && deviceAssignQ.loading) : pending?.kind === "end" ? endError !== null : false
+        }
         onConfirm={run}
       >
+        {pending?.kind === "end" ? (
+          <div className="space-y-2" data-testid="end-assignment">
+            <p className="text-[13px] text-ink-muted">
+              Started {pending.assignment.assignedFrom ? formatDateTime(pending.assignment.assignedFrom) : "—"}
+              {pending.assignment.assignedTo ? ` · scheduled end ${formatDateTime(pending.assignment.assignedTo)}` : " · open-ended"}
+            </p>
+            <FormField id="end-at" label="End at (IST)" hint="Leave blank to end it now." error={endError ?? undefined}>
+              <Input {...fieldA11y("end-at", endError ?? undefined, "x")} type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+            </FormField>
+          </div>
+        ) : null}
         {pending?.kind === "assign" ? (
           <div className="space-y-3">
             <FormField id="as-device" label="Vehicle" error={assign.deviceId ? assignErrors.deviceId : undefined} required>
-              {devicesQ.error ? (
+              {!can.devices ? (
+                <p className="text-xs text-ink-muted">Choosing a vehicle needs device.read.</p>
+              ) : devicesQ.error ? (
                 <p className="text-xs text-danger">{describeApiError(devicesQ.error)}</p>
               ) : (
                 <Select value={assign.deviceId} onValueChange={(v) => setAssign({ ...assign, deviceId: v })} disabled={!devicesQ.data}>
@@ -497,12 +572,49 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
                 </Select>
               )}
             </FormField>
-            <FormField id="as-from" label="Starts (IST)" hint="Leave blank to let the server use the current time." error={assignErrors.from}>
-              <Input {...fieldA11y("as-from", assignErrors.from, "Leave blank to let the server use the current time.")} type="datetime-local" value={assign.from} onChange={(e) => setAssign({ ...assign, from: e.target.value })} />
-            </FormField>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField id="as-from" label="Starts (IST)" hint="Blank: the server uses the current time." error={assignErrors.from}>
+                <Input {...fieldA11y("as-from", assignErrors.from, "x")} type="datetime-local" value={assign.from} onChange={(e) => setAssign({ ...assign, from: e.target.value })} />
+              </FormField>
+              <FormField id="as-to" label="Ends (IST)" hint="Optional. Blank: open-ended." error={assignErrors.to}>
+                <Input {...fieldA11y("as-to", assignErrors.to, "x")} type="datetime-local" value={assign.to} onChange={(e) => setAssign({ ...assign, to: e.target.value })} />
+              </FormField>
+            </div>
             <label className="flex items-center gap-2 text-[13px]">
-              <Checkbox checked={assign.replaceCurrent} onCheckedChange={(v) => setAssign({ ...assign, replaceCurrent: v === true })} /> Replace the current assignment
+              <Checkbox checked={assign.replaceCurrent} onCheckedChange={(v) => (setAssign({ ...assign, replaceCurrent: v === true }), setReplaceAck(false))} /> Replace the current assignment
             </label>
+            <div className="space-y-1.5 rounded-xl bg-surface-muted p-3 text-xs" data-testid="assign-review">
+              <p className="font-semibold text-ink">Review</p>
+              <p>
+                Driver: <span className="font-medium">{driver?.name ?? `Driver ${id}`}</span>
+              </p>
+              <p>
+                Vehicle: <span className="font-medium">{chosenDevice === null ? "—" : (chosenName?.name ?? chosenName?.terminalNo ?? `Device ${chosenDevice}`)}</span>
+              </p>
+              <p>
+                From: {assign.from ? `${assign.from.replace("T", " ")} IST` : "now (server time)"} · To: {assign.to ? `${assign.to.replace("T", " ")} IST` : "open-ended"}
+              </p>
+              {chosenDevice !== null && !can.deviceAssignments ? <p className="text-ink-muted">The vehicle&apos;s current driver can&apos;t be checked (needs driver.read).</p> : null}
+              {chosenDevice !== null && deviceAssignQ.error ? <p className="text-danger">Couldn&apos;t check the vehicle&apos;s assignments: {describeApiError(deviceAssignQ.error)}</p> : null}
+              {review.conflicts.length ? (
+                <ul className="space-y-0.5" aria-label="Active assignments affected">
+                  {review.conflicts.map((a) => (
+                    <li key={a.id ?? `${a.driverId}-${a.deviceId}`}>
+                      Active: {a.driverName ?? `Driver ${a.driverId ?? "?"}`} → {vehicleOf(a)} since {a.assignedFrom ? formatDateTime(a.assignedFrom) : "?"}
+                    </li>
+                  ))}
+                </ul>
+              ) : chosenDevice !== null && deviceAssignQ.data ? (
+                <p className="text-ink-muted">No active assignment on this driver or vehicle.</p>
+              ) : null}
+              {review.likelyRefused ? <p className="text-warning">The server is expected to refuse this while the assignment above is active, unless you replace it.</p> : null}
+              {review.replaces ? (
+                <label className="flex items-start gap-2 text-warning">
+                  <Checkbox checked={replaceAck} onCheckedChange={(v) => setReplaceAck(v === true)} aria-label="Confirm ending the active assignment" />
+                  <span>I understand this ends the active assignment{review.conflicts.length > 1 ? "s" : ""} listed above.</span>
+                </label>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </ConfirmDialog>

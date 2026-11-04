@@ -3,30 +3,38 @@ import { authService } from "../api/auth-service";
 import { onSessionEnded, type SessionEndReason } from "../api/client";
 import { describeApiError, isApiError } from "../api/errors";
 import { readSession } from "../api/session";
-import type { CurrentUserDto, LoginRequest, MenuNodeDto } from "../api/types";
+import type { CurrentUserDto, LoginRequest } from "../api/types";
+import { readIdentity, type Identity } from "../access/identity";
+import { setTenantSelection } from "../api/tenant-context";
 
 /**
- * Signed-in user state, backed by the BFF (/auth/*, /me, /me/menus). Same
- * useSyncExternalStore pattern as fleet-store / preferences. Holds no tokens —
- * those stay in api/session.
+ * Signed-in user state, backed by the BFF (/auth/*, GET /me, GET /me/permissions). Same
+ * useSyncExternalStore pattern as preferences. Holds no tokens — those stay in api/session, shared by
+ * every API client (the BFF today, the Python service later): one login, one token, one identity.
+ *
+ * Two server sources, one job each:
+ * - `user`     GET /me — profile shown in the UI (name, email, tenant name). Never used to authorise.
+ * - `identity` GET /me/permissions — platform flag, tenant, role code, permission codes, screens.
+ *              The only input of the access policy. `null` (missing or malformed) means no access.
  *
  * `unknown`   before the stored session has been checked (also the SSR snapshot)
- * `error`     a stored session exists but /me couldn't be reached (network / 5xx) — retryable
+ * `error`     a session exists but /me or /me/permissions couldn't be loaded (network / 5xx) — retryable;
+ *             the shell isn't rendered, so nothing is shown with an unverified identity
  */
 export type AuthStatus = "unknown" | "authenticated" | "unauthenticated" | "error";
 
 export interface AuthState {
   status: AuthStatus;
   user: CurrentUserDto | null;
-  /** null until loaded. */
-  menus: MenuNodeDto[] | null;
-  menusError: string | null;
+  identity: Identity | null;
   /** Why the last session ended, shown on the sign-in screen. */
   endReason: SessionEndReason | null;
   bootError: string | null;
 }
 
-const INITIAL_STATE: AuthState = { status: "unknown", user: null, menus: null, menusError: null, endReason: null, bootError: null };
+const INITIAL_STATE: AuthState = { status: "unknown", user: null, identity: null, endReason: null, bootError: null };
+/** Everything tied to a signed-in user; cleared together so no access survives a session. */
+const SIGNED_OUT: Pick<AuthState, "user" | "identity" | "bootError"> = { user: null, identity: null, bootError: null };
 
 let state: AuthState = INITIAL_STATE;
 const listeners = new Set<() => void>();
@@ -54,46 +62,31 @@ export function useAuth<T>(selector: (s: AuthState) => T): T {
 export const getAuthState = () => state;
 
 if (typeof window !== "undefined") {
-  onSessionEnded((reason) => setState({ status: "unauthenticated", user: null, menus: null, menusError: null, endReason: reason, bootError: null }));
+  onSessionEnded((reason) => setState({ ...SIGNED_OUT, status: "unauthenticated", endReason: reason }));
 }
 
-async function loadMenus() {
-  try {
-    const menus = await authService.myMenus();
-    setState({ menus, menusError: null });
-  } catch (err) {
-    if (isApiError(err) && err.status === 401) return; // session ended — handled by the listener
-    setState({ menusError: describeApiError(err) });
-  }
-}
-
-/** Re-requests GET /me/menus after a failure (the error is cleared while it runs). */
-export function retryMenus(): Promise<void> {
-  if (state.status !== "authenticated") return Promise.resolve();
-  setState({ menusError: null });
-  return loadMenus();
-}
-
-async function loadProfile() {
-  const user = await authService.me();
-  setState({ status: "authenticated", user, bootError: null, endReason: null });
-  void loadMenus();
+/** Loads profile and identity together; the session counts as authenticated only once both arrived. */
+async function loadSession() {
+  const [user, permissions] = await Promise.all([authService.me(), authService.myPermissions()]);
+  // A new session starts platform-wide: no tenant selection survives a sign-in or a session restore.
+  setTenantSelection(null);
+  setState({ status: "authenticated", user, identity: readIdentity(permissions), bootError: null, endReason: null });
 }
 
 let bootstrapping: Promise<void> | null = null;
 
-/** Validates the stored session once per page load with GET /me. Safe to call repeatedly. */
+/** Validates the stored session once per page load with GET /me + GET /me/permissions. Safe to call repeatedly. */
 export function bootstrapAuth(): Promise<void> {
   if (state.status === "authenticated") return Promise.resolve();
   if (bootstrapping) return bootstrapping;
   if (!readSession()) {
-    if (state.status !== "unauthenticated") setState({ status: "unauthenticated" });
+    if (state.status !== "unauthenticated") setState({ ...SIGNED_OUT, status: "unauthenticated" });
     return Promise.resolve();
   }
-  bootstrapping = loadProfile()
+  bootstrapping = loadSession()
     .catch((err) => {
       if (isApiError(err) && err.status === 401) return; // listener already moved us to unauthenticated
-      setState({ status: "error", bootError: describeApiError(err) });
+      setState({ ...SIGNED_OUT, status: "error", bootError: describeApiError(err) });
     })
     .finally(() => {
       bootstrapping = null;
@@ -101,20 +94,39 @@ export function bootstrapAuth(): Promise<void> {
   return bootstrapping;
 }
 
-/** Throws ApiError so the form can show server field errors. */
+/**
+ * Signs in, then loads profile + identity. Throws ApiError so the form can show server field errors.
+ * If the token works but the identity can't be loaded, the state becomes the retryable `error`
+ * (tokens kept, nothing rendered) and the error is rethrown for the form.
+ */
 export async function signIn(request: LoginRequest): Promise<void> {
-  const tokens = await authService.login(request);
-  setState({ status: "authenticated", user: tokens.user ?? null, endReason: null, bootError: null, menus: null, menusError: null });
-  // Confirm the new token on an authenticated call and pick up the latest profile.
+  await authService.login(request);
   try {
-    await loadProfile();
+    await loadSession();
   } catch (err) {
-    // Token rejected straight away → surface it. Otherwise keep the user from the login response.
-    if (isApiError(err) && err.status === 401) throw err;
+    if (!(isApiError(err) && err.status === 401)) setState({ ...SIGNED_OUT, status: "error", bootError: describeApiError(err) });
+    throw err;
   }
 }
 
-/** Replaces the profile after a confirmed PATCH /me (role and permissions come from the server response). */
+/**
+ * Re-reads GET /me/permissions (e.g. after a tenant switch or a permission change). On failure the
+ * identity is dropped rather than kept stale: the state becomes the retryable `error`.
+ */
+export async function refreshIdentity(): Promise<void> {
+  if (state.status !== "authenticated") return;
+  try {
+    const identity = readIdentity(await authService.myPermissions());
+    // Only a platform identity may carry a selected tenant.
+    if (!identity?.platform) setTenantSelection(null);
+    setState({ identity });
+  } catch (err) {
+    if (isApiError(err) && err.status === 401) return;
+    setState({ ...SIGNED_OUT, status: "error", bootError: describeApiError(err) });
+  }
+}
+
+/** Replaces the profile after a confirmed PATCH /me. Authorisation is unaffected (it reads `identity`). */
 export function applyCurrentUser(user: CurrentUserDto): void {
   if (state.status === "authenticated") setState({ user });
 }

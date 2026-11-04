@@ -1,0 +1,1128 @@
+{
+  "viewports": {
+    "320x640": {
+      "tenant": {
+        "vw": 320,
+        "vh": 640,
+        "scrollWidth": 320,
+        "bodyScrollWidth": 320,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 113,
+            "h": 39
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 113,
+            "h": 39
+          },
+          {
+            "id": "login-tenant",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "login-user",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      },
+      "admin": {
+        "vw": 320,
+        "vh": 640,
+        "scrollWidth": 320,
+        "bodyScrollWidth": 320,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 113,
+            "h": 39
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 113,
+            "h": 39
+          },
+          {
+            "id": "login-user",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 238,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      }
+    },
+    "375x812": {
+      "tenant": {
+        "vw": 375,
+        "vh": 812,
+        "scrollWidth": 375,
+        "bodyScrollWidth": 375,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 141,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 141,
+            "h": 36
+          },
+          {
+            "id": "login-tenant",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "login-user",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      },
+      "admin": {
+        "vw": 375,
+        "vh": 812,
+        "scrollWidth": 375,
+        "bodyScrollWidth": 375,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 141,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 141,
+            "h": 36
+          },
+          {
+            "id": "login-user",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 293,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      }
+    },
+    "390x844": {
+      "tenant": {
+        "vw": 390,
+        "vh": 844,
+        "scrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 148,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 148,
+            "h": 36
+          },
+          {
+            "id": "login-tenant",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "login-user",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      },
+      "admin": {
+        "vw": 390,
+        "vh": 844,
+        "scrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 148,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 148,
+            "h": 36
+          },
+          {
+            "id": "login-user",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 308,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      }
+    },
+    "768x1024": {
+      "tenant": {
+        "vw": 768,
+        "vh": 1024,
+        "scrollWidth": 768,
+        "bodyScrollWidth": 768,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "login-tenant",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-user",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      },
+      "admin": {
+        "vw": 768,
+        "vh": 1024,
+        "scrollWidth": 768,
+        "bodyScrollWidth": 768,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "login-user",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      }
+    },
+    "1024x768": {
+      "tenant": {
+        "vw": 1024,
+        "vh": 768,
+        "scrollWidth": 1024,
+        "bodyScrollWidth": 1024,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "login-tenant",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-user",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      },
+      "admin": {
+        "vw": 1024,
+        "vh": 768,
+        "scrollWidth": 1024,
+        "bodyScrollWidth": 1024,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "login-user",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      }
+    },
+    "1440x900": {
+      "tenant": {
+        "vw": 1440,
+        "vh": 900,
+        "scrollWidth": 1440,
+        "bodyScrollWidth": 1440,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "login-tenant",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-user",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      },
+      "admin": {
+        "vw": 1440,
+        "vh": 900,
+        "scrollWidth": 1440,
+        "bodyScrollWidth": 1440,
+        "horizontalOverflow": false,
+        "clipped": [],
+        "overlaps": [],
+        "targets": [
+          {
+            "id": "Tenant user",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "Safe-Fare Admin",
+            "w": 165,
+            "h": 36
+          },
+          {
+            "id": "login-user",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "login-password",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Sign in",
+            "w": 342,
+            "h": 40
+          },
+          {
+            "id": "Show password",
+            "w": 28,
+            "h": 28
+          }
+        ]
+      }
+    }
+  },
+  "interactions": {
+    "375x812": {
+      "initial": {
+        "path": "/login",
+        "tenantField": true,
+        "adminNote": false,
+        "checked": [
+          "Tenant user"
+        ],
+        "errors": [],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\nTenant code\n*\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "tenantEmptySubmit": {
+        "path": "/login",
+        "tenantField": true,
+        "adminNote": false,
+        "checked": [
+          "Tenant user"
+        ],
+        "errors": [
+          "Tenant code is required.",
+          "Email or username is required.",
+          "Password is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\nTenant code\n*\n\nTenant code is required.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\n\nPassword is required.\n\nSign in"
+      },
+      "tenantWhitespaceCode": {
+        "path": "/login",
+        "tenantField": true,
+        "adminNote": false,
+        "checked": [
+          "Tenant user"
+        ],
+        "errors": [
+          "Tenant code is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\nTenant code\n*\n\nTenant code is required.\n\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "requestsAfterClientValidation": 0,
+      "adminMode": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "adminEmptySubmit": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Email or username is required.",
+          "Password is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\n\nPassword is required.\n\nSign in"
+      },
+      "passwordShown": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Email or username is required."
+        ],
+        "passwordType": "text",
+        "passwordValueLength": 19,
+        "togglePressed": "true",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\nSign in"
+      },
+      "passwordHidden": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Email or username is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\nSign in"
+      },
+      "adminLoading": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Signing in…",
+        "submitDisabled": true,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\nPassword\n*\nSigning in…"
+      },
+      "adminError": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Invalid login or password (MOCKED)HTTP 401"
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nInvalid login or password (MOCKED)\n\nHTTP 401\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "adminRequest": [
+        {
+          "method": "OPTIONS",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": null,
+          "auth": false
+        },
+        {
+          "method": "POST",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": {
+            "keys": [
+              "login",
+              "password"
+            ],
+            "tenantCode": "<absent>",
+            "passwordPresent": true
+          },
+          "auth": false
+        }
+      ],
+      "tenantRequest": [
+        {
+          "method": "OPTIONS",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": null,
+          "auth": false
+        },
+        {
+          "method": "POST",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": {
+            "keys": [
+              "login",
+              "password",
+              "tenantCode"
+            ],
+            "tenantCode": "TEST",
+            "passwordPresent": true
+          },
+          "auth": false
+        }
+      ]
+    },
+    "1440x900": {
+      "initial": {
+        "path": "/login",
+        "tenantField": true,
+        "adminNote": false,
+        "checked": [
+          "Tenant user"
+        ],
+        "errors": [],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\nTenant code\n*\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "tenantEmptySubmit": {
+        "path": "/login",
+        "tenantField": true,
+        "adminNote": false,
+        "checked": [
+          "Tenant user"
+        ],
+        "errors": [
+          "Tenant code is required.",
+          "Email or username is required.",
+          "Password is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\nTenant code\n*\n\nTenant code is required.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\n\nPassword is required.\n\nSign in"
+      },
+      "tenantWhitespaceCode": {
+        "path": "/login",
+        "tenantField": true,
+        "adminNote": false,
+        "checked": [
+          "Tenant user"
+        ],
+        "errors": [
+          "Tenant code is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\nTenant code\n*\n\nTenant code is required.\n\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "requestsAfterClientValidation": 0,
+      "adminMode": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "adminEmptySubmit": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Email or username is required.",
+          "Password is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\n\nPassword is required.\n\nSign in"
+      },
+      "passwordShown": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Email or username is required."
+        ],
+        "passwordType": "text",
+        "passwordValueLength": 19,
+        "togglePressed": "true",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\nSign in"
+      },
+      "passwordHidden": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Email or username is required."
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\n\nEmail or username is required.\n\nPassword\n*\nSign in"
+      },
+      "adminLoading": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [],
+        "passwordType": "password",
+        "passwordValueLength": 19,
+        "togglePressed": "false",
+        "submitText": "Signing in…",
+        "submitDisabled": true,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\nPassword\n*\nSigning in…"
+      },
+      "adminError": {
+        "path": "/login",
+        "tenantField": false,
+        "adminNote": true,
+        "checked": [
+          "Safe-Fare Admin"
+        ],
+        "errors": [
+          "Invalid login or password (MOCKED)HTTP 401"
+        ],
+        "passwordType": "password",
+        "passwordValueLength": 0,
+        "togglePressed": "false",
+        "submitText": "Sign in",
+        "submitDisabled": false,
+        "heading": "Sign in",
+        "nav": [],
+        "bodyText": "SafeFare AI\nSign in\n\nUse your SafeFare fleet account.\n\nInvalid login or password (MOCKED)\n\nHTTP 401\n\nTenant user\nSafe-Fare Admin\n\nSafe-Fare platform administrators sign in without a tenant code.\n\nEmail or username\n*\nPassword\n*\nSign in"
+      },
+      "adminRequest": [
+        {
+          "method": "OPTIONS",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": null,
+          "auth": false
+        },
+        {
+          "method": "POST",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": {
+            "keys": [
+              "login",
+              "password"
+            ],
+            "tenantCode": "<absent>",
+            "passwordPresent": true
+          },
+          "auth": false
+        }
+      ],
+      "tenantRequest": [
+        {
+          "method": "OPTIONS",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": null,
+          "auth": false
+        },
+        {
+          "method": "POST",
+          "url": "http://185.193.19.156:9096/api/v1/auth/login",
+          "postData": {
+            "keys": [
+              "login",
+              "password",
+              "tenantCode"
+            ],
+            "tenantCode": "TEST",
+            "passwordPresent": true
+          },
+          "auth": false
+        }
+      ]
+    }
+  },
+  "routes": {
+    "/drive-vision/users": {
+      "landedOn": "/login?next=%2Fdrive-vision%2Fusers",
+      "apiCalls": []
+    },
+    "/drive-vision/settings": {
+      "landedOn": "/login?next=%2Fdrive-vision%2Fsettings",
+      "apiCalls": []
+    },
+    "/drive-vision/my-work": {
+      "landedOn": "/login?next=%2Fdrive-vision%2Fmy-work",
+      "apiCalls": []
+    },
+    "/drive-vision/not-a-page": {
+      "landedOn": "/login?next=%2Fdrive-vision%2Fnot-a-page",
+      "apiCalls": []
+    },
+    "/drive-vision": {
+      "landedOn": "/login?next=%2Fdrive-vision",
+      "apiCalls": []
+    }
+  },
+  "mockedPostLogin": {
+    "1440x900": {
+      "landedPath": "/drive-vision/settings",
+      "heading": "Settings",
+      "nav": [
+        "Admin"
+      ],
+      "layout": {
+        "horizontalOverflow": false,
+        "scrollWidth": 1425,
+        "vw": 1425
+      },
+      "usersDirect": {
+        "path": "/drive-vision/users",
+        "heading": "You don't have access to this page",
+        "text": "Skip to content\nSafeFare AI\nAdmin\nS\nsynthetic@example.invalid\nsynthetic@example.invalid\nYou don't have access to this page\n\nYour account's permissions don't include this page.\n\nRole: ADMIN · platform\n\nGo to Settings\nSign out"
+      },
+      "apiCalls": [
+        "OPTIONS /api/v1/auth/login",
+        "POST /api/v1/auth/login",
+        "OPTIONS /api/v1/me",
+        "OPTIONS /api/v1/me/permissions",
+        "GET /api/v1/me (bearer)",
+        "GET /api/v1/me/permissions (bearer)",
+        "OPTIONS /api/v1/notifications/unread-count",
+        "GET /api/v1/notifications/unread-count (bearer)",
+        "OPTIONS /api/v1/me/preferences",
+        "GET /api/v1/me/preferences (bearer)",
+        "OPTIONS /api/v1/me",
+        "OPTIONS /api/v1/me/permissions",
+        "GET /api/v1/me (bearer)",
+        "GET /api/v1/me/permissions (bearer)",
+        "OPTIONS /api/v1/notifications/unread-count",
+        "GET /api/v1/notifications/unread-count (bearer)"
+      ]
+    },
+    "375x812": {
+      "landedPath": "/drive-vision/settings",
+      "heading": "Settings",
+      "nav": [
+        "Admin"
+      ],
+      "layout": {
+        "horizontalOverflow": false,
+        "scrollWidth": 375,
+        "vw": 375
+      },
+      "usersDirect": {
+        "path": "/drive-vision/users",
+        "heading": "You don't have access to this page",
+        "text": "Skip to content\nS\nYou don't have access to this page\n\nYour account's permissions don't include this page.\n\nRole: ADMIN · platform\n\nGo to Settings\nSign out"
+      },
+      "apiCalls": [
+        "OPTIONS /api/v1/auth/login",
+        "POST /api/v1/auth/login",
+        "OPTIONS /api/v1/me",
+        "OPTIONS /api/v1/me/permissions",
+        "GET /api/v1/me (bearer)",
+        "GET /api/v1/me/permissions (bearer)",
+        "OPTIONS /api/v1/notifications/unread-count",
+        "GET /api/v1/notifications/unread-count (bearer)",
+        "OPTIONS /api/v1/me/preferences",
+        "GET /api/v1/me/preferences (bearer)",
+        "OPTIONS /api/v1/me",
+        "OPTIONS /api/v1/me/permissions",
+        "GET /api/v1/me (bearer)",
+        "GET /api/v1/me/permissions (bearer)",
+        "OPTIONS /api/v1/notifications/unread-count",
+        "GET /api/v1/notifications/unread-count (bearer)"
+      ]
+    }
+  },
+  "apiRequests": [
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/auth/login",
+    "POST /api/v1/auth/login",
+    "OPTIONS /api/v1/auth/login",
+    "POST /api/v1/auth/login",
+    "OPTIONS /api/v1/auth/login",
+    "POST /api/v1/auth/login",
+    "OPTIONS /api/v1/auth/login",
+    "POST /api/v1/auth/login",
+    "OPTIONS /api/v1/auth/login",
+    "POST /api/v1/auth/login",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/notifications/unread-count",
+    "GET /api/v1/notifications/unread-count",
+    "OPTIONS /api/v1/me/preferences",
+    "GET /api/v1/me/preferences",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/notifications/unread-count",
+    "GET /api/v1/notifications/unread-count",
+    "OPTIONS /api/v1/auth/login",
+    "POST /api/v1/auth/login",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/notifications/unread-count",
+    "GET /api/v1/notifications/unread-count",
+    "OPTIONS /api/v1/me/preferences",
+    "GET /api/v1/me/preferences",
+    "OPTIONS /api/v1/me",
+    "OPTIONS /api/v1/me/permissions",
+    "GET /api/v1/me",
+    "GET /api/v1/me/permissions",
+    "OPTIONS /api/v1/notifications/unread-count",
+    "GET /api/v1/notifications/unread-count"
+  ]
+}

@@ -1,0 +1,259 @@
+{
+  "rolesList": {
+    "global": [
+      "1 | ADMIN | Platform administrator (synthetic) | Protected Full access | All | 2",
+      "3 | AUDITOR | No description |  | — | —",
+      "2 | OPS_LEAD | Operations lead (synthetic) |  | 2 | 0"
+    ],
+    "calls": [
+      "GET /me",
+      "GET /me/permissions",
+      "GET /notifications/unread-count",
+      "GET /roles"
+    ],
+    "tenantTab": [
+      "40 | TENANT_DISPATCH | Tenant role (synthetic) |  | 1 | 4 | 1"
+    ],
+    "searchOps": [
+      "OPS_LEAD"
+    ],
+    "protectedFilter": [
+      "ADMIN"
+    ]
+  },
+  "adminRole": {
+    "detail": "ID\n1\nCode\nADMIN\nDescription\nPlatform administrator (synthetic)\nScope\nGlobal (no tenant)\nFlags\nProtected\nFull access\nActive users\n2\nEdit description\nDelete role\n\nThe server marks this role as protected. The backend remains the authority.\n\nPermissions\n\nRead-only: This role has full access (every permission); there is no list to edit.\n\nAssigned (all)\nAvailable 20\n\nNo assigned permissions\n\nThis role has no explicit permissions.",
+    "editDisabled": true,
+    "deleteDisabled": true,
+    "readOnly": "Read-only: This role has full access (every permission); there is no list to edit."
+  },
+  "mapping": {
+    "pendingBar": "1 \n1 pending\nDiscard\nReview changes",
+    "review": "Add (1): device.update\n\nRemove (1): driver.read\n\nHolders of this role lose frontend access tied to: driver.read.\n\nAdditions are sent first, then removals. The list is re-read from the server afterwards.",
+    "writes": [
+      "POST /roles/2/permissions {\"permissionCodes\":[\"device.update\"]} tenant=null",
+      "DELETE /roles/2/permissions?codes=driver.read  tenant=null"
+    ],
+    "reReads": [
+      "/roles/2/permissions",
+      "/roles"
+    ],
+    "result": "Permissions updated.",
+    "assignedTab": [
+      "Assigned 2",
+      "Available 18"
+    ]
+  },
+  "partial": {
+    "result": "Partly saved: added 1; removing failed. The list below is the server's current state.\n\nRemoval refused (MOCKED)",
+    "writes": [
+      "POST /roles/2/permissions",
+      "DELETE /roles/2/permissions"
+    ],
+    "tabs": [
+      "Assigned 3",
+      "Available 17"
+    ]
+  },
+  "createRole": {
+    "invalid": "Role code\n*\n\n2–30 characters: an uppercase letter, then uppercase letters, digits or _.\n\nDescription\n\nUp to 200 characters.\n\nCancel\nCreate role",
+    "requestsAfterInvalid": 0,
+    "conflict": "Role code already exists (MOCKED)",
+    "post": [
+      "/roles {\"code\":\"QA_LEAD\",\"description\":\"Synthetic QA lead\"} tenant=null"
+    ]
+  },
+  "catalog": {
+    "groups": [
+      "alarm 2",
+      "device 4",
+      "dispatch 1",
+      "driver 4",
+      "permission 1",
+      "report 1",
+      "role 2",
+      "tenant 1",
+      "track 1",
+      "trip 3"
+    ],
+    "calls": [
+      "GET /me",
+      "GET /me/permissions",
+      "GET /notifications/unread-count",
+      "GET /permissions"
+    ],
+    "missingDesc": true,
+    "searchDriver": [
+      "driver.create",
+      "driver.delete",
+      "driver.read",
+      "driver.update"
+    ],
+    "platformScope": [
+      "permission.manage",
+      "role.manage",
+      "role.permission.read",
+      "tenant.all"
+    ],
+    "deleteWarning": "This app checks this code for: action drivers.delete. Removing it takes that access away from everyone.",
+    "deleteRefused": {
+      "call": [
+        "/permissions/driver.delete"
+      ],
+      "dialogStillOpen": true
+    },
+    "scopeWarning": "Changing the scope can change which roles may hold this permission. The backend decides."
+  },
+  "tenantSelected": {
+    "switcher": "Tenant context: Acme Logistics. Change tenant",
+    "roleCalls": [
+      "GET /roles tenant=null"
+    ],
+    "rows": [
+      "ADMIN",
+      "AUDITOR",
+      "OPS_LEAD"
+    ]
+  },
+  "responsive": {
+    "320x568": {
+      "roles": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "editor": {
+        "overflow": false,
+        "dialog": {
+          "inView": true,
+          "w": 320
+        },
+        "clipped": 0,
+        "small": []
+      },
+      "catalog": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "390x844": {
+      "roles": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "editor": {
+        "overflow": false,
+        "dialog": {
+          "inView": true,
+          "w": 390
+        },
+        "clipped": 0,
+        "small": []
+      },
+      "catalog": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "768x1024": {
+      "roles": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "editor": {
+        "overflow": false,
+        "dialog": {
+          "inView": true,
+          "w": 672
+        },
+        "clipped": 0,
+        "small": []
+      },
+      "catalog": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "1024x768": {
+      "roles": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "editor": {
+        "overflow": false,
+        "dialog": {
+          "inView": true,
+          "w": 672
+        },
+        "clipped": 0,
+        "small": []
+      },
+      "catalog": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "1366x768": {
+      "roles": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "editor": {
+        "overflow": false,
+        "dialog": {
+          "inView": true,
+          "w": 672
+        },
+        "clipped": 0,
+        "small": []
+      },
+      "catalog": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    },
+    "1920x1080": {
+      "roles": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "editor": {
+        "overflow": false,
+        "dialog": {
+          "inView": true,
+          "w": 672
+        },
+        "clipped": 0,
+        "small": []
+      },
+      "catalog": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      }
+    }
+  },
+  "tenantAdminAllCodes": {
+    "roles": "You don't have access to this page\n\nYour",
+    "permissions": "You don't have access to this page\n\nYour",
+    "roleOrPermissionCalls": 0,
+    "navHasPlatformConfig": false
+  },
+  "driver": {
+    "roles": "You don't have access to this page\n\nYour",
+    "permissions": "You don't have access to this page\n\nYour",
+    "roleOrPermissionCalls": 0,
+    "navHasPlatformConfig": false
+  },
+  "anyTenantHeaderOnRoleAdmin": 0
+}

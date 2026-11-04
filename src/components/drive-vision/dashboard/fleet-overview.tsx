@@ -13,6 +13,8 @@ import { accountService } from "@/features/drive-vision/api/account-service";
 import { insightService } from "@/features/drive-vision/api/insight-service";
 import { reminderDaysFrom } from "../settings/settings-model";
 import { useAuth } from "@/features/drive-vision/store/auth-store";
+import { dataScope } from "@/features/drive-vision/access/access-policy";
+import { useAccess, useTenantContext } from "@/features/drive-vision/access/use-access";
 import { bucketTrend } from "@/features/drive-vision/selectors";
 import { DATE_RANGE_OPTIONS, greeting, resolveDateRange } from "@/features/drive-vision/utils/time";
 import type { DateRangeKey } from "@/features/drive-vision/types";
@@ -72,6 +74,9 @@ const DEFAULT_REMINDER_DAYS = 30;
 export function FleetOverview() {
   const prefs = usePreferences();
   const user = useAuth((s) => s.user);
+  // Tenant users: their own tenant (from the token). Safe-Fare Admin without a tenant: V10 reads cover every tenant.
+  const allTenants = dataScope(useAccess()) === "all-tenants";
+  const tenantCtx = useTenantContext();
   const [rangeKey, setRangeKey] = useState<DateRangeKey>("7d");
   const [trendView, setTrendView] = useState<TrendView>("chart");
   const [now, setNow] = useState(() => new Date());
@@ -169,6 +174,15 @@ export function FleetOverview() {
         title={`${greeting(now)}, ${user?.displayName || prefs.displayName}`}
         description={
           <span className="flex flex-wrap items-center gap-2">
+            {allTenants ? (
+              <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand-deep" data-testid="overview-scope">
+                All tenants
+              </span>
+            ) : tenantCtx.isTenantSelected ? (
+              <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand-deep" data-testid="overview-scope">
+                Tenant · {tenantCtx.selectedTenantName ?? tenantCtx.selectedTenantCode ?? tenantCtx.selectedTenantId}
+              </span>
+            ) : null}
             <DataSourceBadge source={source} />
             {updatedAt ? <span>Updated {formatTime(new Date(updatedAt))}</span> : <span>Loading fleet data…</span>}
           </span>

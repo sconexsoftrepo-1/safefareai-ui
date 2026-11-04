@@ -27,7 +27,7 @@ type ExpiryFilter = "all" | "soon" | "expired";
 /** API default page size for GET /devices. */
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
-export const WRITES_PENDING = "Adding, editing, moving and deleting devices is disabled until write operations are approved.";
+export const WRITES_PENDING = "Adding, moving and deleting devices is disabled until write operations are approved.";
 
 /**
  * Vehicles & Assets on live BFF data.

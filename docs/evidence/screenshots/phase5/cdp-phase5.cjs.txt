@@ -1,0 +1,228 @@
+// Phase 5 browser validation (headless Edge via CDP). EVERY */api/v1/* request is answered locally with
+// SYNTHETIC data; nothing reaches the BFF, no credentials are used, no writes leave the browser.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser-p5");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3109";
+const CDP = "http://127.0.0.1:9339";
+const VIEWPORTS = [[320, 640], [375, 812], [390, 844], [768, 1024], [1024, 768], [1440, 900]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 10, tenantId: 10, roleId: 2, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+};
+const TENANTS = [
+  { id: 1, code: "ACME", name: "Acme Logistics", status: "ACTIVE", timezone: "Asia/Kolkata", users: 14, devices: 120, drivers: 48 },
+  { id: 2, code: "BLUE", name: "Blue Line Cabs", status: "ACTIVE", timezone: "Asia/Kolkata", users: 6, devices: 35, drivers: 22 },
+  { id: 3, code: "OLDCO", name: "Old Co Transport", status: "INACTIVE", timezone: "Asia/Kolkata", users: 2, devices: 0, drivers: 0 },
+];
+// Per-scope fleet numbers: all tenants vs one tenant, so stale data is visible if it leaks.
+const VEH = { all: 155, 1: 120, 2: 35, 10: 42 };
+const DRIVERS = { all: [{ id: 11, name: "All-tenant Driver" }], 1: [{ id: 21, name: "Acme Driver" }], 2: [{ id: 31, name: "Blue Driver" }], 10: [{ id: 41, name: "Own Tenant Driver" }] };
+let identity = IDS.sfa;
+let switchOverrides = {};
+const captured = [];
+const corsHeaders = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body: request.postData ? JSON.parse(request.postData) : null });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: corsHeaders(), body: "" });
+  const scope = th ?? "all";
+  let status = 200, data = null, total;
+  if (p === "/auth/login") data = { accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 };
+  else if (p === "/me") data = { id: identity.userId, displayName: `Synthetic ${identity.platform ? "Safe-Fare Admin" : "Tenant Admin"}`, email: "synthetic@example.invalid" };
+  else if (p === "/me/permissions") data = identity;
+  else if (p === "/platform/tenants") { data = TENANTS; total = 3; }
+  else if (p === "/platform/switch-tenant") {
+    const id = JSON.parse(request.postData).tenantId;
+    if (switchOverrides[id]) [status, data] = switchOverrides[id];
+    else { const t = TENANTS.find((x) => x.id === id); data = { tenantId: t.id, code: t.code, name: t.name, header: "X-Tenant-Id" }; }
+  } else if (p === "/dashboard/overview") data = { vehicles: { total: VEH[scope], online: Math.round(VEH[scope] * 0.6), offline: VEH[scope] - Math.round(VEH[scope] * 0.6), driving: 10, idling: 5, parked: 20 }, trips: { tripsToday: VEH[scope] }, health: {}, operations: {} };
+  else if (p === "/drivers") { data = DRIVERS[scope] ?? []; total = data.length; }
+  else if (p === "/groups") { data = []; total = 0; }
+  const body = status >= 400 ? data : { code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) };
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...corsHeaders(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(body)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name, full = false) {
+  let extra = {};
+  if (full) { const m = await send("Page.getLayoutMetrics"); extra = { clip: { x: 0, y: 0, width: m.cssContentSize.width, height: Math.min(m.cssContentSize.height, 5000), scale: 1 }, captureBeyondViewport: true }; }
+  const r = await send("Page.captureScreenshot", { format: "png", ...extra });
+  fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64"));
+}
+async function typeInto(sel, text) { await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select(); return true; })()`); await send("Input.insertText", { text }); }
+const clickSel = (sel) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
+const clickText = (t, scope = "button") => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(scope)})].find(b => b.textContent.trim().startsWith(${JSON.stringify(t)})); if (!el) return false; el.click(); return true; })()`);
+async function login(mode) {
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  if (mode === "platform") await clickText("Safe-Fare Admin");
+  else await typeInto("input[name=tenantCode]", "SYNTH");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in");
+  await sleep(3500);
+}
+const STATE = `(() => ({
+  path: location.pathname,
+  switcher: document.querySelector('[data-testid=tenant-switcher]')?.getAttribute('aria-label') ?? null,
+  scopeBadge: document.querySelector('[data-testid=platform-scope]')?.textContent.trim() ?? document.querySelector('[data-testid=overview-scope]')?.textContent.trim() ?? null,
+  notice: !!document.querySelector('[data-testid=tenant-scope-notice]'),
+  disabledCreate: [...document.querySelectorAll('[data-testid=tenant-required-action]')].map(b => b.textContent.trim() + (b.disabled ? ' (disabled)' : '')),
+  enabledCreate: [...document.querySelectorAll('button')].filter(b => /^New (driver|dispatch|user)/.test(b.textContent.trim()) && !b.disabled).map(b => b.textContent.trim()),
+  tenantContext: document.querySelector('[data-testid=tenant-context]')?.textContent.trim() ?? null,
+  tenantError: document.querySelector('[data-testid=tenant-error]')?.textContent.trim() ?? null,
+  text: (document.querySelector('main')?.innerText ?? '').slice(0, 4000),
+}))()`;
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth; const r = e => e.getBoundingClientRect();
+  const visible = [...document.querySelectorAll('header *, main *, [data-radix-popper-content-wrapper] *')].filter(e => e.offsetParent !== null && r(e).width > 0);
+  const clipped = visible.filter(e => { let p = e.parentElement; while (p && p !== document.body) { if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } const b = r(e); return b.right > vw + 1 || b.left < -1; }).slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+  const targets = [...document.querySelectorAll('header button, header a, [data-radix-popper-content-wrapper] button, main button')].filter(e => e.offsetParent !== null).map(e => ({ t: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  const sw = document.querySelector('[data-testid=tenant-switcher]'); const swr = sw ? r(sw) : null;
+  return { vw, scrollWidth: document.documentElement.scrollWidth, overflow: document.documentElement.scrollWidth > vw, clipped, smallTargets: targets.slice(0, 6), switcher: swr ? { x: Math.round(swr.left), w: Math.round(swr.width), h: Math.round(swr.height), inView: swr.right <= vw && swr.left >= 0 } : null };
+})()`;
+const since = (i) => captured.slice(i).filter((c) => c.method !== "OPTIONS");
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (m) => { const msg = JSON.parse(m.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+
+  // 1) Safe-Fare Admin, platform-wide mode.
+  identity = IDS.sfa;
+  await viewport(1440, 900);
+  let i = captured.length;
+  await login("platform");
+  const p0 = await evaluate(STATE);
+  R.platformWide = { path: p0.path, switcher: p0.switcher, badge: p0.scopeBadge, vehiclesAll: /155/.test(p0.text), headersSent: since(i).filter((c) => c.tenant).length };
+  await shot("platform-all-tenants-1440x900");
+
+  // Drivers page without a tenant: create disabled, notice shown.
+  await go(`${APP}/drive-vision/drivers`, 3000);
+  const d0 = await evaluate(STATE);
+  R.driversNoTenant = { notice: d0.notice, disabledCreate: d0.disabledCreate, enabledCreate: d0.enabledCreate, list: d0.text.includes("All-tenant Driver") };
+  await shot("drivers-no-tenant-1440x900");
+
+  // 2) Switch via the top-bar switcher to Acme.
+  i = captured.length;
+  await clickSel("[data-testid=tenant-switcher]");
+  await sleep(1500);
+  await shot("switcher-open-1440x900");
+  const popover = await evaluate(`[...document.querySelectorAll('[data-radix-popper-content-wrapper] li button')].map(b => ({ t: b.textContent.trim().slice(0, 40), disabled: b.disabled }))`);
+  await clickText("Acme Logistics", "[data-radix-popper-content-wrapper] li button");
+  await sleep(3000);
+  const d1 = await evaluate(STATE);
+  const sw = since(i);
+  R.switchToAcme = {
+    popover,
+    switchCall: sw.filter((c) => c.path === "/platform/switch-tenant").map((c) => ({ body: c.body, tenantHeader: c.tenant })),
+    after: { switcher: d1.switcher, notice: d1.notice, enabledCreate: d1.enabledCreate, disabledCreate: d1.disabledCreate, showsAcme: d1.text.includes("Acme Driver"), showsAllTenantDriver: d1.text.includes("All-tenant Driver") },
+    driversRequestHeader: sw.filter((c) => c.path === "/drivers").map((c) => c.tenant),
+    authCalls: sw.filter((c) => c.path.startsWith("/auth/")).length,
+  };
+  await shot("drivers-acme-1440x900");
+
+  // Dashboard under Acme: tenant numbers, tenant list still unscoped.
+  i = captured.length;
+  await go(`${APP}/drive-vision/platform`, 3000); // full navigation: in-memory selection resets (documented), so re-select via switcher
+  const reload = await evaluate(STATE);
+  R.reloadResetsSelection = { switcher: reload.switcher, badge: reload.scopeBadge };
+  await clickSel("[data-testid=tenant-switcher]"); await sleep(1200);
+  await clickText("Acme Logistics", "[data-radix-popper-content-wrapper] li button"); await sleep(3500);
+  const p1 = await evaluate(STATE);
+  const req = since(i);
+  R.dashboardAcme = { badge: p1.scopeBadge, vehiclesAcme: /\b120\b/.test(p1.text), staleAll155: /\b155\b/.test(p1.text.split("Device health")[1] ?? ""), overviewHeaders: req.filter((c) => c.path === "/dashboard/overview").map((c) => c.tenant), tenantListHeaders: req.filter((c) => c.path === "/platform/tenants").map((c) => c.tenant), meHeaders: req.filter((c) => c.path.startsWith("/me") || c.path.startsWith("/notifications")).map((c) => c.tenant) };
+  await shot("platform-acme-1440x900", true);
+
+  // 3) Switch failure: Blue returns 400 INVALID_TENANT → stays on Acme.
+  switchOverrides = { 2: [400, { code: 400, msg: "Tenant is not active (MOCKED)", data: null, extend: { errorCode: "INVALID_TENANT" } }] };
+  await go(`${APP}/drive-vision/tenants`, 100); // client-side? no — full nav resets; so use in-app link instead
+  await sleep(2500);
+  await clickSel("[data-testid=tenant-switcher]"); await sleep(1200);
+  await clickText("Acme Logistics", "[data-radix-popper-content-wrapper] li button"); await sleep(2500);
+  const t0 = await evaluate(STATE);
+  i = captured.length;
+  await evaluate(`(() => { const b = [...document.querySelectorAll('main button')].find(x => x.getAttribute('aria-label') === 'Select Blue Line Cabs'); b && b.click(); return !!b; })()`);
+  await sleep(2500);
+  const t1 = await evaluate(STATE);
+  R.switchFailure = { before: t0.tenantContext, after: t1.tenantContext, error: t1.tenantError, switcher: t1.switcher, calls: since(i).map((c) => `${c.method} ${c.path} ${JSON.stringify(c.body)}`) };
+  await shot("tenants-switch-failure-1440x900", true);
+  switchOverrides = {};
+
+  // Tenants page: search + status filter + inactive not selectable.
+  await typeInto("input[aria-label='Search tenants']", "blue");
+  await sleep(400);
+  const t2rows = await evaluate(`[...document.querySelectorAll("main table tbody tr")].map(r => r.querySelector("td:nth-child(2) span")?.textContent.trim())`);
+  await typeInto("input[aria-label='Search tenants']", "");
+  await evaluate(`(() => { const b = [...document.querySelectorAll('[role=radiogroup][aria-label="Filter by status"] button')].find(x => x.textContent.startsWith('INACTIVE')); b && b.click(); return !!b; })()`);
+  await sleep(400);
+  const t3rows = await evaluate(`[...document.querySelectorAll("main table tbody tr")].map(r => r.querySelector("td:nth-child(2) span")?.textContent.trim())`);
+  R.tenantsPage = { searchBlueRows: t2rows, inactiveFilterRows: t3rows };
+  await evaluate(`(() => { const b = [...document.querySelectorAll('[role=radiogroup][aria-label="Filter by status"] button')].find(x => x.textContent.startsWith('All')); b && b.click(); return true; })()`);
+
+  // 4) Return to all tenants.
+  i = captured.length;
+  await clickText("Return to all tenants");
+  await sleep(1500);
+  const t4 = await evaluate(STATE);
+  await clickSel("a[href='/drive-vision/drivers']"); // in-app navigation keeps the in-memory context
+  await sleep(2500);
+  const d2 = await evaluate(STATE);
+  R.clear = { context: t4.tenantContext, switcher: t4.switcher, driversHeaders: since(i).filter((c) => c.path === "/drivers").map((c) => c.tenant), notice: d2.notice, disabledCreate: d2.disabledCreate, staleAcme: d2.text.includes("Acme Driver") };
+
+  // 5) Responsive: platform page with switcher, tenants page, switcher open.
+  R.responsive = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/tenants`, 2500);
+    const lt = await evaluate(LAYOUT);
+    await shot(`tenants-${w}x${h}`, true);
+    await clickSel("[data-testid=tenant-switcher]"); await sleep(1200);
+    const lo = await evaluate(LAYOUT);
+    const pop = await evaluate(`(() => { const p = document.querySelector('[data-radix-popper-content-wrapper]'); if (!p) return null; const b = p.getBoundingClientRect(); return { left: Math.round(b.left), right: Math.round(b.right), w: Math.round(b.width), inView: b.left >= 0 && b.right <= document.documentElement.clientWidth }; })()`);
+    await shot(`switcher-open-${w}x${h}`);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(300);
+    await go(`${APP}/drive-vision/drivers`, 2500);
+    const ld = await evaluate(LAYOUT);
+    R.responsive[`${w}x${h}`] = { tenants: { overflow: lt.overflow, clipped: lt.clipped.length, small: lt.smallTargets, switcher: lt.switcher }, switcherOpen: { overflow: lo.overflow, popover: pop, small: lo.smallTargets }, drivers: { overflow: ld.overflow, clipped: ld.clipped.length } };
+  }
+
+  // 6) Tenant ADMIN: no switcher, /tenants denied, never a tenant header.
+  identity = IDS.tenantAdmin;
+  await viewport(1440, 900);
+  i = captured.length;
+  await login("tenant");
+  const a0 = await evaluate(STATE);
+  await go(`${APP}/drive-vision/tenants`, 2500);
+  const a1 = await evaluate(STATE);
+  await go(`${APP}/drive-vision/drivers`, 2500);
+  const a2 = await evaluate(STATE);
+  R.tenantAdmin = { landing: a0.path, switcher: a0.switcher, tenantsPage: a1.text.slice(0, 60), drivers: { ownTenant: a2.text.includes("Own Tenant Driver"), enabledCreate: a2.enabledCreate, notice: a2.notice }, tenantHeadersSent: since(i).filter((c) => c.tenant).length, platformCalls: since(i).filter((c) => c.path.startsWith("/platform")).length };
+  await shot("tenant-admin-drivers-1440x900");
+
+  R.anyTenantQuery = captured.filter((c) => /tenantId=/.test(c.query)).length;
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(R, null, 2));
+  console.log(JSON.stringify(R, null, 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

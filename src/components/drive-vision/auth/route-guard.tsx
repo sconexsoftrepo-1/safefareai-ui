@@ -12,7 +12,7 @@ import { ALL_NAV_ITEMS } from "../navigation/nav-config";
 import { Panel } from "../shared/panel";
 
 /**
- * Renders the page only when the signed-in user's access policy grants its screen (see
+ * Renders the page only when the signed-in user's V10 permissions open its screen (see
  * features/drive-vision/access). Denied pages never mount, so they send no API requests.
  * This is a UI guard only — the BFF must authorise every request on its own.
  */
@@ -38,12 +38,12 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
  * The branded "not found" / "no access" panel. Also rendered by app/drive-vision/not-found.tsx for
  * paths under an allowed screen that match no page (e.g. /drive-vision/vehicles/1/x).
  */
-export function AccessStatePanel({ reason }: { reason: "unknown-route" | "no-role" | "no-access" }) {
+export function AccessStatePanel({ reason }: { reason: "unknown-route" | "no-permissions" | "no-access" }) {
   const access = useAccess();
   const home = homeScreen(access);
   const homeItem = home ? ALL_NAV_ITEMS.find((i) => i.screen === home) : undefined;
   const unknownRoute = reason === "unknown-route";
-  const noRole = reason === "no-role";
+  const noRole = reason === "no-permissions";
 
   return (
     <Panel className="mx-auto mt-6 w-full max-w-md p-6 text-center" role="alert">
@@ -55,11 +55,14 @@ export function AccessStatePanel({ reason }: { reason: "unknown-route" | "no-rol
         {unknownRoute
           ? "This address doesn't match a SafeFare AI page you can open."
           : noRole
-            ? "Your account signed in, but its role isn't enabled in SafeFare AI yet. Ask an administrator to confirm your access."
+            ? "Your account signed in, but its permissions don't include any SafeFare AI screen. Ask an administrator to confirm your access."
             : "Your account's permissions don't include this page."}
       </p>
       {!unknownRoute ? (
-        <p className="mt-2 font-mono text-[11px] break-all text-ink-subtle">Role: {access.roleCode ?? "none returned by the server"}</p>
+        <p className="mt-2 font-mono text-[11px] break-all text-ink-subtle">
+          Role: {access.roleCode ?? "none returned by the server"}
+          {access.platform ? " · platform" : ""}
+        </p>
       ) : null}
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {homeItem ? (

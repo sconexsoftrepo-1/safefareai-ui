@@ -5,6 +5,10 @@ import {
   ClipboardList,
   FileChartColumn,
   Cctv,
+  Globe2,
+  Building2,
+  BookKey,
+  KeyRound,
   Gauge,
   LayoutGrid,
   MapPinned,
@@ -47,6 +51,16 @@ export const NAV_GROUPS: NavGroup[] = [
     // Driver self-service; only shown to the Driver app role (see access-policy DRIVER_SELF_SERVICE_SCREENS).
     label: "My work",
     items: [{ label: "My Work", screen: "myWork", href: SCREEN_ROUTES.myWork, icon: BriefcaseBusiness, description: "My trips, shift, leave and checklist", subtitle: "Your trips, shift, leave, checklist and safety" }],
+  },
+  {
+    // Safe-Fare Admin only (platform === true + tenant.all; see SCREENS.platform). Hidden for everyone else.
+    label: "Platform",
+    items: [
+      { label: "Platform Overview", screen: "platform", href: SCREEN_ROUTES.platform, icon: Globe2, description: "All-tenant KPIs, device health and alerts", subtitle: "Tenants, devices, alerts and activity across the whole platform" },
+      { label: "Tenants", screen: "tenants", href: SCREEN_ROUTES.tenants, icon: Building2, description: "Tenant list and tenant selection", subtitle: "All tenants on the platform — select one to work inside it" },
+      { label: "Global Roles", screen: "roles", href: SCREEN_ROUTES.roles, icon: KeyRound, description: "Global roles and their permissions", subtitle: "Platform role definitions and role-permission assignments" },
+      { label: "Permission Catalogue", screen: "permissions", href: SCREEN_ROUTES.permissions, icon: BookKey, description: "Permission codes, descriptions and scope", subtitle: "The global permission catalogue" },
+    ],
   },
   {
     label: "Overview",

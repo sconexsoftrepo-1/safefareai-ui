@@ -1,0 +1,163 @@
+import type { CreateTenantRequest, CreatedTenantDto, StatusSetDto, TenantDto } from "@/features/drive-vision/api/types";
+import { isApiError } from "@/features/drive-vision/api/errors";
+
+/**
+ * Create a platform tenant: POST /api/v1/platform/tenants. Pure; unit-tested.
+ *
+ * The operation is NOT in the V10 spec. The backend team supplied the contract on 2026-11-02, with one
+ * observed 201 response. No validation rules were published, so the client checks only what the contract
+ * and the observation establish, and shows whatever field errors the server returns:
+ * - name: required (not blank). No length limit is documented, so none is enforced.
+ * - code: may be left empty. The observed request sent "" and the server generated an uppercase code. The frontend
+ *   never generates a code itself.
+ * - timezone: an IANA identifier that this browser recognises. Default Asia/Kolkata.
+ * - status: only values the server is known to use. Default ACTIVE.
+ * - s3Prefix: optional in the form. Sent as "" when empty, because the contract lists the field and
+ *   whether the server requires it is unknown.
+ * - copyRolePermissionsFromTenantId: always 1. It is shown read-only until the backend confirms that other
+ *   source tenants are allowed.
+ */
+
+export const DEFAULT_TIMEZONE = "Asia/Kolkata";
+export const DEFAULT_STATUS = "ACTIVE";
+/** Role permissions are copied from this tenant (backend-mandated default). */
+export const DEFAULT_PERMISSION_SOURCE_TENANT_ID = 1;
+
+export interface CreateTenantForm {
+  code: string;
+  name: string;
+  timezone: string;
+  status: string;
+  s3Prefix: string;
+}
+export type CreateTenantField = keyof CreateTenantForm;
+
+export const emptyCreateForm = (): CreateTenantForm => ({ code: "", name: "", timezone: DEFAULT_TIMEZONE, status: DEFAULT_STATUS, s3Prefix: "" });
+
+const IANA = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/;
+
+/** True for an IANA time-zone identifier this runtime recognises ("UTC", "Asia/Kolkata"); not offsets or labels. */
+export function isValidTimezone(tz: string): boolean {
+  if (!IANA.test(tz)) return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Time-zone choices: the runtime's IANA list, always including the default and UTC; sorted, no duplicates. */
+export function timezoneOptions(supported?: readonly string[]): string[] {
+  let list: readonly string[] = supported ?? [];
+  if (!supported) {
+    try {
+      const intl = Intl as unknown as { supportedValuesOf?: (k: string) => string[] };
+      list = intl.supportedValuesOf?.("timeZone") ?? [];
+    } catch {
+      list = [];
+    }
+  }
+  return [...new Set([DEFAULT_TIMEZONE, "UTC", ...list])].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Status choices: the tenant set from the server's status catalogue when there is one. Otherwise ACTIVE (the
+ * value in the backend contract) plus the statuses the server already returns for tenants. Nothing invented.
+ */
+export function createStatusOptions(tenants: readonly TenantDto[], catalogue: StatusSetDto | null): string[] {
+  const fromCatalogue = (catalogue?.values ?? []).filter((v): v is string => typeof v === "string" && v.trim() !== "").map((v) => v.trim());
+  if (fromCatalogue.length) return [...new Set(fromCatalogue)];
+  const seen = tenants.map((t) => (typeof t.status === "string" ? t.status.trim() : "")).filter(Boolean);
+  return [...new Set([DEFAULT_STATUS, ...seen])];
+}
+
+export function validateCreate(form: CreateTenantForm, statuses: readonly string[]): Partial<Record<CreateTenantField, string>> {
+  const e: Partial<Record<CreateTenantField, string>> = {};
+  if (!form.name.trim()) e.name = "Enter a tenant name.";
+  if (/\s/.test(form.code.trim())) e.code = "The code can't contain spaces. Leave it empty to let the server generate one.";
+  if (!form.timezone.trim()) e.timezone = "Choose a time zone.";
+  else if (!isValidTimezone(form.timezone.trim())) e.timezone = "Choose a time zone from the list (for example Asia/Kolkata).";
+  if (!statuses.includes(form.status)) e.status = "Choose a status from the list.";
+  return e;
+}
+
+/** The exact request body: all six contract fields, trimmed; permission source always 1. */
+export function buildCreateRequest(form: CreateTenantForm): CreateTenantRequest {
+  return {
+    code: form.code.trim(),
+    name: form.name.trim(),
+    timezone: form.timezone.trim(),
+    status: form.status,
+    s3Prefix: form.s3Prefix.trim(),
+    copyRolePermissionsFromTenantId: DEFAULT_PERMISSION_SOURCE_TENANT_ID,
+  };
+}
+
+/** Review rows shown before sending. */
+export function reviewRows(body: CreateTenantRequest, sourceTenant: TenantDto | undefined): { label: string; value: string }[] {
+  const source = sourceTenant?.name ? `Tenant ${body.copyRolePermissionsFromTenantId} (${sourceTenant.name})` : `Tenant ${body.copyRolePermissionsFromTenantId}`;
+  return [
+    { label: "Name", value: body.name },
+    { label: "Code", value: body.code || "Generated by the server" },
+    { label: "Time zone", value: body.timezone },
+    { label: "Status", value: body.status },
+    { label: "S3 prefix", value: body.s3Prefix || "Not set (sent empty)" },
+    { label: "Copy role permissions from", value: source },
+  ];
+}
+
+export interface CreatedSummary {
+  id: number | null;
+  code: string | null;
+  name: string | null;
+}
+
+/** What the server says it created. The values are never filled in from the request. */
+export function createdSummary(dto: CreatedTenantDto): CreatedSummary {
+  return {
+    id: typeof dto.id === "number" && Number.isFinite(dto.id) ? dto.id : null,
+    code: typeof dto.code === "string" && dto.code.trim() ? dto.code : null,
+    name: typeof dto.name === "string" && dto.name.trim() ? dto.name : null,
+  };
+}
+
+export function createdMessage(s: CreatedSummary): string {
+  const parts = [s.id !== null ? `ID ${s.id}` : "ID not returned", s.code ? `code ${s.code}` : "code not returned"];
+  return `${s.name ?? "Tenant"} created · ${parts.join(" · ")}`;
+}
+
+export interface CreateFailure {
+  message: string;
+  fieldErrors: Partial<Record<CreateTenantField | "copyRolePermissionsFromTenantId", string>>;
+  /** The server may already have created the tenant (timeout or 5xx): reload the list before trying again. */
+  uncertain: boolean;
+}
+
+const FIELDS: readonly (CreateTenantField | "copyRolePermissionsFromTenantId")[] = ["code", "name", "timezone", "status", "s3Prefix", "copyRolePermissionsFromTenantId"];
+
+/** A user-facing outcome for a failed create. Server messages are shown as they are. */
+export function describeCreateError(err: unknown): CreateFailure {
+  const fieldErrors: CreateFailure["fieldErrors"] = {};
+  if (!isApiError(err)) return { message: err instanceof Error && err.message ? err.message : "The tenant wasn't created.", fieldErrors, uncertain: true };
+  const map = err.fieldErrorMap();
+  for (const f of FIELDS) if (map[f]) fieldErrors[f] = map[f];
+  const msg = err.message || "";
+  const with_ = (base: string) => (msg ? `${base}: ${msg}` : `${base}.`);
+  if (err.kind === "network" || err.kind === "timeout") return { message: "No response from the server. The tenant may or may not have been created, so reload the list and check before trying again.", fieldErrors, uncertain: true };
+  if (err.kind !== "http") return { message: with_("Unexpected server response"), fieldErrors, uncertain: true };
+  switch (err.errorCode) {
+    case "DUPLICATE":
+      if (!fieldErrors.code) fieldErrors.code = msg || "This code is already in use.";
+      return { message: with_("A tenant with this code already exists"), fieldErrors, uncertain: false };
+    case "INVALID_REFERENCE":
+    case "INVALID_TENANT":
+      return { message: with_("The server rejected a referenced value (for example the permission-copy source tenant)"), fieldErrors, uncertain: false };
+  }
+  if (err.status === 400) return { message: with_("The server rejected the details"), fieldErrors, uncertain: false };
+  if (err.status === 401) return { message: "Your session has ended. Sign in again.", fieldErrors, uncertain: false };
+  if (err.status === 403) return { message: with_("You don't have permission to create tenants"), fieldErrors, uncertain: false };
+  if (err.status === 409) return { message: with_("The server reported a conflict"), fieldErrors, uncertain: false };
+  if (err.status >= 500) return { message: `${with_(`Server error (HTTP ${err.status})`)} The tenant may or may not have been created, so reload the list and check before trying again.`, fieldErrors, uncertain: true };
+  return { message: with_(`The server refused the request (HTTP ${err.status})`), fieldErrors, uncertain: false };
+}

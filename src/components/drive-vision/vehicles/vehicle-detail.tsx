@@ -21,6 +21,9 @@ import { ExpiryBadge } from "./vehicle-cells";
 import { useFleetReference } from "./use-fleet-reference";
 import { VehicleAssignmentPanel, VehicleRecentTrips } from "./vehicle-operations";
 import { WRITES_PENDING } from "./vehicles-page";
+import { DeviceEditPanel } from "./device-edit-panel";
+import { useActionGate } from "@/features/drive-vision/access/use-access";
+import { TENANT_REQUIRED_HINT } from "../shared/tenant-required";
 
 /** Days of alarm history shown under "Recent events". */
 const EVENT_WINDOW_DAYS = 7;
@@ -61,6 +64,9 @@ function LiveVehicleDetail({ id }: { id: number }) {
   const alarmWindow = useMemo(() => ({ from: new Date(now.getTime() - EVENT_WINDOW_DAYS * DAY).toISOString(), to: now.toISOString(), deviceIds: [id] }), [now, id]);
 
   const deviceQ = useApiQuery(`vehicle:${id}`, () => fleetService.getDevice(id));
+  // Edit = devices.update (device.update; Safe-Fare Admin needs a selected tenant). Transfer / delete stay disabled.
+  const editGate = useActionGate("devices.update");
+  const [editing, setEditing] = useState(false);
   // Dependent reads wait for the device record, so an unknown id costs one request, not four.
   const found = !!deviceQ.data;
   const realtimeQ = useApiQuery(found ? `vehicle:${id}:realtime` : null, () => fleetService.realtime([id]));
@@ -112,12 +118,44 @@ function LiveVehicleDetail({ id }: { id: number }) {
             <Button variant="outline" disabled title={WRITES_PENDING}>
               <Trash2 /> Delete
             </Button>
-            <Button disabled title={WRITES_PENDING}>
-              <Pencil /> Edit
-            </Button>
+            {editGate.allowed ? (
+              <Button onClick={() => setEditing(true)} data-testid="device-edit-button">
+                <Pencil /> Edit
+              </Button>
+            ) : editGate.tenantBlocked ? (
+              <span title={TENANT_REQUIRED_HINT} className="inline-flex">
+                <Button disabled data-testid="device-edit-button">
+                  <Pencil /> Edit
+                </Button>
+              </span>
+            ) : null}
           </>
         }
       />
+
+      {editing ? (
+        <DeviceEditPanel
+          key={`${d.id}:${d.vendorUpdatedAt ?? ""}:${d.syncedAt ?? ""}`}
+          device={d}
+          models={ref.models}
+          lockedLabels={{
+            modelName: ref.model(d.modelId),
+            protocol: ref.protocol(d.protocolCode),
+            cameraCount: d.cameraCount !== undefined ? String(d.cameraCount) : "—",
+            terminalNo: d.terminalNo ?? "—",
+            groupId: ref.group(d.groupId),
+            objectTypeId: ref.objectType(d.objectTypeId),
+            driverGender: d.driver?.gender !== undefined ? String(d.driver.gender) : "—",
+          }}
+          open
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            deviceQ.refetch();
+          }}
+          onNeedsReload={() => deviceQ.refetch()}
+        />
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-12">
         <Panel className="overflow-hidden xl:col-span-7">

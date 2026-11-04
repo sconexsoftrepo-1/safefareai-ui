@@ -71,7 +71,7 @@ export function notificationHref(refType: string | undefined, refId: string | un
   return searchHitHref(type, { id: Number(refId), type });
 }
 
-/** The notification link this user may follow: driver screens for drivers, fleet screens otherwise; null when unreachable. */
+/** The notification link this user may follow: driver screens for driver-app users, fleet screens otherwise; null when unreachable. */
 export function notificationLink(access: Access, refType: string | undefined, refId: string | undefined): string | null {
-  return reachableHref(access, notificationHref(refType, refId, access.role === "driver" ? "driver" : "fleet"));
+  return reachableHref(access, notificationHref(refType, refId, access.screens.has("myWork") ? "driver" : "fleet"));
 }

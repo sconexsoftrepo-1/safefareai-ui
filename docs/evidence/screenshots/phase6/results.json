@@ -1,0 +1,306 @@
+{
+  "list": {
+    "summary": [
+      "Tenants: 30",
+      "Active: 24",
+      "Inactive: 4",
+      "Other / no status: 2"
+    ],
+    "filters": [
+      "All 30",
+      "ACTIVE 24",
+      "ARCHIVED 0",
+      "INACTIVE 4",
+      "SUSPENDED 1",
+      "No status 1"
+    ],
+    "range": "1–25 of 30",
+    "rowsOnPage1": 25,
+    "firstRows": [
+      {
+        "id": "1",
+        "name": "Acme Logistics",
+        "status": "ACTIVE",
+        "users": "2",
+        "devices": "5",
+        "drivers": "1",
+        "action": "Select"
+      },
+      {
+        "id": "2",
+        "name": "Blue Line Cabs",
+        "status": "ACTIVE",
+        "users": "4",
+        "devices": "10",
+        "drivers": "2",
+        "action": "Select"
+      },
+      {
+        "id": "3",
+        "name": "Missing Fields Co",
+        "status": "—",
+        "users": "— (Not reported by the server)",
+        "devices": "— (Not reported by the server)",
+        "drivers": "3",
+        "action": "Select"
+      },
+      {
+        "id": "4",
+        "name": "Synthetic Tenant 04",
+        "status": "SUSPENDED",
+        "users": "8",
+        "devices": "20",
+        "drivers": "4",
+        "action": "Not selectable"
+      }
+    ],
+    "missingRow": {
+      "id": "3",
+      "name": "Missing Fields Co",
+      "status": "—",
+      "users": "— (Not reported by the server)",
+      "devices": "— (Not reported by the server)",
+      "drivers": "3",
+      "action": "Select"
+    },
+    "unsupportedNote": true,
+    "tenantListHeaders": [
+      null
+    ],
+    "calls": [
+      "GET /me",
+      "GET /me/permissions",
+      "GET /notifications/unread-count",
+      "GET /platform/tenants",
+      "GET /reference/statuses"
+    ]
+  },
+  "paging": {
+    "page2Range": "26–30 of 30",
+    "page2Rows": 5
+  },
+  "search": {
+    "blue": [
+      "Blue Line Cabs"
+    ],
+    "range": null,
+    "miss": [
+      "Missing Fields Co"
+    ]
+  },
+  "filter": {
+    "inactive": [
+      "Synthetic Tenant 07:Not selectable",
+      "Synthetic Tenant 14:Not selectable",
+      "Synthetic Tenant 21:Not selectable",
+      "Synthetic Tenant 28:Not selectable"
+    ],
+    "archived": {
+      "rows": 0,
+      "empty": true
+    },
+    "noStatus": [
+      "Missing Fields Co"
+    ]
+  },
+  "details": {
+    "missingFields": "Tenant ID\n3\nCode\nMISS\nName\nMissing Fields Co\nStatus\n— Not returned\nTimezone\n— Not returned\nUsers\n— Not reported by the server\nDevices\n— Not reported by the server\nDrivers\n3\nServer 'current' flag\nfalse\nYour selection\nNot selected\n\nServer status catalogue (tenant): ACTIVE, INACTIVE, ARCHIVED — SYNTHETIC catalogue",
+    "switcherBefore": "Tenant context: All tenants. Change tenant"
+  },
+  "selectFromPage": {
+    "switcherAfter": "Tenant context: Acme Logistics. Change tenant",
+    "context": "Working in Acme Logistics",
+    "switchCalls": [
+      {
+        "body": "{\"tenantId\":1}",
+        "tenantHeader": null
+      }
+    ],
+    "detailNowSays": false
+  },
+  "sharedState": {
+    "pageSelectedRow": [
+      "Blue Line Cabs"
+    ],
+    "context": "Working in Blue Line Cabs"
+  },
+  "noStale": {
+    "driversHeader": [
+      "2"
+    ],
+    "showsBlue": true,
+    "showsAcme": false,
+    "showsAll": false
+  },
+  "returnToAll": {
+    "context": "All tenants (platform-wide)",
+    "switcher": "Tenant context: All tenants. Change tenant"
+  },
+  "errorInitial": {
+    "alerts": [
+      "Couldn't load tenantsDatabase unavailable (MOCKED)HTTP 503 · SERVICE_UNAVAILABLE · ref mock-503 Try again"
+    ],
+    "emptyStateShown": false
+  },
+  "errorRefresh": {
+    "stale": "Refresh failed — showing the list from 14:43. Retry",
+    "rowsStillShown": 25
+  },
+  "empty": {
+    "text": true
+  },
+  "responsive": {
+    "320x568": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "detail": {
+        "opened": true,
+        "overflow": false,
+        "dialog": {
+          "left": 0,
+          "right": 320,
+          "inView": true
+        },
+        "small": []
+      },
+      "switcher": {
+        "overflow": false,
+        "popover": {
+          "inView": true
+        }
+      }
+    },
+    "390x844": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "detail": {
+        "opened": true,
+        "overflow": false,
+        "dialog": {
+          "left": 0,
+          "right": 390,
+          "inView": true
+        },
+        "small": []
+      },
+      "switcher": {
+        "overflow": false,
+        "popover": {
+          "inView": true
+        }
+      }
+    },
+    "768x1024": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "detail": {
+        "opened": true,
+        "overflow": false,
+        "dialog": {
+          "left": 372,
+          "right": 756,
+          "inView": true
+        },
+        "small": []
+      },
+      "switcher": {
+        "overflow": false,
+        "popover": {
+          "inView": true
+        }
+      }
+    },
+    "1024x768": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "detail": {
+        "opened": true,
+        "overflow": false,
+        "dialog": {
+          "left": 628,
+          "right": 1012,
+          "inView": true
+        },
+        "small": []
+      },
+      "switcher": {
+        "overflow": false,
+        "popover": {
+          "inView": true
+        }
+      }
+    },
+    "1366x768": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "detail": {
+        "opened": true,
+        "overflow": false,
+        "dialog": {
+          "left": 970,
+          "right": 1354,
+          "inView": true
+        },
+        "small": []
+      },
+      "switcher": {
+        "overflow": false,
+        "popover": {
+          "inView": true
+        }
+      }
+    },
+    "1920x1080": {
+      "list": {
+        "overflow": false,
+        "clipped": 0,
+        "small": []
+      },
+      "detail": {
+        "opened": true,
+        "overflow": false,
+        "dialog": {
+          "left": 1524,
+          "right": 1908,
+          "inView": true
+        },
+        "small": []
+      },
+      "switcher": {
+        "overflow": false,
+        "popover": {
+          "inView": true
+        }
+      }
+    }
+  },
+  "tenantAdmin": {
+    "switcher": null,
+    "page": "You don't have access to this page\n\nYour account's",
+    "platformCalls": 0,
+    "tenantHeaders": 0
+  },
+  "driver": {
+    "switcher": null,
+    "page": "You don't have access to this page\n\nYour account's",
+    "platformCalls": 0,
+    "tenantHeaders": 0
+  },
+  "anyTenantQuery": 0,
+  "anyWrite": []
+}

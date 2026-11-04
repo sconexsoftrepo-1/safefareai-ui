@@ -24,7 +24,8 @@ import { ConfirmDialog } from "../shared/confirm-dialog";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
-import { useCan } from "@/features/drive-vision/access/use-access";
+import { useActionGate, useCan } from "@/features/drive-vision/access/use-access";
+import { TenantRequiredButton } from "../shared/tenant-required";
 import type { Errors } from "../settings/settings-model";
 import { DISPATCH_MAX, EMPTY_DISPATCH_FORM, dispatchFormFrom, dispatchRequestBody, validateDispatchForm, windowAround, type DispatchField, type DispatchForm } from "./operations-model";
 import { usePickers } from "./use-pickers";
@@ -79,7 +80,8 @@ export function DispatchPage() {
   const [now, setNow] = useState(() => new Date());
   const [openId, setOpenId] = useState<number | null>(linked);
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
-  const canManage = useCan("dispatch.manage");
+  const createGate = useActionGate("dispatch.create");
+  const canCreate = createGate.allowed;
   const [version, setVersion] = useState(0);
   const range: { from?: string; to?: string } = win === "all" ? {} : windowAround(now, ...WINDOWS[win]);
   const listQ = useApiQuery(tab === "dispatches" ? `dispatch:list:${win}:${range.from ?? ""}:${page}:${version}` : null, () => operationsService.listDispatches({ ...range, pageNumber: page, pageSize: PAGE_SIZE }));
@@ -125,10 +127,12 @@ export function DispatchPage() {
             <Button variant="outline" onClick={() => (setNow(new Date()), changed())}>
               <RefreshCw className={listQ.refreshing ? "animate-spin" : undefined} /> Refresh
             </Button>
-            {canManage ? (
+            {canCreate ? (
               <Button onClick={() => setFormMode("create")}>
                 <Plus /> New dispatch
               </Button>
+            ) : createGate.tenantBlocked ? (
+              <TenantRequiredButton label="New dispatch" />
             ) : null}
           </>
         }
@@ -321,7 +325,8 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
   const [pending, setPending] = useState<Pending | null>(null);
   const [reason, setReason] = useState("");
   const [toDriver, setToDriver] = useState("");
-  const canManage = useCan("dispatch.manage");
+  // V10: edit, cancel and swap requests all need dispatch.update.
+  const canUpdate = useCan("dispatch.update");
   const pickers = usePickers(pending?.kind === "swap");
   const d = detailQ.data;
 
@@ -353,7 +358,7 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
         title={d?.title ?? (id !== null ? `Dispatch ${id}` : "")}
         description={d ? `${time(d.scheduledStart)} → ${time(d.scheduledEnd)}` : undefined}
         footer={
-          d && canManage ? (
+          d && canUpdate ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="outline" className="text-danger" onClick={() => setPending({ kind: "cancel" })}>
                 <CircleX /> Cancel dispatch

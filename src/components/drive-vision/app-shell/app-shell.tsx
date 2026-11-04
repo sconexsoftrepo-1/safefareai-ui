@@ -16,8 +16,10 @@ import { ShellContext, type ShellState } from "./shell-context";
 import { ToastProvider } from "../shared/toast-provider";
 import { DriveVisionAIAssistant } from "../assistant/ai-assistant";
 import { RouteGuard } from "../auth/route-guard";
-import { MenuLoadError } from "./menu-load-error";
-import { canUseFeature } from "@/features/drive-vision/access/access-policy";
+import { canUseFeature, screenForPath } from "@/features/drive-vision/access/access-policy";
+import { tenantScopeKey } from "@/features/drive-vision/api/tenant-context";
+import { useTenantSelection } from "@/features/drive-vision/store/tenant-store";
+import { TenantScopeNotice } from "../shared/tenant-required";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 
 /**
@@ -31,10 +33,15 @@ export function DriveVisionAppShell({ children }: { children: React.ReactNode })
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const prefs = usePreferences();
-  // Iris (GET /assistant/prompts, POST /assistant/ask) is a granted feature rather than a default.
+  // Iris (GET /assistant/prompts, POST /assistant/ask) needs its V10 permission (device.read), not a default.
   const assistantAllowed = canUseFeature(useAccess(), "assistant");
   // Map/video workspaces fill the viewport on desktop (Iris opens from the header there), so no launcher clearance.
-  const workspace = isWorkspaceRoute(usePathname());
+  const pathname = usePathname();
+  const workspace = isWorkspaceRoute(pathname);
+  const screen = screenForPath(pathname);
+  // Tenant isolation: page content is keyed by the tenant scope, so a switch remounts it — local state
+  // (filters, pagination, open drawers, selected records) from the previous tenant can't survive.
+  const tenantScope = tenantScopeKey(useTenantSelection());
   const openSearch = useCallback(() => setSearchOpen(true), []);
   const expanded = prefs.sidebarExpanded;
   const docked = assistantOpen && prefs.assistantEnabled && assistantAllowed;
@@ -74,10 +81,12 @@ export function DriveVisionAppShell({ children }: { children: React.ReactNode })
                 )}
               >
                 <div className="@container mx-auto w-full max-w-[1680px] min-w-0">
-                  <MenuLoadError />
                   <RouteGuard>
                     <PageIntro />
-                    {children}
+                    {screen ? <TenantScopeNotice screen={screen} /> : null}
+                    <div key={tenantScope} className="contents">
+                      {children}
+                    </div>
                   </RouteGuard>
                 </div>
               </main>

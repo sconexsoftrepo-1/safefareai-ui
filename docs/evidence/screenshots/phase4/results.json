@@ -1,0 +1,134 @@
+{
+  "scenarios": {
+    "safeFareAdmin": {
+      "landing": "/drive-vision/platform",
+      "scope": "Platform · all tenants",
+      "navLinks": [
+        "Platform",
+        "Overview",
+        "Monitor",
+        "Fleet",
+        "Safety",
+        "Manage",
+        "Admin",
+        "Fleet OverviewAll-tenant fleet view",
+        "Alerts & EventsReview events",
+        "VehiclesDevices & groups",
+        "UsersAccounts & roles"
+      ],
+      "viewports": {
+        "320x640": {
+          "overflow": false,
+          "scrollWidth": 320,
+          "clipped": [],
+          "overlaps": [],
+          "smallTargets": [],
+          "alerts": []
+        },
+        "375x812": {
+          "overflow": false,
+          "scrollWidth": 375,
+          "clipped": [],
+          "overlaps": [],
+          "smallTargets": [],
+          "alerts": []
+        },
+        "390x844": {
+          "overflow": false,
+          "scrollWidth": 390,
+          "clipped": [],
+          "overlaps": [],
+          "smallTargets": [],
+          "alerts": []
+        },
+        "768x1024": {
+          "overflow": false,
+          "scrollWidth": 753,
+          "clipped": [],
+          "overlaps": [],
+          "smallTargets": [],
+          "alerts": []
+        },
+        "1024x768": {
+          "overflow": false,
+          "scrollWidth": 1009,
+          "clipped": [],
+          "overlaps": [],
+          "smallTargets": [],
+          "alerts": []
+        },
+        "1440x900": {
+          "overflow": false,
+          "scrollWidth": 1425,
+          "clipped": [],
+          "overlaps": [],
+          "smallTargets": [],
+          "alerts": []
+        }
+      },
+      "text": "Platform Overview\nTenants, devices, alerts and activity across the whole platform\n\nPlatform · all tenants\nUpdated 13:22\n\nToday\nLast 7 days\nLast 30 days\nRefresh\n\nTenants\n\n3\n\n2 active · 1 inactive\n\nUsers\n\n22\n\nSum of per-tenant counts\n\nDrivers\n\n70\n\nSum of per-tenant counts\n\nDevices\n\n155\n\nSum of per-tenant counts\n\nDevice groups\n\n9\n\nServer total, all tenants\n\nDevice health\n\nVehicle status and device health across all tenants (server aggregates)\n\n63%\n\nonline\n\n97 of 155\n\nDriving\n40\n26%\nIdling\n12\n8%\nParked\n45\n29%\nOffline\n51\n33%\nExpired\n7\n5%\n\nDEVICE HEALTH\n\nStale > 24 h\n9\nLow battery\n4\nNever online\n7\nService expired\n3\nFleet operations\n\nVehicles, trips and dispatch work today across all tenants\n\nVehicles\n155\nDriving\n40\nIdling\n12\nParked\n45\nTrips in progress\n38\nTrips today\n212\nDispatches today\n64\n\n11 dispatches in progress · today: 40 COMPLETED · 13 PENDING · 11 IN_PROGRESS\n\nLicences expiring\nnext 30 days\n6\nPending leave\nawaiting decision\n5\nPending swaps\nawaiting decision\n2\nOn leave today\n61 active drivers\n3\nAlerts & AI events\n\nAll tenants · last 7 days\n\nAlarms · 7 d\n\n186\n\n120 AI · 66 routine\n\nOpen alerts\n\n23\n\n7 severe\n\nBY SEVERITY (SERVER SCALE)\n\nSeverity 3\n26\nSeverity 2\n70\nSeverity 1\n90\nRecent open events\n\nLatest open alerts across all tenants (from the safety summary)\n\nDriver fatigue\nKA-01-1234 · Synthetic Driver A · AI · severity 3\nNEW\n10 min ago\nOverspeed\nKA-05-9876 · ROUTINE · severity 2\nNEW\n1 h ago\nDaily trend\n\nTrips, distance and alarms per day across all tenants · last 7 days\n\nTrips\n1,386\nAlarms\n203\nDistance\n35,490 km\n27 Oct\n28 Oct\n29 Oct\n30 Oct\n31 Oct\n01 Nov\n02 Nov\n0\n55\n110\n1",
+      "overviewScopeBadge": "All tenants",
+      "requests": [
+        "POST /auth/login",
+        "GET /me",
+        "GET /me/permissions",
+        "GET /notifications/unread-count",
+        "GET /platform/tenants",
+        "GET /groups",
+        "GET /dashboard/overview",
+        "GET /dashboard/fleet-status",
+        "GET /dashboard/trends",
+        "GET /dashboard/safety-events",
+        "GET /devices",
+        "GET /monitor/realtime",
+        "GET /alarms/ai",
+        "GET /alarms/routine",
+        "GET /me/preferences"
+      ],
+      "tenantSelectorSent": []
+    },
+    "partialFailure-1440x900": {
+      "overflow": false,
+      "alerts": [
+        "Couldn't load device groupsForbidden (MOCKED)HTTP 403 · FORBIDDEN",
+        "Couldn't load this dataDatabase unavailable (MOCKED)HTTP 503 · DB_UNAVAILABLE · ref mock-r",
+        "Couldn't load this dataDatabase unavailable (MOCKED)HTTP 503 · DB_UNAVAILABLE · ref mock-r"
+      ],
+      "stillShown": {
+        "tenants": false,
+        "vehicles": true,
+        "trend": true
+      }
+    },
+    "partialFailure-375x812": {
+      "overflow": false,
+      "alerts": [
+        "Couldn't load device groupsForbidden (MOCKED)HTTP 403 · FORBIDDEN",
+        "Couldn't load this dataDatabase unavailable (MOCKED)HTTP 503 · DB_UNAVAILABLE · ref mock-r",
+        "Couldn't load this dataDatabase unavailable (MOCKED)HTTP 503 · DB_UNAVAILABLE · ref mock-r"
+      ],
+      "stillShown": {
+        "tenants": false,
+        "vehicles": true,
+        "trend": true
+      }
+    },
+    "empty": {
+      "alerts": [],
+      "text": "Platform Overview\nTenants, devices, alerts and activity across the whole platform\n\nPlatform · all tenants\nUpdated 13:22\n\nToday\nLast 7 days\nLast 30 days\nRefresh\n\nTenants\n\n0\n\n0 active · 0 inactive\n\nUsers\n\n0\n\nSum of per-tenant counts\n\nDrivers\n\n0\n\nSum of per-tenant counts\n\nDevices\n\n0\n\nSum of per-tenant counts\n\nDevice groups\n\n0\n\nServer total, all tenants\n\nDevice health\n\nVehicle status and device health across all tenants (server aggregates)\n\nNo status breakdown\n\nThe server returned no vehicle status counts.\n\nFleet operations\n\nVehicles, trips and dispatch work today across all tenants\n\nVehicles\n—\nDriving\n—\nIdling\n—\nParked\n—\nTrips in progress\n—\nTrips today\n—\nDispatches today\n—\n\n— dispatches in progress\n\nLicences expiring\nnext 30 days\n—\nPending leave\nawaiting decision\n—\nPending swaps\nawaiting decision\n—\nOn leave today\n— active drivers\n—\nAlerts & AI events\n\nAll tenants · last 7 days\n\nAlarms · 7 d\n\n—\n\n— AI · — routine\n\nOpen alerts\n\n—\n\n— severe\n\nBY SEVERITY (SERVER SCALE)\n\nNo severity breakdown returned.\n\nRecent open events\n\nLatest open alerts across all tenants (from the safety summary)\n\nNo open events\n\nThe server returned no open alerts for this period.\n\nDaily trend\n\nTrips, distance and ala"
+    },
+    "tenantAdmin": {
+      "landing": "/drive-vision/overview",
+      "overviewScopeBadge": null,
+      "platformInNav": false,
+      "platformRoute": "You don't have access to this page",
+      "platformApiCalls": 0,
+      "tenantSelectorSent": 0
+    },
+    "driverMobile": {
+      "landing": "/drive-vision/my-work",
+      "overflow": false,
+      "platformRoute": "You don't have access to this page\n\nYour account's permissions don't include this page.\n\nRole: DRIVE"
+    }
+  }
+}

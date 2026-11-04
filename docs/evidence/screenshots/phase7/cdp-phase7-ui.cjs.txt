@@ -1,0 +1,233 @@
+// Phase 7 UI enhancement — checkbox-based role permissions (headless Edge via CDP). EVERY */api/v1/* request
+// is answered locally with SYNTHETIC data; nothing reaches the BFF, no credentials are used, no real writes happen.
+const fs = require("fs");
+const path = require("path");
+const OUT = path.join(__dirname, "browser-p7ui");
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdminAll: { userId: 2, platform: false, homeTenantId: 10, tenantId: 10, roleId: 2, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+};
+// SYNTHETIC roles and catalogue.
+const ROLES = [
+  { id: 1, code: "ADMIN", description: "Platform administrator (synthetic)", protectedRole: true, fullAccess: true, permissionCodes: [], activeUsers: 2 },
+  { id: 5, code: "FLEET_OWNER", description: "Fleet owner (synthetic)", protectedRole: false, fullAccess: false, activeUsers: 0 },
+];
+const desc = { read: "View", create: "Create", update: "Update", delete: "Delete", handle: "Handle" };
+let CATALOG = [
+  ...["alarm.read", "alarm.handle", "alarm.rule.create", "alarm.rule.update", "alarm.rule.delete", "device.read", "device.create", "device.update", "device.delete", "driver.read", "driver.create", "driver.update", "driver.delete"].map((code) => ({ code, description: `${desc[code.split(".").pop()]} ${code.split(".").slice(0, -1).join(" ")} (synthetic)`, scope: "TENANT" })),
+  { code: "role.manage", description: "Manage roles (synthetic)", scope: "PLATFORM" },
+  { code: "tenant.all", description: "All tenants (synthetic)", scope: "PLATFORM" },
+];
+let rolePerms = { 5: ["alarm.read", "alarm.handle", "device.read", "driver.read"] };
+let identity = IDS.sfa;
+let failDelete = false;
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  const body = request.postData ? JSON.parse(request.postData) : null;
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body });
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let status = 200, res;
+  const m = p.match(/^\/roles\/(\d+)\/permissions$/);
+  if (p === "/auth/login") res = ok({ accessToken: jwt(), refreshToken: jwt(), tokenType: "Bearer", expiresIn: 3600 });
+  else if (p === "/me") res = ok({ id: 1, displayName: "Synthetic user", email: "synthetic@example.invalid" });
+  else if (p === "/me/permissions") res = ok(identity);
+  else if (p === "/roles" && request.method === "GET") res = ok(ROLES.map((r) => (r.id === 5 ? { ...r, permissionCodes: rolePerms[5] } : r)), ROLES.length);
+  else if (m && request.method === "GET") res = ok({ roleId: Number(m[1]), fullAccess: m[1] === "1", editable: m[1] !== "1", permissionCodes: rolePerms[m[1]] ?? [] });
+  else if (m && request.method === "POST") { rolePerms[m[1]] = [...new Set([...(rolePerms[m[1]] ?? []), ...body.permissionCodes])]; res = ok({ permissionCodes: rolePerms[m[1]] }); }
+  else if (m && request.method === "DELETE") {
+    if (failDelete) { status = 409; res = { code: 409, msg: "Removal refused (MOCKED)", data: null, extend: { errorCode: "OPERATION_NOT_ALLOWED", requestId: "mock-409" } }; }
+    else { const codes = u.searchParams.getAll("codes"); rolePerms[m[1]] = (rolePerms[m[1]] ?? []).filter((c) => !codes.includes(c)); res = ok({ permissionCodes: rolePerms[m[1]] }); }
+  } else if (p === "/permissions" && request.method === "GET") res = ok(CATALOG, CATALOG.length);
+  else if (p === "/permissions" && request.method === "POST") { CATALOG = [...CATALOG, { code: body.code, description: body.description, scope: body.scope }]; status = 201; res = { code: 201, msg: "Created", data: body }; }
+  else res = ok(null);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: w < 768 }); }
+async function go(url, ms = 2500) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function waitFor(sel, ms = 6000) { const end = Date.now() + ms; while (Date.now() < end) { if (await evaluate(`!!document.querySelector(${JSON.stringify(sel)})`)) return true; await sleep(200); } console.error("waitFor timeout", sel); return false; }
+async function typeInto(sel, text) { await waitFor(sel); await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); el.focus(); el.select && el.select(); return true; })()`); if (text) await send("Input.insertText", { text }); else { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }); } await sleep(300); }
+const clickText = (t, scope = "button") => evaluate(`(() => { const el = [...document.querySelectorAll(${JSON.stringify(scope)})].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)})); if (!el) return false; el.click(); return true; })()`);
+const clickLabel = (l) => evaluate(`(() => { const el = [...document.querySelectorAll('[aria-label]')].find(b => b.offsetParent !== null && b.getAttribute('aria-label') === ${JSON.stringify(l)}); if (!el) return false; el.click(); return true; })()`);
+const clickSel = (s) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(s)}); if (!el) return false; el.click(); return true; })()`);
+const esc = async () => { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(500); };
+const TXT = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)})?.innerText ?? '').slice(0, 2000)`);
+const STATE = `(() => {
+  const ed = document.querySelector('[data-testid=role-permission-editor]');
+  if (!ed) return null;
+  const boxes = [...ed.querySelectorAll('li input[type=checkbox]')];
+  const groups = [...ed.querySelectorAll('details[data-testid^=group-]')].map(d => { const gb = d.querySelector('summary input[type=checkbox]'); return { g: d.dataset.testid.slice(6), count: d.querySelector('[data-testid^=group-count]')?.textContent, checked: gb?.checked, indeterminate: gb?.indeterminate, disabled: gb?.disabled }; });
+  return {
+    summary: ed.querySelector('[data-testid=mapping-summary]')?.innerText.replace(/\\n/g, ' '),
+    checked: boxes.filter(b => b.checked).map(b => b.getAttribute('aria-label')).sort(),
+    disabledBoxes: boxes.filter(b => b.disabled).length, total: boxes.length,
+    groups, pending: ed.querySelector('[data-testid=mapping-pending]')?.innerText.replace(/\\n/g, ' ') ?? null,
+    result: ed.querySelector('[data-testid=mapping-result]')?.innerText.replace(/\\n/g, ' ') ?? null,
+    selectAll: ed.querySelector('[data-testid=select-all]')?.textContent.trim() ?? null,
+  };
+})()`;
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth; const r = e => e.getBoundingClientRect();
+  const vis = [...document.querySelectorAll('main *, [role=dialog] *, [role=alertdialog] *')].filter(e => e.offsetParent !== null && r(e).width > 0);
+  const clipped = vis.filter(e => { let p = e.parentElement; while (p && p !== document.body) { if (/(auto|scroll|hidden)/.test(getComputedStyle(p).overflowX)) return false; p = p.parentElement; } const b = r(e); return b.right > vw + 1 || b.left < -1; }).slice(0, 5).map(e => e.tagName + '.' + String(e.className).slice(0, 40));
+  const small = [...document.querySelectorAll('[role=dialog] button, [role=alertdialog] button')].filter(e => e.offsetParent !== null).map(e => ({ t: (e.getAttribute('aria-label') || e.textContent || '').trim().slice(0, 24), w: Math.round(r(e).width), h: Math.round(r(e).height) })).filter(x => x.h < 24 || x.w < 24);
+  return { overflow: document.documentElement.scrollWidth > vw, clipped, small };
+})()`;
+const since = (i) => captured.slice(i).filter((c) => c.method !== "OPTIONS");
+const S = () => evaluate(STATE);
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => { const msg = JSON.parse(mm.data); if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); } else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message)); };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await go(`${APP}/login`, 1500);
+  identity = IDS.sfa;
+  await viewport(1366, 768);
+  await clickText("Safe-Fare Admin");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in"); await sleep(3500);
+
+  // 1) Roles list → Open FLEET_OWNER → checkbox editor.
+  await go(`${APP}/drive-vision/platform/roles`, 3000);
+  R.rolesList = await evaluate(`[...document.querySelectorAll('main table tbody tr')].map(r => r.cells[1]?.innerText.trim())`);
+  await clickLabel("Open role FLEET_OWNER"); await sleep(1800); await waitFor("[data-testid=role-permission-editor] li input");
+  R.initial = await S();
+  await shot("ui-editor-initial-1366x768");
+
+  // 2) Single checkbox: check alarm.rule.create, uncheck device.read.
+  await clickLabel("alarm.rule.create"); await clickLabel("device.read"); await sleep(300);
+  R.single = await S();
+
+  // 3) Module-level: device group → select all, then deselect all.
+  await clickLabel("Select all device permissions"); await sleep(300);
+  R.moduleSelect = (await S()).groups.find((g) => g.g === "device");
+  await clickLabel("Select all device permissions"); await sleep(300);
+  R.moduleDeselect = (await S()).groups.find((g) => g.g === "device");
+  await shot("ui-editor-module-1366x768");
+
+  // 4) Search "rule" → Select shown → clear search: earlier picks preserved.
+  const beforeSearch = (await S()).checked;
+  await typeInto("[data-testid=role-permission-editor] input[aria-label='Search permissions']", "rule"); await sleep(300);
+  R.search = { visible: (await S()).total, button: (await S()).selectAll };
+  await clickSel("[data-testid=select-all]"); await sleep(300);
+  await typeInto("[data-testid=role-permission-editor] input[aria-label='Search permissions']", ""); await sleep(300);
+  const afterSearch = (await S()).checked;
+  R.search.preserved = beforeSearch.every((c) => afterSearch.includes(c));
+  R.search.added = afterSearch.filter((c) => !beforeSearch.includes(c));
+
+  // 5) Select all / Deselect all / Discard.
+  await clickSel("[data-testid=select-all]"); await sleep(300);
+  R.selectAll = { checked: (await S()).checked.length, total: (await S()).total };
+  await clickSel("[data-testid=deselect-all]"); await sleep(300);
+  R.deselectAll = { checked: (await S()).checked.length, pending: (await S()).pending };
+  await clickText("Discard", "[data-testid=mapping-pending] button"); await sleep(300);
+  R.discarded = { checked: (await S()).checked, pending: (await S()).pending };
+
+  // 6) Changes → Review → Cancel (selection kept) → Review → Save.
+  await clickLabel("alarm.rule.create"); await clickLabel("alarm.rule.update"); await clickLabel("driver.read"); await sleep(300);
+  await clickText("Review changes", "[data-testid=mapping-pending] button"); await sleep(800);
+  R.review = await TXT("[data-testid=mapping-review]");
+  await shot("ui-review-1366x768");
+  await clickText("Cancel", "[role=alertdialog] button"); await sleep(600);
+  R.afterCancel = (await S()).pending;
+  await clickText("Review changes", "[data-testid=mapping-pending] button"); await sleep(800);
+  let i = captured.length;
+  await clickText("Save changes", "[role=alertdialog] button"); await sleep(2500);
+  R.save = { requests: since(i).map((c) => `${c.method} ${c.path}${c.query}${c.body ? " " + JSON.stringify(c.body) : ""} tenant=${c.tenant}`), state: await S() };
+  await shot("ui-saved-1366x768");
+
+  // 7) Partial failure: add ok, remove 409 → removal stays pending.
+  failDelete = true;
+  await clickLabel("device.create"); await clickLabel("alarm.handle"); await sleep(300);
+  await clickText("Review changes", "[data-testid=mapping-pending] button"); await sleep(700);
+  i = captured.length;
+  await clickText("Save changes", "[role=alertdialog] button"); await sleep(2500);
+  R.partial = { requests: since(i).filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}${c.query}`), state: await S() };
+  await clickText("Changed", "[data-testid=role-permission-editor] [role=radio]"); await sleep(300);
+  R.partial.changedView = (await S()).total;
+  await shot("ui-partial-1366x768");
+  failDelete = false;
+  await clickText("Discard", "[data-testid=mapping-pending] button"); await sleep(300);
+  await clickText("All", "[data-testid=role-permission-editor] [role=radio]"); await sleep(300);
+  await esc();
+
+  // 8) Protected ADMIN: read-only, no bulk buttons.
+  await clickLabel("Open role ADMIN"); await sleep(1800); await waitFor("[data-testid=mapping-readonly]");
+  const a = await S();
+  R.protected = { readOnly: await TXT("[data-testid=mapping-readonly]"), disabledBoxes: a.disabledBoxes, total: a.total, selectAll: a.selectAll, groupDisabled: a.groups.every((g) => g.disabled) };
+  await shot("ui-protected-1366x768");
+  await esc();
+
+  // 9) Catalogue still works; a new permission is NOT auto-assigned to any role.
+  await go(`${APP}/drive-vision/platform/permissions`, 2800);
+  R.catalog = { groups: await evaluate(`[...document.querySelectorAll('[data-testid=permission-groups] summary')].map(s => s.innerText.replace(/\\n/g, ' '))`) };
+  await clickText("New permission"); await sleep(800);
+  await typeInto("#perm-code", "report.export"); await typeInto("#perm-description", "Export reports (synthetic)");
+  await clickText("TENANT", "[role=dialog] [role=radiogroup] button"); await sleep(200);
+  i = captured.length;
+  await clickText("Create permission", "[role=dialog] button"); await sleep(1800);
+  R.catalog.create = since(i).filter((c) => c.method === "POST").map((c) => `${c.path} ${JSON.stringify(c.body)}`);
+  R.catalog.roleWrites = since(i).filter((c) => /^\/roles/.test(c.path) && c.method !== "GET").length;
+  await go(`${APP}/drive-vision/platform/roles`, 2800);
+  await clickLabel("Open role FLEET_OWNER"); await sleep(1800); await waitFor("[data-testid=role-permission-editor] li input");
+  R.catalog.inEditor = await evaluate(`(() => { const b = [...document.querySelectorAll('[data-testid=role-permission-editor] li input')].find(x => x.getAttribute('aria-label') === 'report.export'); return b ? { present: true, checked: b.checked } : { present: false }; })()`);
+  await esc();
+
+  // 10) Responsive.
+  R.responsive = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/drive-vision/platform/roles`, 2600);
+    await clickLabel("Open role FLEET_OWNER"); await sleep(1800); await waitFor("[data-testid=role-permission-editor] li input");
+    await clickLabel("alarm.rule.create"); await sleep(300);
+    const l = await evaluate(LAYOUT);
+    await evaluate(`document.querySelector('[data-testid=role-permission-editor]')?.scrollIntoView({ block: 'start' })`); await sleep(300);
+    await shot(`ui-editor-${w}x${h}`);
+    await clickText("Review changes", "[data-testid=mapping-pending] button"); await sleep(700);
+    const lr = await evaluate(LAYOUT);
+    await shot(`ui-review-${w}x${h}`);
+    await esc(); await esc();
+    R.responsive[`${w}x${h}`] = { editor: { overflow: l.overflow, clipped: l.clipped.length, small: l.small }, review: { overflow: lr.overflow, clipped: lr.clipped.length, small: lr.small } };
+  }
+
+  // 11) Unauthorized: tenant ADMIN with every code → denied, no role / permission requests.
+  identity = IDS.tenantAdminAll;
+  await viewport(1366, 768);
+  await evaluate("sessionStorage.clear(), true");
+  await go(`${APP}/login`, 1500);
+  await typeInto("input[name=tenantCode]", "SYNTH");
+  await typeInto("input[name=login]", "synthetic@example.invalid");
+  await typeInto("input[name=password]", "not-a-real-password");
+  await clickText("Sign in"); await sleep(3500);
+  i = captured.length;
+  await go(`${APP}/drive-vision/platform/roles`, 2500);
+  R.unauthorized = { page: (await TXT("main")).slice(0, 40), calls: since(i).filter((c) => /^\/(roles|permissions)/.test(c.path)).length };
+  R.anyTenantHeaderOnRoleAdmin = captured.filter((c) => /^\/(roles|permissions)/.test(c.path) && c.tenant).length;
+  R.anyReplace = captured.filter((c) => c.method === "PUT" && /^\/roles\/\d+\/permissions/.test(c.path)).length;
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(R, null, 2));
+  console.log(JSON.stringify(R, null, 1));
+  ws.close();
+}
+main().catch((e) => { console.error(e); process.exit(1); });
