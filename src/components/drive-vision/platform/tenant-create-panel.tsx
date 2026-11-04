@@ -167,9 +167,6 @@ export function TenantCreatePanel({
               <Copy className="size-3.5" aria-hidden /> Copy role permissions from: tenant {DEFAULT_PERMISSION_SOURCE_TENANT_ID}
               {source?.name ? ` (${source.name})` : ""}
             </h3>
-            <p className="mt-1 text-xs text-ink-muted">
-              The new tenant gets the role permissions of this source tenant. This is the backend default and can&apos;t be changed here. It doesn&apos;t create users or a tenant administrator.
-            </p>
             {errors.copyRolePermissionsFromTenantId ? <p className="mt-1 text-xs text-danger">{errors.copyRolePermissionsFromTenantId}</p> : null}
           </section>
         </form>

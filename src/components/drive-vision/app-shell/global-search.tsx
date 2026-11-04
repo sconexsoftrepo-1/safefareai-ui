@@ -43,7 +43,23 @@ interface Result {
 }
 
 /** Search control in the topbar icon pill (reference: magnifier button). Opens the palette; Ctrl/⌘ K also works. */
-export function GlobalSearchTrigger({ onOpen }: { onOpen: () => void }) {
+export function GlobalSearchTrigger({ onOpen, variant = "icon" }: { onOpen: () => void; variant?: "icon" | "bar" }) {
+  if (variant === "bar") {
+    // Wide search field look in the header; opens the same command palette.
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="Search pages and fleet records"
+        aria-keyshortcuts="Control+K"
+        className="flex h-11 w-full max-w-[520px] min-w-0 items-center gap-3 rounded-full bg-surface-sunken/80 px-4 text-left text-[13.5px] text-ink-subtle transition-colors duration-150 hover:bg-surface-sunken focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none"
+      >
+        <Search className="size-[18px] shrink-0 text-ink-muted" aria-hidden />
+        <span className="min-w-0 flex-1 truncate">Search vehicles, drivers, or alerts…</span>
+        <kbd className="hidden rounded-md border border-line bg-surface px-1.5 py-0.5 font-sans text-[11px] text-ink-muted lg:inline">Ctrl K</kbd>
+      </button>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger asChild>

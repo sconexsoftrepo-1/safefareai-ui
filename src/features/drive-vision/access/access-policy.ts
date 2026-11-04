@@ -37,6 +37,11 @@ export const SCREEN_ROUTES = {
   video: `${DV_BASE}/video`,
   trips: `${DV_BASE}/trips`,
   reports: `${DV_BASE}/reports`,
+  /** Vehicle registry (server menu_key "vehicles", routePath /vehicle-registry). Not the devices screen below. */
+  vehicleRegistry: `${DV_BASE}/vehicle-registry`,
+  /** Sensors: stop-wise passenger counts and the sensor vs BMS reconciliation (server routePath /sensors). */
+  sensors: `${DV_BASE}/sensors`,
+  /** Devices ("Vehicles & Assets", server menu_key "vehicles_assets"). */
   vehicles: `${DV_BASE}/vehicles`,
   drivers: `${DV_BASE}/drivers`,
   dispatch: `${DV_BASE}/dispatch`,
@@ -90,6 +95,22 @@ export interface ScreenDef {
   platformOnly?: boolean;
 }
 
+/** Source of the off-spec sensor / passenger-count operations and their sensor.* codes. */
+const SENSOR_CONTRACT = "Sensors and passenger-count API contract from the backend team, 2026-11-03 (docs/contracts/passenger-counting-api.txt; not in api-docs-v10.json)";
+const SENSOR_READS = [
+  "GET /api/v1/sensors/types",
+  "GET /api/v1/devices/{id}/sensors/readings",
+  "GET /api/v1/devices/{id}/stops",
+  "GET /api/v1/devices/{id}/bms",
+  "GET /api/v1/devices/{id}/stops/comparison",
+  "GET /api/v1/devices/{id}/passenger-summary",
+  // Alcohol detection result (docs/contracts/alcohol-detection-api.txt, 2026-11-03).
+  "GET /api/v1/devices/{id}/sensors/alcohol",
+];
+
+/** Source of the off-spec vehicle registry operations and their vehicle.* codes. */
+const VEHICLE_CONTRACT = "Vehicle API contract from the backend team, 2026-11-03 (docs/contracts/vehicle-api.txt; not in api-docs-v10.json)";
+
 export const SCREENS: Readonly<Record<ScreenKey, ScreenDef>> = {
   // Platform administration = platform === true AND tenant.all (see canAccessPlatform). Never a tenant ADMIN.
   platform: { audience: "staff", platformOnly: true, requires: { anyOf: ["tenant.all"], operations: ["GET /api/v1/platform/tenants"] } },
@@ -110,6 +131,15 @@ export const SCREENS: Readonly<Record<ScreenKey, ScreenDef>> = {
   video: { audience: "all", requires: { anyOf: ["video.playback"], operations: ["GET /api/v1/devices/{id}/recordings"] } },
   trips: { audience: "all", requires: { anyOf: ["track.read"], operations: ["GET /api/v1/trips"] } },
   reports: { audience: "all", requires: { anyOf: ["report.read"], operations: ["GET /api/v1/reports/mileage"] } },
+  vehicleRegistry: {
+    audience: "all",
+    requires: {
+      anyOf: ["vehicle.read"],
+      operations: ["GET /api/v1/vehicles", "GET /api/v1/vehicles/available", "GET /api/v1/vehicles/{id}"],
+      offSpec: { operations: ["GET /api/v1/vehicles", "GET /api/v1/vehicles/available", "GET /api/v1/vehicles/{id}"], source: VEHICLE_CONTRACT },
+    },
+  },
+  sensors: { audience: "all", requires: { anyOf: ["sensor.read"], operations: SENSOR_READS, offSpec: { operations: SENSOR_READS, source: SENSOR_CONTRACT } } },
   vehicles: { audience: "all", requires: { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] } },
   drivers: { audience: "all", requires: { anyOf: ["driver.read"], operations: ["GET /api/v1/drivers"] } },
   dispatch: { audience: "all", requires: { anyOf: ["dispatch.read"], operations: ["GET /api/v1/dispatches"] } },
@@ -154,8 +184,9 @@ export type WidgetKey =
   | "permissions.catalog"
   | "drivers.safety"
   | "drivers.deviceChoices"
-  | "vehicles.driverAssignments";
-export const ALL_WIDGETS: WidgetKey[] = ["platform.tenants", "dashboard.fleet", "dashboard.safety", "dashboard.groups", "roles.permissions", "permissions.catalog", "drivers.safety", "drivers.deviceChoices", "vehicles.driverAssignments"];
+  | "vehicles.driverAssignments"
+  | "sensors.deviceChoices";
+export const ALL_WIDGETS: WidgetKey[] = ["platform.tenants", "dashboard.fleet", "dashboard.safety", "dashboard.groups", "roles.permissions", "permissions.catalog", "drivers.safety", "drivers.deviceChoices", "vehicles.driverAssignments", "sensors.deviceChoices"];
 /** Widgets that are platform administration: they also need platform === true. */
 const PLATFORM_WIDGETS: ReadonlySet<WidgetKey> = new Set<WidgetKey>(["roles.permissions", "permissions.catalog"]);
 
@@ -174,6 +205,8 @@ export const WIDGETS: Readonly<Record<WidgetKey, Requirement>> = {
   "drivers.deviceChoices": { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] },
   /** Phase 8 — a vehicle's driver assignments (vehicle detail, assign dialog). */
   "vehicles.driverAssignments": { anyOf: ["driver.read"], operations: ["GET /api/v1/devices/{id}/driver-assignments"] },
+  /** The bus picker on the Sensors screen. */
+  "sensors.deviceChoices": { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] },
 };
 
 export interface ActionDef {
@@ -269,6 +302,8 @@ export const ACTIONS = {
   "roles.delete": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.manage"], operations: ["DELETE /api/v1/roles/{id}"] } },
   "rolePermissions.add": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.permission.create"], operations: ["POST /api/v1/roles/{id}/permissions"] } },
   "rolePermissions.remove": { screen: "roles", tenantWrite: false, requires: { anyOf: ["role.permission.delete"], operations: ["DELETE /api/v1/roles/{id}/permissions"] } },
+  /** Save a role's whole permission list from the Permission Catalogue's role matrix (full replace). */
+  "rolePermissions.replace": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["role.permission.update"], operations: ["PUT /api/v1/roles/{id}/permissions"] } },
   "permissions.create": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["permission.manage"], operations: ["POST /api/v1/permissions"] } },
   "permissions.update": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["permission.manage"], operations: ["PUT /api/v1/permissions/{code}"] } },
   "permissions.delete": { screen: "permissions", tenantWrite: false, requires: { anyOf: ["permission.manage"], operations: ["DELETE /api/v1/permissions/{code}"] } },
@@ -289,7 +324,45 @@ export const ACTIONS = {
    * Edit a device's descriptive fields (PUT /devices/{id}; full replace). Tenant write, class B. Model, protocol,
    * cameras, terminal, group and object type are resent unchanged (possible vendor charges / transfer).
    */
+  /**
+   * Register a device (POST /devices). Tenant write, class A. Charges: confirmChargeableChange is sent only after the
+   * server asks for confirmation and the user accepts its message (components/drive-vision/vehicles/device-create-model.ts).
+   */
+  "devices.create": { screen: "vehicles", tenantWrite: true, tenantClass: "CREATE_REQUIRES_SELECTED_TENANT", requires: { anyOf: ["device.create"], operations: ["POST /api/v1/devices"] } },
   "devices.update": { screen: "vehicles", tenantWrite: true, tenantClass: "EXISTING_RECORD_UPDATE", requires: { anyOf: ["device.update"], operations: ["PUT /api/v1/devices/{id}"] } },
+  // Sensors (off-spec contract). Sending readings needs a tenant (TENANT_REQUIRED); recalculating works on a bus
+  // the screen loaded with the same tenant header.
+  "sensors.ingest": {
+    screen: "sensors",
+    tenantWrite: true,
+    tenantClass: "CREATE_REQUIRES_SELECTED_TENANT",
+    requires: { anyOf: ["sensor.ingest"], operations: ["POST /api/v1/sensors/readings"], offSpec: { operations: ["POST /api/v1/sensors/readings"], source: SENSOR_CONTRACT } },
+  },
+  "sensors.recalculate": {
+    screen: "sensors",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_UPDATE",
+    requires: { anyOf: ["sensor.ingest"], operations: ["POST /api/v1/devices/{id}/stops/recalculate"], offSpec: { operations: ["POST /api/v1/devices/{id}/stops/recalculate"], source: SENSOR_CONTRACT } },
+  },
+  // Vehicle registry (off-spec contract). The contract documents TENANT_REQUIRED for all three writes.
+  "vehicleRegistry.create": {
+    screen: "vehicleRegistry",
+    tenantWrite: true,
+    tenantClass: "CREATE_REQUIRES_SELECTED_TENANT",
+    requires: { anyOf: ["vehicle.create"], operations: ["POST /api/v1/vehicles"], offSpec: { operations: ["POST /api/v1/vehicles"], source: VEHICLE_CONTRACT } },
+  },
+  "vehicleRegistry.update": {
+    screen: "vehicleRegistry",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_UPDATE",
+    requires: { anyOf: ["vehicle.update"], operations: ["PUT /api/v1/vehicles/{id}"], offSpec: { operations: ["PUT /api/v1/vehicles/{id}"], source: VEHICLE_CONTRACT } },
+  },
+  "vehicleRegistry.delete": {
+    screen: "vehicleRegistry",
+    tenantWrite: true,
+    tenantClass: "EXISTING_RECORD_DELETE",
+    requires: { anyOf: ["vehicle.delete"], operations: ["DELETE /api/v1/vehicles/{id}"], offSpec: { operations: ["DELETE /api/v1/vehicles/{id}"], source: VEHICLE_CONTRACT } },
+  },
   /** Own notification read state. */
   "notifications.markRead": {
     screen: null,
@@ -344,6 +417,10 @@ export const SERVER_ROUTE_PATHS: Readonly<Record<string, ScreenRoute | null>> = 
   "/dashboard": { screen: "overview", href: SCREEN_ROUTES.overview },
   "/alarms": { screen: "alerts", href: SCREEN_ROUTES.alerts },
   "/reports": { screen: "reports", href: SCREEN_ROUTES.reports },
+  // Vehicle registry menu (menu_key "vehicles"), docs/contracts/vehicle-api.txt.
+  "/vehicle-registry": { screen: "vehicleRegistry", href: SCREEN_ROUTES.vehicleRegistry },
+  // Sensors menu, docs/contracts/passenger-counting-api.txt.
+  "/sensors": { screen: "sensors", href: SCREEN_ROUTES.sensors },
   // Platform screens returned for the Safe-Fare Admin by GET /me/permissions (supplied 2026-11-02).
   "/platform/roles": { screen: "roles", href: SCREEN_ROUTES.roles },
   "/platform/permissions": { screen: "permissions", href: SCREEN_ROUTES.permissions },

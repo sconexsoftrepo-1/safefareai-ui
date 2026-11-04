@@ -114,7 +114,8 @@ test("P8 no fabrication: the UI never derives an alarm's driver — only the ser
   assert.doesNotMatch(incidents, /currentAssignment|currentDriver|deviceAssignments/, "alerts never use a vehicle's current driver");
   // The legacy sample ActivityFeed (which matched alarms to drivers) is not mounted anywhere.
   for (const f of components) if (!f.endsWith("activity-feed.tsx")) assert.doesNotMatch(fs.readFileSync(f, "utf8"), /from "\.\/activity-feed"|<ActivityFeed\b/, path.relative(SRC, f));
-  assert.match(read("components/drive-vision/drivers/drivers-page.tsx"), /attributed to this driver by the server/);
+  // A driver's events come only from the server's attribution (GET /drivers/{id}/safety-events).
+  assert.match(read("components/drive-vision/drivers/drivers-page.tsx"), /insightService\.driverSafetyEvents\(id!/);
 });
 
 // ── Authorization ───────────────────────────────────────────────────────────

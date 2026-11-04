@@ -308,7 +308,7 @@ test("P7 routes: the platform routePaths from GET /me/permissions map to the new
 });
 
 test("P7 regression: platform screens use only the platform-wide service; the Users page keeps its own reads", () => {
-  for (const f of ["global-roles.tsx", "role-permission-editor.tsx", "permission-catalog.tsx"]) {
+  for (const f of ["global-roles.tsx", "role-permission-editor.tsx", "permission-catalog.tsx", "role-permission-matrix.tsx"]) {
     const src = read(`components/drive-vision/platform/${f}`);
     assert.doesNotMatch(src, /adminService/, `${f} uses the tenant-scoped admin service`);
     assert.doesNotMatch(src, /permissions\.has|roleCode|\.platform\s*===/, `${f} has its own permission logic`);
@@ -318,7 +318,7 @@ test("P7 regression: platform screens use only the platform-wide service; the Us
   const svc = read("features/drive-vision/api/role-admin-service.ts");
   const calls = [...svc.matchAll(/api\.(get|post|put|delete)</g)].length;
   const platform = [...svc.matchAll(/PLATFORM\b|\.\.\.PLATFORM/g)].length;
-  assert.ok(calls === 11 && platform >= 11, `every one of the 11 calls passes tenant:"none" (${calls} calls)`);
+  assert.ok(calls === 12 && platform >= 12, `every one of the 12 calls passes tenant:"none" (${calls} calls)`);
 });
 
 // ── Phase 7 UI enhancement: checkbox-based selection ────────────────────────
@@ -415,5 +415,64 @@ test("P7-UI save path: existing add / remove operations only (no replace-all), t
   assert.doesNotMatch(editor, /replace|api\.put|PUT \/roles/i);
   assert.match(editor, /setPending\(\(p\) => pendingAfterApply\(p, added, removed\)\)/, "pending changes survive failures");
   assert.match(editor, /Always re-read[\s\S]*rpQ\.refetch\(\);\s*onChanged\(\);/);
-  assert.doesNotMatch(read("features/drive-vision/api/role-admin-service.ts"), /replacePermissions|\.put<RolePermissionsDto>/);
+  // The full-replace PUT exists only for the Permission Catalogue's role matrix, never the Global Roles editor.
+  assert.match(read("features/drive-vision/api/role-admin-service.ts"), /async replaceRolePermissions\(id: number, permissionCodes: string\[\]\)[\s\S]*?api\.put<RolePermissionsDto>\(`\/roles\/\$\{id\}\/permissions`, \{ permissionCodes \}, PLATFORM\)/);
+  assert.match(read("components/drive-vision/platform/role-permission-matrix.tsx"), /roleAdminService\.replaceRolePermissions\(roleId, request\.permissionCodes\)/);
+});
+
+// ── Permission Catalogue: role × module matrix (full-replace save) ──────────
+
+test("Matrix: module = code minus its last segment; create/update/delete/read become Add/Edit/Delete/View, the rest Other", () => {
+  same(m.permissionModule("alarm.rule.create"), { module: "alarm.rule", action: "create" });
+  same(m.permissionModule("device.read"), { module: "device", action: "read" });
+  same(m.permissionModule("solo"), { module: "solo", action: "" });
+  assert.equal(m.moduleLabel("alarm.rule"), "Alarm rule");
+  assert.equal(m.moduleLabel("own.data"), "Own data");
+  const rows = m.buildPermissionMatrix(["alarm.read", "alarm.handle", ...ALARM.slice(2), "device.read", "device.update", "tenant.all", "device.read"]);
+  same(rows.map((r) => r.module), ["alarm", "alarm.rule", "device", "tenant"]);
+  const alarm = rows[0];
+  same(alarm.cells, { read: "alarm.read" });
+  same(alarm.others, ["alarm.handle"]);
+  same(rows[1].cells, { create: "alarm.rule.create", update: "alarm.rule.update", delete: "alarm.rule.delete" });
+  same(rows[2].codes, ["device.read", "device.update"], "duplicates dropped");
+  same(rows[3].others, ["tenant.all"]);
+  same(m.filterMatrix(rows, "rule").map((r) => r.module), ["alarm.rule"]);
+  same(m.filterMatrix(rows, "handle").map((r) => r.module), ["alarm"]);
+  assert.equal(m.filterMatrix(rows, " ").length, 4);
+});
+
+test("Matrix save body: the whole selection (assigned − removals + additions), sorted; > 300 codes blocks", () => {
+  const pending = { additions: set("device.create"), removals: set("alarm.handle") };
+  const r = m.replaceRequest(ASSIGNED, pending);
+  same(r.permissionCodes, ["alarm.read", "device.create", "device.read"]);
+  same(r.problems, []);
+  same(m.replaceRequest(set(), m.NO_CHANGES).permissionCodes, [], "an empty list is a valid full replace");
+  const many = new Set(Array.from({ length: 301 }, (_, i) => `x.c${i}`));
+  assert.equal(m.replaceRequest(many, m.NO_CHANGES).problems.length, 1);
+});
+
+test("Matrix access: saving needs role.permission.update on the Permission Catalogue screen; platform-wide, never tenant-blocked", () => {
+  const def = p.ACTIONS["rolePermissions.replace"];
+  assert.equal(def.screen, "permissions");
+  assert.equal(def.tenantWrite, false);
+  same([...def.requires.anyOf], ["role.permission.update"]);
+  same([...def.requires.operations], ["PUT /api/v1/roles/{id}/permissions"]);
+  const a = access(SFA);
+  assert.equal(p.canPerform(a, "rolePermissions.replace"), true);
+  assert.equal(a.tenantBlockedActions.has("rolePermissions.replace"), false);
+  assert.equal(p.canPerform(access({ ...SFA, permissions: ALL_CODES.filter((c) => c !== "role.permission.update") }), "rolePermissions.replace"), false);
+  assert.equal(p.canPerform(access({ ...IDENTITIES.tenantAdmin, permissions: ALL_CODES }), "rolePermissions.replace"), false, "tenant ADMIN never");
+});
+
+test("Matrix UI: role first, then the catalogue and the role's permissions; save reviews, then PUTs the full list", () => {
+  const ui = read("components/drive-vision/platform/role-permission-matrix.tsx");
+  assert.match(ui, /useApiQuery\(roleId !== null \? "platform-permissions:list" : null/, "catalogue loads only after a role is chosen");
+  assert.match(ui, /roleAdminService\.rolePermissions\(roleId!\)/);
+  assert.match(ui, /canPerform\(access, "rolePermissions\.replace"\)/);
+  assert.match(ui, /locked: block !== null \|\| !canReplace \|\| saving/, "locked roles, missing rights and in-flight saves freeze the boxes");
+  assert.match(ui, /onConfirm=\{save\}/, "save goes through the review dialog");
+  assert.match(ui, /setPending\(NO_CHANGES\);\s*assignedQ\.refetch\(\);/, "success re-reads the server's list");
+  const page = read("components/drive-vision/platform/permission-catalog.tsx");
+  assert.match(page, /useState<"roles" \| "catalogue">\("roles"\)/, "Role permissions is the default view");
+  assert.match(page, /\{tab === "roles" \? <RolePermissionMatrix \/> : null\}/);
 });

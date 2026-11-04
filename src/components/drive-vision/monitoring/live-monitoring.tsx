@@ -21,6 +21,7 @@ import { ApiErrorState, DataSourceBadge, apiErrorMeta } from "../shared/api-stat
 import { describeApiError } from "@/features/drive-vision/api/errors";
 import { useFleetReference } from "../vehicles/use-fleet-reference";
 import { LiveDevicePanel } from "./live-device-panel";
+import { LiveVideoDialog } from "./live-video-dialog";
 import { REALTIME_POLL_MS, REPORT_AGE_META, checkPosition, reportAge, type ReportAge } from "./live-fleet-model";
 
 type AgeFilter = ReportAge | "all" | "nopos";
@@ -40,6 +41,13 @@ export function LiveMonitoring() {
   const [age, setAge] = useState<AgeFilter>("all");
   const [alarmsOnly, setAlarmsOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(() => (/^\d+$/.test(params.get("vehicle") ?? "") ? Number(params.get("vehicle")) : null));
+  // Live camera popup: opens when the user picks a device (list or map), not for a ?vehicle= link.
+  const [videoId, setVideoId] = useState<number | null>(null);
+  const toggleDevice = (id: number | null) => {
+    const next = id === selectedId ? null : id;
+    setSelectedId(next);
+    if (next !== null) setVideoId(next);
+  };
 
   const realtimeQ = useApiQuery("monitor:realtime", () => fleetService.realtime());
   const devicesQ = useApiQuery("monitor:devices", () => fleetService.listAllDevices());
@@ -195,7 +203,7 @@ export function LiveMonitoring() {
           ) : (
             <ul className="scrollbar-thin max-h-[420px] min-h-0 flex-1 overflow-y-auto px-2 pb-2 lg:max-h-none">
               {visible.map((s) => (
-                <DeviceRow key={s.deviceId} state={s} active={s.deviceId === selectedId} now={now} groupName={ref.group(groupOf.get(s.deviceId))} onSelect={() => setSelectedId(s.deviceId === selectedId ? null : (s.deviceId ?? null))} />
+                <DeviceRow key={s.deviceId} state={s} active={s.deviceId === selectedId} now={now} groupName={ref.group(groupOf.get(s.deviceId))} onSelect={() => toggleDevice(s.deviceId ?? null)} />
               ))}
             </ul>
           )}
@@ -213,7 +221,7 @@ export function LiveMonitoring() {
               ariaLabel="Live device positions"
               markers={markers}
               selectedId={selectedId === null ? null : String(selectedId)}
-              onMarkerClick={(id) => setSelectedId(String(selectedId) === id ? null : Number(id))}
+              onMarkerClick={(id) => toggleDevice(Number(id))}
               cluster
               bounds={bounds}
               fitPoints={fitPoints}
@@ -229,6 +237,12 @@ export function LiveMonitoring() {
           )}
         </section>
       </div>
+
+      <LiveVideoDialog
+        state={states.find((s) => s.deviceId === videoId) ?? null}
+        cameraCount={(devicesQ.data?.items ?? []).find((d) => d.id === videoId)?.cameraCount}
+        onClose={() => setVideoId(null)}
+      />
     </div>
   );
 }

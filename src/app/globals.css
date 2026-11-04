@@ -30,6 +30,7 @@
   --color-brand-soft: var(--dv-brand-soft);
   --color-brand-tint: var(--dv-brand-tint);
   --color-surface-sunken: var(--dv-surface-sunken);
+  --color-table-head: var(--dv-table-head);
   --color-brand-line: var(--dv-brand-line);
   --color-overlay: var(--dv-overlay);
   --color-line: var(--dv-border);
@@ -103,6 +104,24 @@
   }
 }
 
+@layer components {
+  /* Every table header: muted band and labels, rounded ends where the table allows it
+     (border-separate tables; collapsed tables keep square ends). Utilities on a <th> still win. */
+  .dv-thead th {
+    background-color: #000000a1;
+    color: white;
+    font-weight: 500;
+  }
+  .dv-thead th:first-child {
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+  }
+  .dv-thead th:last-child {
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+  }
+}
+
 @layer utilities {
   .tabular {
     font-variant-numeric: tabular-nums;
@@ -136,8 +155,7 @@
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: var(--dv-border) transparent;
-  }
-}
+  }}
 
 /* Respect reduced-motion for CSS-driven transitions too (Framer Motion is handled by MotionConfig). */
 @media (prefers-reduced-motion: reduce) {

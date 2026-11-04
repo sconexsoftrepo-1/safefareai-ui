@@ -1,0 +1,105 @@
+SENSORS, STOP-WISE PASSENGER COUNTS, BMS RECONCILIATION AND CAPACITY - FRONTEND REFERENCE
+=========================================================================================
+(Backend contract supplied 2026-11-03. Not in docs/openapi/api-docs-v10.json; the frontend registers these
+operations and the sensor.* permission codes as off-spec in the access policy and contract tests.
+Screen: "Sensors", route /sensors → /drive-vision/sensors.)
+
+Base path : /api/v1
+Auth      : Authorization: Bearer <accessToken>        (every endpoint)
+Format    : JSON. All times are ISO-8601 UTC, e.g. "2026-11-02T08:05:00Z".
+Bus id    : {id} = dbo.devices.id of the bus (the device id from GET /api/v1/devices), e.g. 1215.
+
+Safe-Fare (platform) admin only: pick the tenant with ?tenantId=<id> or header X-Tenant-Id: <id>
+(POST /sensors/readings returns 400 TENANT_REQUIRED without it). Tenant users never send it.
+Another organisation's bus always answers 404.
+
+ENDPOINTS
+  #  Method  Path                                      Permission                   Purpose
+  1  GET     /api/v1/sensors/types                     sensor.read or sensor.ingest Sensor catalog
+  2  POST    /api/v1/sensors/readings                  sensor.ingest                Send sensor readings (1-500)
+  3  GET     /api/v1/devices/{id}/sensors/readings     sensor.read                  Raw readings of a bus (paged)
+  4  GET     /api/v1/devices/{id}/stops                sensor.read                  Stop-wise BMS + sensor passenger counts
+  5  GET     /api/v1/devices/{id}/bms                  sensor.read                  Original BMS records (unchanged)
+  6  GET     /api/v1/devices/{id}/stops/comparison     sensor.read                  Sensor vs BMS reconciliation (main API)
+  7  GET     /api/v1/devices/{id}/passenger-summary    sensor.read                  Passenger / capacity dashboard
+  8  POST    /api/v1/devices/{id}/stops/recalculate    sensor.ingest                Rebuild stop visits + alerts
+
+Time window (3-8): fromUtc, toUtc (ISO-8601 UTC, optional). Default last 24 h; maximum 31 days (recalculate:
+7 days); fromUtc < toUtc; otherwise 400 INVALID_VALUE. Lists return at most 1000 stops / rows;
+"truncated": true means there were more (narrow the window).
+
+Envelope: { "code", "msg", "data", "total", "extend" } — code equals the HTTP status; total on paged lists.
+
+COUNTS
+  actualCount = previous actualCount + bmsBoarded - bmsAlighted        (BMS = ground truth)
+  sensorCount = previous sensorCount + sensorBoarded - sensorAlighted  (IR door sensor)
+  difference  = sensorCount - actualCount
+  A trip starts at BMS stop_sequence 1 (counts start from 0). null = UNKNOWN, never 0; "notes" explain why.
+  busCapacity = vehicle passengerCapacity, else 44 (capacitySource VEHICLE | DEFAULT). Counts are never capped.
+  comparisonStatus (first match): NO_BMS, NO_SENSOR_COUNT, OVER_CAPACITY_MISMATCH, OVER_CAPACITY, MISMATCH, MATCH.
+  Colours: MATCH green, MISMATCH amber, OVER_CAPACITY / OVER_CAPACITY_MISMATCH red, NO_BMS / NO_SENSOR_COUNT grey.
+  Do NOT add actualCount / sensorCount across stops (each is the number on board at that moment).
+
+1) GET /sensors/types → [{ sensorSubId, sensorName, description }]  (total = count)
+
+2) POST /sensors/readings  { readings: [ { sensorId, sensorSubId, deviceId, timestamp, sensorData, activeStatus?, tenantId? } ] }
+   All or nothing. sensorId 1-100 chars [A-Za-z0-9._:-]; sensorSubId from /sensors/types; deviceId a bus of the
+   caller's organisation; timestamp with Z or an offset, ≤ 5 min in the future; sensorData 1-500 chars;
+   activeStatus default true. IR (sensorSubId 3): JSON string {"in","out","count"} (whole numbers 0-300,
+   "count" required) or a plain whole number. Values above capacity are accepted.
+   → { received, created, duplicates, stopVisitsUpdated, alertsSent, passengerAlerts,
+       results: [{ sensorId, deviceId, timestamp, status: CREATED | DUPLICATE }] }
+   Errors: 400 VALIDATION_FAILED / INVALID_VALUE / INVALID_REFERENCE / TENANT_REQUIRED, 403 TENANT_ACCESS_DENIED,
+   404 NOT_FOUND, 409 DUPLICATE (same bus + sensor + timestamp with a different value).
+
+3) GET /devices/{id}/sensors/readings  ?sensorSubId&fromUtc&toUtc&pageNumber(1)&pageSize(20, max 100)  newest first
+   → [{ sensorId, sensorSubId, sensorName, tenantId, tenantName, deviceId, timestamp, sensorData, numericValue, activeStatus }]
+
+4) GET /devices/{id}/stops  ?fromUtc&toUtc  (oldest first)
+   → { deviceId, deviceName, terminalNo, fromUtc, toUtc, countSemantics, latestOnboard {count, readingTime, sensorId} | null,
+       busCapacity, capacitySource, visitCount, truncated,
+       stops: [{ stopId, deviceId, stopName, lat, lon, stopVisitTime, countOfPeople, tripStartStopId, bmsStopSequence,
+                 bmsBoarded, bmsAlighted, actualCount, sensorBoarded, sensorAlighted, sensorCount, difference,
+                 busCapacity, actualOverCapacity, sensorOverCapacity, actualOverCapacityBy, sensorOverCapacityBy,
+                 comparisonStatus, notes: [] }] }
+
+5) GET /devices/{id}/bms  ?fromUtc&toUtc
+   → { deviceId, deviceName, terminalNo, fromUtc, toUtc, rowCount, truncated,
+       rows: [{ bmsId, tenantId, deviceId, stopId, stopSequence, stopName, lat, lon, stopVisitTime,
+                passengersBoarded, passengersAlighted, passengerCount }] }
+
+6) GET /devices/{id}/stops/comparison  ?fromUtc&toUtc
+   → { deviceId, deviceName, terminalNo, fromUtc, toUtc, busCapacity, capacitySource,
+       summary { visits, visitsWithBms, compared, exactMatches, mismatches, overCapacityStops, missingBmsStops,
+                 missingSensorStops, matchRatePct, meanAbsoluteError, maxAbsoluteError, bmsTotalBoarded,
+                 sensorTotalBoarded, bmsTotalAlighted, sensorTotalAlighted },
+       truncated,
+       stops: [{ stopId, stopName, lat, lon, stopVisitTime, tripStartStopId,
+                 bms { bmsId, stopSequence, boarded, alighted, passengerCount, recordedAt, rows, actualCount } | null,
+                 sensor { boarded, alighted, readings, sensorCount, count },
+                 difference { count, boarded, alighted } | null,
+                 status, comparisonStatus,
+                 capacity { busCapacity, capacitySource, actualOverCapacity, sensorOverCapacity, actualOverCapacityBy, sensorOverCapacityBy },
+                 notes: [] }] }
+
+7) GET /devices/{id}/passenger-summary  ?fromUtc&toUtc
+   → { deviceId, deviceName, terminalNo, fromUtc, toUtc, busCapacity, capacitySource,
+       latestActualCount, latestActualAt, latestSensorCount, latestSensorAt, latestDifference, latestComparedAt,
+       actualOverCapacity, sensorOverCapacity, actualOverCapacityBy, sensorOverCapacityBy,
+       totalStops, comparedStops, matchedStops, mismatchedStops, overCapacityStops, missingBmsStops, missingSensorStops,
+       matchRatePct, maximumActualPassengerCount, maximumSensorPassengerCount, lastUpdatedAt, truncated }
+   "latest..." / "maximum..." are null when no stop in the window has that count.
+
+8) POST /devices/{id}/stops/recalculate  ?fromUtc&toUtc  (no body; default 24 h, max 7 days; idempotent)
+   → { deviceId, fromUtc, toUtc, stopVisitsUpdated, passengerAlerts }
+
+ALERTS: notifications of type "SENSOR"; details.kind PASSENGER_OVER_CAPACITY | PASSENGER_COUNT_MISMATCH | SENSOR_CHANGE.
+
+NOTES: TRIP_START, TRIP_START_UNKNOWN, BMS_MISSING, BMS_SEQUENCE_GAP, BMS_SEQUENCE_RESTART, MULTIPLE_BMS_ROWS,
+BMS_REPORTED_COUNT_DIFFERS, ACTUAL_COUNT_UNKNOWN, NEGATIVE_ACTUAL_COUNT, SENSOR_READINGS_MISSING,
+SENSOR_IN_OUT_MISSING, SENSOR_COUNT_UNKNOWN, NEGATIVE_SENSOR_COUNT.
+
+BUS CAPACITY: POST / PUT /vehicles accept "passengerCapacity" (1-1000, optional; null = 44).
+
+ERRORS: 400 VALIDATION_FAILED, INVALID_VALUE, INVALID_REFERENCE, TENANT_REQUIRED · 401 UNAUTHENTICATED,
+INVALID_TOKEN · 403 FORBIDDEN, TENANT_ACCESS_DENIED · 404 NOT_FOUND · 409 DUPLICATE.

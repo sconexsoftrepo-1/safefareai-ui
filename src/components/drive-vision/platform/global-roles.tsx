@@ -140,11 +140,6 @@ export function GlobalRoles() {
           <SegmentedControl label="Role flags" value={flag} onChange={setFlag} options={FLAGS} />
         </div>
       </div>
-      {scope === "tenant" ? (
-        <p className="mb-3 text-xs text-ink-muted" role="status">
-          Tenant roles belong to one tenant. They&apos;re listed for reference only; their definitions and permissions aren&apos;t changed from this platform screen.
-        </p>
-      ) : null}
 
       <Panel className="overflow-hidden">
         {listQ.error && !listQ.data ? (
@@ -178,10 +173,10 @@ export function GlobalRoles() {
             <div className="hidden overflow-x-auto @3xl:block">
               <table className="w-full text-left text-[13px]">
                 <caption className="sr-only">Roles from GET /roles</caption>
-                <thead className="text-[11.5px] text-ink-muted">
+                <thead className="dv-thead text-[12px]">
                   <tr>
                     {["ID", "Code", "Description", "Flags", "Permissions", "Active users", scope === "tenant" ? "Tenant" : ""].map((h, i) => (
-                      <th key={h || i} scope="col" className={cn("px-4 py-2.5 font-medium", (i === 4 || i === 5) && "text-right")}>
+                      <th key={h || i} scope="col" className={cn("px-4 py-3", (i === 4 || i === 5) && "text-right")}>
                         {h || <span className="sr-only">Open</span>}
                       </th>
                     ))}
@@ -264,9 +259,7 @@ export function GlobalRoles() {
                   <RolePermissionEditor key={detail.id} role={detail} onChanged={listQ.refetch} />
                 </section>
               </>
-            ) : (
-              <p className="text-xs text-ink-muted">Tenant roles are read-only here. Their permissions aren&apos;t loaded or changed from this platform screen.</p>
-            )}
+            ) : null}
           </div>
         ) : null}
       </SlideOverPanel>

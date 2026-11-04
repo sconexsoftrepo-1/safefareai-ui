@@ -193,7 +193,8 @@ test("P6 contract: V10 has exactly two tenant operations; the frontend adds only
   same([...svc.matchAll(/api\.(post|put|patch|delete)<[^>]*>\("([^"]+)"/g)].map((x) => `${x[1]} ${x[2]}`).sort(), ["post /platform/switch-tenant", "post /platform/tenants"]);
   const page = read("components/drive-vision/platform/tenant-management.tsx");
   assert.doesNotMatch(page, /api\.(post|put|patch|delete)|updateTenant|deleteTenant|setTenantStatus/);
-  assert.match(page, /data-testid="tenant-unsupported"/, "the page says which operations V10 lacks");
+  // No explanatory footnotes under the tenant list (removed on request, 2026-11-03).
+  assert.doesNotMatch(page, /data-testid="tenant-unsupported"|browser tab only/);
 });
 
 test("P6 shared state: page and top-bar switcher both use the one tenant context; neither keeps its own selection", () => {

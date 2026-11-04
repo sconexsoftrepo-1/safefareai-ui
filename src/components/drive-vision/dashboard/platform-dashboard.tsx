@@ -369,13 +369,13 @@ function TenantTable({ tenants }: { tenants: TenantDto[] }) {
   return (
     <div className="overflow-x-auto px-2 pb-3">
       <table className="w-full min-w-[560px] text-left text-[13px]">
-        <thead className="text-[11.5px] font-medium text-ink-muted">
+        <thead className="dv-thead text-[12px]">
           <tr>
-            <th scope="col" className="px-3 py-2 font-medium">Tenant</th>
-            <th scope="col" className="px-3 py-2 font-medium">Status</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Users</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Devices</th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">Drivers</th>
+            <th scope="col" className="px-3 py-2.5">Tenant</th>
+            <th scope="col" className="px-3 py-2.5">Status</th>
+            <th scope="col" className="px-3 py-2.5 text-right">Users</th>
+            <th scope="col" className="px-3 py-2.5 text-right">Devices</th>
+            <th scope="col" className="px-3 py-2.5 text-right">Drivers</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line/70">

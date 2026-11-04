@@ -610,9 +610,7 @@ function DispatchFormPanel({ mode, dispatchId, onClose, onSaved }: { mode: "crea
                 <p className="mb-2 text-[13px] font-semibold">{check.result.ok ? "No conflicts found" : "The server reported conflicts"}</p>
                 <CheckList checks={check.result.conflicts} emptyText="No details returned." />
               </>
-            ) : (
-              <p className="text-xs text-ink-muted">Run “Check conflicts” (POST /dispatches/check) before saving. It validates the draft on the server and creates nothing.</p>
-            )}
+            ) : null}
           </div>
         </form>
       )}

@@ -201,7 +201,7 @@ test("DE service: PUT /devices/{id} with the exact body; tenant header only with
 
 // ── UI wiring and scope ─────────────────────────────────────────────────────
 
-test("DE UI: Edit follows the resolver; success refreshes; failures never show success; Add / Delete / Transfer stay disabled", () => {
+test("DE UI: Edit follows the resolver; success refreshes; failures never show success; Delete / Transfer stay disabled", () => {
   const detail = read("components/drive-vision/vehicles/vehicle-detail.tsx");
   assert.match(detail, /useActionGate\("devices\.update"\)/);
   assert.match(detail, /editGate\.allowed \?[\s\S]*?editGate\.tenantBlocked \?/);
@@ -214,11 +214,47 @@ test("DE UI: Edit follows the resolver; success refreshes; failures never show s
   assert.match(panel, /if \(saving \|\| !baseline\.body \|\| !body\) return;/, "duplicate submissions blocked");
   assert.match(panel, /if \(violations\.length\)/);
   assert.doesNotMatch(panel, /confirmChargeableChange/);
-  // Add vehicle not implemented: no POST /devices anywhere; the placeholder and disabled button remain.
+  // Transfer and delete are still not implemented anywhere; POST /devices only in fleet-service (Add vehicle).
   const files = [];
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.tsx?$/.test(e.name) && files.push(path.join(d, e.name))));
   walk(SRC);
-  for (const f2 of files) assert.doesNotMatch(fs.readFileSync(f2, "utf8"), /api\.post<[^>]*>\(\s*"\/devices"|\/devices\/transfer"|api\.delete<[^>]*>\(\s*`\/devices\//, path.relative(SRC, f2));
-  assert.match(read("components/drive-vision/vehicles/vehicles-page.tsx"), /<Button disabled title=\{WRITES_PENDING\}>\s*<Plus \/> Add vehicle/);
-  assert.match(read("components/drive-vision/vehicles/new-vehicle.tsx"), /Adding devices isn't enabled yet/);
+  for (const f2 of files) {
+    const text = fs.readFileSync(f2, "utf8");
+    assert.doesNotMatch(text, /\/devices\/transfer"|api\.delete<[^>]*>\(\s*`\/devices\//, path.relative(SRC, f2));
+    if (!f2.endsWith("fleet-service.ts")) assert.doesNotMatch(text, /api\.post<[^>]*>\(\s*"\/devices"/, path.relative(SRC, f2));
+  }
+});
+
+// ── Add vehicle (POST /api/v1/devices) ──────────────────────────────────────
+
+test("DC model: required V10 fields validated; body has the 7 required fields + filled optionals; modelName from the catalogue", () => {
+  const c = pure.require("components/drive-vision/vehicles/device-create-model");
+  const models = [{ id: 4, name: "PT1", protocols: [{ code: 1, name: "JT808" }] }, { id: 5, name: "ED02R" }];
+  const ok = { ...c.EMPTY_CREATE_FORM, name: " Bus 4 ", terminalNo: "71080050829", groupId: "2", modelId: "4", protocol: "1", objectTypeId: "3", cameraCount: "2", remark: " route 4 ", insuranceDueAt: "2027-01-31" };
+  same(c.validateCreate(ok, models), {});
+  for (const [patch, field] of [[{ terminalNo: "123" }, "terminalNo"], [{ terminalNo: "7108 0050829" }, "terminalNo"], [{ groupId: "" }, "groupId"], [{ modelId: "9" }, "modelId"], [{ protocol: "4" }, "protocol"], [{ objectTypeId: "" }, "objectTypeId"], [{ cameraCount: "17" }, "cameraCount"], [{ name: "" }, "name"]]) {
+    assert.ok(c.validateCreate({ ...ok, ...patch }, models)[field], `${field} ${JSON.stringify(patch)}`);
+  }
+  same(c.buildCreate(ok, models), { groupId: 2, name: "Bus 4", terminalNo: "71080050829", modelName: "PT1", protocol: 1, objectTypeId: 3, cameraCount: 2, remark: "route 4", insuranceDueAt: "2027-01-30T18:30:00.000Z" });
+  assert.equal(c.buildCreate(ok, models).confirmChargeableChange, undefined, "never confirmed by default");
+  assert.equal(c.buildCreate(ok, models, true).confirmChargeableChange, true);
+  same(c.protocolChoices(models[0], [{ code: 1 }, { code: 2 }, { code: 3 }]).map((p) => p.code), [1]);
+  same(c.protocolChoices(models[1], [{ code: 1 }, { code: 2 }, { code: 9 }]).map((p) => p.code), [1, 2]);
+});
+
+test("DC errors: a charge confirmation is asked of the user, never auto-confirmed; unclear outcomes reload", () => {
+  const c = pure.require("components/drive-vision/vehicles/device-create-model");
+  const E = (status, errorCode, msg, kind = "http") => new errorsMod.ApiError({ kind, status, errorCode, message: msg, method: "POST", path: "/devices" });
+  same(c.describeCreateError(E(409, "CONFIRMATION_REQUIRED", "Registering costs 1 coin")), { kind: "confirm", message: "Registering costs 1 coin" });
+  assert.equal(c.describeCreateError(E(409, "CHARGEABLE_CHANGE", "")).kind, "confirm");
+  assert.equal(c.describeCreateError(E(409, "DUPLICATE", "Terminal already registered")).fieldErrors.terminalNo, "Terminal already registered");
+  assert.equal(c.describeCreateError(E(504, "VENDOR_OUTCOME_UNKNOWN", "")).uncertain, true);
+  assert.equal(c.describeCreateError(E(0, undefined, "Network error", "network")).uncertain, true);
+  assert.match(c.describeCreateError(E(400, "TENANT_REQUIRED", "")).message, /Select a tenant/);
+  const panel = read("components/drive-vision/vehicles/device-create-panel.tsx");
+  assert.match(panel, /buildCreate\(form, models, chargeNotice !== null && chargeAccepted\)/, "confirmation only after the user ticks the box");
+  assert.match(panel, /await fleetService\.createDevice\([\s\S]*?\);\s*toast\.success/, "success only after the awaited POST");
+  const page = read("components/drive-vision/vehicles/vehicles-page.tsx");
+  assert.match(page, /useActionGate\("devices\.create"\)/);
+  assert.match(page, /createGate\.tenantBlocked \?/);
 });

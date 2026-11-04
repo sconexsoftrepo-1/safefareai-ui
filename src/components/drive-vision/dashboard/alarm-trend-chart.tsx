@@ -84,12 +84,12 @@ export function AlarmTrendChart({
           <motion.div key="table" className="scrollbar-thin max-h-[280px] overflow-y-auto px-5 pt-3 pb-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transitions.base}>
             <table className="w-full text-[13px]">
               <caption className="sr-only">Alarm and AI event counts</caption>
-              <thead>
-                <tr className="text-left text-[11px] tracking-wide text-ink-muted uppercase">
-                  <th className="py-1.5 font-semibold">Period</th>
-                  <th className="py-1.5 text-right font-semibold">AI events</th>
-                  <th className="py-1.5 text-right font-semibold">Routine</th>
-                  <th className="py-1.5 text-right font-semibold">Total</th>
+              <thead className="dv-thead">
+                <tr className="text-left text-[11px] tracking-wide uppercase">
+                  <th className="px-2 py-2">Period</th>
+                  <th className="px-2 py-2 text-right">AI events</th>
+                  <th className="px-2 py-2 text-right">Routine</th>
+                  <th className="px-2 py-2 text-right">Total</th>
                 </tr>
               </thead>
               <tbody>

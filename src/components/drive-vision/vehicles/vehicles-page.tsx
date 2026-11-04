@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { Camera, ChevronRight, FolderPlus, Info, Plus, SearchX } from "lucide-react";
+import { Camera, ChevronRight, FolderPlus, Plus, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import type { DeviceDto, DeviceStateDto } from "@/features/drive-vision/api/types";
@@ -21,13 +21,16 @@ import { ApiErrorState, DataSourceBadge } from "../shared/api-states";
 import { transitions } from "../shared/motion";
 import { ExpiryBadge } from "./vehicle-cells";
 import { useFleetReference } from "./use-fleet-reference";
+import { DeviceCreatePanel } from "./device-create-panel";
+import { useActionGate } from "@/features/drive-vision/access/use-access";
+import { TenantRequiredButton } from "../shared/tenant-required";
 
 type ExpiryFilter = "all" | "soon" | "expired";
 
 /** API default page size for GET /devices. */
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
-export const WRITES_PENDING = "Adding, moving and deleting devices is disabled until write operations are approved.";
+export const WRITES_PENDING = "Moving and deleting devices and creating groups are disabled until write operations are approved.";
 
 /**
  * Vehicles & Assets on live BFF data.
@@ -48,6 +51,9 @@ export function VehiclesPage() {
   const initialExpiry = params.get("expiry");
   const [expiry, setExpiry] = useState<ExpiryFilter>(initialExpiry === "soon" || initialExpiry === "expired" ? initialExpiry : "all");
   const [page, setPage] = useState(1);
+  const createGate = useActionGate("devices.create");
+  // ?add=1 (from /vehicles/new) opens the form straight away when the user may register devices.
+  const [adding, setAdding] = useState(() => params.get("add") === "1");
 
   // Debounce typing so each keystroke doesn't hit the server; a new search starts at page 1.
   useEffect(() => {
@@ -139,9 +145,13 @@ export function VehiclesPage() {
             <Button variant="outline" disabled title={WRITES_PENDING}>
               <FolderPlus /> New group
             </Button>
-            <Button disabled title={WRITES_PENDING}>
-              <Plus /> Add vehicle
-            </Button>
+            {createGate.allowed ? (
+              <Button onClick={() => setAdding(true)} data-testid="add-vehicle">
+                <Plus /> Add vehicle
+              </Button>
+            ) : createGate.tenantBlocked ? (
+              <TenantRequiredButton label="Add vehicle" />
+            ) : null}
           </>
         }
       />
@@ -189,11 +199,6 @@ export function VehiclesPage() {
         </FilterBar>
       </div>
 
-      {expiry !== "all" ? (
-        <p className="mb-3 flex items-center gap-1.5 px-1 text-xs text-ink-muted">
-          <Info className="size-3.5" aria-hidden /> The expiry filter is applied in the browser to all matching devices (the API has no expiry filter).
-        </p>
-      ) : null}
 
       <AnimatePresence mode="wait" initial={false}>
         <motion.div key={view} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={transitions.fast}>
@@ -237,6 +242,20 @@ export function VehiclesPage() {
         </motion.div>
       </AnimatePresence>
       {ref.errors.length ? <p className="mt-3 px-1 text-xs text-ink-muted">Couldn&apos;t load {ref.errors.join(", ")} — showing ids instead of names.</p> : null}
+
+      {adding && createGate.allowed ? (
+        <DeviceCreatePanel
+          groups={ref.groups}
+          models={ref.models}
+          onClose={() => setAdding(false)}
+          onCreated={(d) => {
+            setAdding(false);
+            active.refetch();
+            if (d.id !== undefined) router.push(`/drive-vision/vehicles/${d.id}`);
+          }}
+          onUncertain={active.refetch}
+        />
+      ) : null}
     </div>
   );
 }
