@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { authService } from "../api/auth-service";
-import { onSessionEnded, type SessionEndReason } from "../api/client";
+import { onSessionEnded, onSessionRefreshed, type SessionEndReason } from "../api/client";
 import { describeApiError, isApiError } from "../api/errors";
 import { readSession } from "../api/session";
 import type { CurrentUserDto, LoginRequest } from "../api/types";
@@ -61,8 +61,40 @@ export function useAuth<T>(selector: (s: AuthState) => T): T {
 
 export const getAuthState = () => state;
 
+/**
+ * An expired session keeps its page in `/login?next=`, so the same user returns to it. Whose page that is goes here,
+ * so another account signing in on that URL doesn't inherit it. It is an account id, not a secret, and it stays in
+ * this tab. A sign-out clears it, and sign-out sends no `next` at all (AuthGate).
+ */
+const EXPIRED_OWNER_KEY = "safefare:expired-session-owner:v1";
+const ownerOf = (identity: Identity | null) => (identity && identity.userId !== null ? `${identity.tenantId ?? "platform"}:${identity.userId}` : null);
+
+function rememberExpiredOwner(reason: SessionEndReason) {
+  try {
+    const owner = reason === "expired" ? ownerOf(state.identity) : null;
+    if (owner) window.sessionStorage.setItem(EXPIRED_OWNER_KEY, owner);
+    else window.sessionStorage.removeItem(EXPIRED_OWNER_KEY);
+  } catch {
+    // Storage can be blocked. Without the record the requested page still has to pass the access check.
+  }
+}
+
+/** Whether a `next` left by an expired session may be used by this identity. */
+export function mayResumeRoute(identity: Identity | null): boolean {
+  try {
+    const owner = window.sessionStorage.getItem(EXPIRED_OWNER_KEY);
+    return owner === null || owner === ownerOf(identity);
+  } catch {
+    return true;
+  }
+}
+
 if (typeof window !== "undefined") {
-  onSessionEnded((reason) => setState({ ...SIGNED_OUT, status: "unauthenticated", endReason: reason }));
+  onSessionEnded((reason) => {
+    rememberExpiredOwner(reason);
+    setState({ ...SIGNED_OUT, status: "unauthenticated", endReason: reason });
+  });
+  onSessionRefreshed(() => void refreshIdentity());
 }
 
 /** Loads profile and identity together; the session counts as authenticated only once both arrived. */

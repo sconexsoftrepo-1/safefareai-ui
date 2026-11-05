@@ -1,0 +1,206 @@
+{
+  "_source": "SYNTHETIC. Built by hand from the written brief of 2026-11-05: the exact /me and /me/permissions JSON did not arrive with the request and is not on this machine. From the brief: ids, role, tenant, menu keys, route paths, operation codes, allowed values, the three driver.app.work CRUD codes in permissions, and readOnly true on my_safety. Placeholders: every other readOnly, operation type names, labels, titles, and own.data.read in permissions (inferred: the screens open today, and they require it). Replace this file with the real response.",
+  "userId": 469,
+  "platform": false,
+  "homeTenantId": 1,
+  "tenantId": 1,
+  "roleId": 4,
+  "roleCode": "DRIVER",
+  "permissions": [
+    "driver.app",
+    "own.data.read",
+    "driver.app.work.create",
+    "driver.app.work.update",
+    "driver.app.work.delete",
+    "driver.app.work.read",
+    "driver.app.work.respond",
+    "driver.app.work.execute",
+    "driver.app.swap.create",
+    "driver.app.shift.read",
+    "driver.app.shift.start",
+    "driver.app.shift.end",
+    "driver.app.leave.read",
+    "driver.app.leave.create",
+    "driver.app.leave.cancel",
+    "driver.app.checklist.read",
+    "driver.app.checklist.submit",
+    "driver.app.safety.read",
+    "driver.app.profile.read",
+    "driver.app.profile.update"
+  ],
+  "screens": [
+    {
+      "menuKey": "my_work",
+      "title": "My Work",
+      "routePath": "/driver/work",
+      "icon": null,
+      "parentId": null,
+      "readOnly": false,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app.work.read",
+          "label": "driver.app.work.read",
+          "allowed": true
+        },
+        {
+          "operation": "ACTION",
+          "permissionCode": "driver.app.work.respond",
+          "label": "driver.app.work.respond",
+          "allowed": true
+        },
+        {
+          "operation": "ACTION",
+          "permissionCode": "driver.app.work.execute",
+          "label": "driver.app.work.execute",
+          "allowed": true
+        },
+        {
+          "operation": "CREATE",
+          "permissionCode": "driver.app.swap.create",
+          "label": "driver.app.swap.create",
+          "allowed": true
+        }
+      ]
+    },
+    {
+      "menuKey": "my_shifts",
+      "title": "My Shifts",
+      "routePath": "/driver/shifts",
+      "icon": null,
+      "parentId": null,
+      "readOnly": false,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app.shift.read",
+          "label": "driver.app.shift.read",
+          "allowed": true
+        },
+        {
+          "operation": "CREATE",
+          "permissionCode": "driver.app.shift.start",
+          "label": "driver.app.shift.start",
+          "allowed": true
+        },
+        {
+          "operation": "UPDATE",
+          "permissionCode": "driver.app.shift.end",
+          "label": "driver.app.shift.end",
+          "allowed": true
+        }
+      ]
+    },
+    {
+      "menuKey": "my_leave",
+      "title": "My Leave",
+      "routePath": "/driver/leave",
+      "icon": null,
+      "parentId": null,
+      "readOnly": false,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app.leave.read",
+          "label": "driver.app.leave.read",
+          "allowed": true
+        },
+        {
+          "operation": "CREATE",
+          "permissionCode": "driver.app.leave.create",
+          "label": "driver.app.leave.create",
+          "allowed": true
+        },
+        {
+          "operation": "ACTION",
+          "permissionCode": "driver.app.leave.cancel",
+          "label": "driver.app.leave.cancel",
+          "allowed": true
+        }
+      ]
+    },
+    {
+      "menuKey": "shift_checklist",
+      "title": "Shift Checklist",
+      "routePath": "/driver/checklist",
+      "icon": null,
+      "parentId": null,
+      "readOnly": false,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app.checklist.read",
+          "label": "driver.app.checklist.read",
+          "allowed": true
+        },
+        {
+          "operation": "CREATE",
+          "permissionCode": "driver.app.checklist.submit",
+          "label": "driver.app.checklist.submit",
+          "allowed": true
+        }
+      ]
+    },
+    {
+      "menuKey": "my_safety",
+      "title": "My Safety",
+      "routePath": "/driver/safety",
+      "icon": null,
+      "parentId": null,
+      "readOnly": true,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app.safety.read",
+          "label": "driver.app.safety.read",
+          "allowed": true
+        }
+      ]
+    },
+    {
+      "menuKey": "driver_notifications",
+      "title": "Notifications",
+      "routePath": "/driver/notifications",
+      "icon": null,
+      "parentId": null,
+      "readOnly": true,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app",
+          "label": "driver.app",
+          "allowed": true
+        }
+      ]
+    },
+    {
+      "menuKey": "my_profile",
+      "title": "My Profile",
+      "routePath": "/driver/profile",
+      "icon": null,
+      "parentId": null,
+      "readOnly": false,
+      "resources": [],
+      "operations": [
+        {
+          "operation": "READ",
+          "permissionCode": "driver.app.profile.read",
+          "label": "driver.app.profile.read",
+          "allowed": true
+        },
+        {
+          "operation": "UPDATE",
+          "permissionCode": "driver.app.profile.update",
+          "label": "driver.app.profile.update",
+          "allowed": true
+        }
+      ]
+    }
+  ]
+}

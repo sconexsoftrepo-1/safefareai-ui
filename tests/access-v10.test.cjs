@@ -65,7 +65,7 @@ test("tenantWrite is set exactly for the tenant-scoped writes (not /me, /notific
   for (const [key, def] of Object.entries(p.ACTIONS)) {
     const selfScoped = def.requires.operations.every((k) => /^\w+ \/api\/v1\/(me|notifications|driver)(\/|$)/.test(k));
     // Phase 7: actions on platform-only screens (global roles, permission catalogue) have no tenant either.
-    const platformAction = def.screen !== null && p.SCREENS[def.screen].platformOnly === true;
+    const platformAction = def.platformOnly === true || (def.screen !== null && p.SCREENS[def.screen].platformOnly === true);
     assert.equal(def.tenantWrite, !selfScoped && !platformAction, key);
   }
 });
@@ -105,7 +105,7 @@ test("Safe-Fare Admin: platform=true recognised, every fleet screen and feature,
   assert.equal(a.platform, true);
   assert.equal(p.canAccessPlatform(a), true);
   // Phase 4: the platform dashboard in addition to every tenant screen.
-  same(list(a.screens), [...FLEET, "permissions", "platform", "roles", "settings", "tenants"].sort());
+  same(list(a.screens), [...FLEET, "platform", "roles", "settings", "tenants"].sort());
   same(list(a.features), ["assistant", "recordSearch"]);
   assert.equal(a.screens.has("myWork"), false);
 });
@@ -227,7 +227,7 @@ test("Driver (live fixture): My Work only, self-service actions, no fleet screen
   assert.equal(a.kind, "driver");
   same(list(a.screens), ["myWork"]);
   same(list(a.features), []);
-  same(list(a.actions), ["account.password", "driver.selfService", "notifications.markRead"]);
+  same(list(a.actions), ["account.password", "notifications.markRead"]);
   for (const s of p.ALL_SCREENS.filter((x) => x !== "myWork")) assert.equal(p.decideRoute("authenticated", a, p.SCREEN_ROUTES[s]).kind, "forbidden", s);
 });
 

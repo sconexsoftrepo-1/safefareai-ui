@@ -1,125 +1,299 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Loader2, Lock, RotateCcw, Save, Search, ShieldCheck } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { Building2, Loader2, Lock, RefreshCw, RotateCcw, Save, Search, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { canPerform, canViewWidget } from "@/features/drive-vision/access/access-policy";
-import { useAccess } from "@/features/drive-vision/access/use-access";
-import { describeApiError } from "@/features/drive-vision/api/errors";
-import { roleAdminService } from "@/features/drive-vision/api/role-admin-service";
-import type { PermissionDto, RoleDto } from "@/features/drive-vision/api/types";
+import { canPerform, canViewWidget, hasTenantContext } from "@/features/drive-vision/access/access-policy";
+import { useAccess, useTenantContext } from "@/features/drive-vision/access/use-access";
+import { onSessionEnded } from "@/features/drive-vision/api/client";
+import { platformService } from "@/features/drive-vision/api/platform-service";
+import { roleMenuService } from "@/features/drive-vision/api/role-menu-service";
+import type { RoleDto, RoleMenuPermissionsDto, TenantDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
+import { useAuth } from "@/features/drive-vision/store/auth-store";
+import { tenantSelectable } from "@/features/drive-vision/store/tenant-store";
 import { formatNumber } from "@/features/drive-vision/utils/format";
 import { Panel } from "../shared/panel";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState } from "../shared/api-states";
-import { StatusBadge } from "../shared/status-badge";
 import { ConfirmDialog } from "../shared/confirm-dialog";
 import { toast } from "../shared/toast-provider";
+import { useUnsavedGuard } from "../shared/use-unsaved-guard";
 import {
-  MATRIX_ACTIONS,
-  NO_CHANGES,
-  buildPermissionMatrix,
-  codeEditable,
-  desiredSelection,
-  filterMatrix,
-  groupState,
-  isGlobalRole,
-  mappingEditBlock,
-  permissionModule,
-  planChanges,
-  replaceRequest,
-  setCodes,
-  type PendingChanges,
-  type SelectionRights,
-} from "./role-permission-model";
+  CONFLICT_MESSAGE,
+  OPERATIONS,
+  cellDisabled,
+  codeUsage,
+  diffPermissions,
+  filterMenus,
+  grantedCodes,
+  gridMismatch,
+  hasChanges,
+  hasUnmappedCells,
+  isMenuOff,
+  matrixError,
+  menuRows,
+  permissionCodesToSave,
+  readGrid,
+  removalImpact,
+  saveBlock,
+  saveIfUnchanged,
+  setPermission,
+  type GridCell,
+  type GridMenu,
+  type RemovalImpact,
+  type RoleMenuGrid,
+} from "./role-menu-permission-model";
 
-const checkedOf = (state: "all" | "none" | "some") => (state === "all" ? true : state === "some" ? "indeterminate" : false);
+const UNSAVED = "You have unsaved permission changes.";
 
 /**
- * Role permissions as a module × Add / Edit / Delete / View grid (Permission Catalogue, Safe-Fare Admin).
- * Choose a role, then GET /permissions (the catalogue) and GET /roles/{id}/permissions (what it holds) load.
- * Changes stay local until Save, which sends the role's whole list with PUT /roles/{id}/permissions after a
- * review. Every call is platform-wide (no tenant header).
+ * The permission boxes, for this grid only (the shared Checkbox is used on other screens). The colours are the
+ * theme's: the border and fill stay at 3:1 or better on the white and tinted rows, and the disabled states stay
+ * opaque, marked by a dashed border and a grey fill, so a read-only grid can still be read. `after` widens the
+ * click target to 36 px without moving the layout. The app has one light theme, but the shared Checkbox carries
+ * `dark:` colours that follow the OS setting and turn the box translucent; the `dark:` entries here replace them.
+ */
+const PERMISSION_CHECKBOX =
+  "relative size-5 rounded-[5px] border-2 border-ink-muted bg-surface shadow-none after:absolute after:-inset-2.5 after:content-[''] dark:bg-surface dark:data-[state=checked]:bg-brand-deep enabled:hover:border-brand-deep enabled:hover:ring-[3px] enabled:hover:ring-brand/25 focus-visible:border-brand-deep focus-visible:ring-[3px] focus-visible:ring-brand-deep focus-visible:ring-offset-2 data-[state=checked]:border-brand-deep data-[state=checked]:bg-brand-deep data-[state=checked]:text-white disabled:border-dashed disabled:bg-surface-sunken disabled:opacity-100 disabled:data-[state=checked]:border-solid disabled:data-[state=checked]:border-ink-muted disabled:data-[state=checked]:bg-ink-muted";
+
+const UNMAPPED_NOTE = "Disabled empty boxes in the Add, Edit, Delete and View columns are operations that aren't mapped for that row. They don't mean a permission is missing from the role. They can't be selected and are never saved.";
+
+/** Edits belong to one tenant and role; `key` keeps them from ever showing under another. */
+interface Edits {
+  key: string;
+  codes: ReadonlySet<string>;
+  /** The grid the edits started from: what a save checks the server against. */
+  base: RoleMenuGrid;
+}
+/** A grid from a PUT or a reload, shown until the next re-read arrives (or if it fails). */
+interface SavedGrid {
+  key: string;
+  /** matrixQ.updatedAt at save time: a newer read replaces this. */
+  readAt: number | null;
+  dto: RoleMenuPermissionsDto;
+}
+type PendingSwitch = { kind: "role"; id: number } | { kind: "tenant"; tenant: TenantDto };
+
+const tenantLabel = (t: TenantDto) => t.name ?? t.code ?? `Tenant ${t.id}`;
+
+/**
+ * The app shell remounts the page on a tenant change, which is what keeps tenants' data apart, so this role id is
+ * the one thing that outlives it: the same role's grid then loads for the new tenant, if that tenant lists it.
+ */
+let lastRoleId: number | null = null;
+if (typeof window !== "undefined") onSessionEnded(() => (lastRoleId = null));
+
+/**
+ * Role menu permissions (Permission Catalogue → Role permissions). Rows, codes and checkbox state come from
+ * GET /roles/{roleId}/menu-permissions; a save sends every ticked code with PUT after a review, then re-reads.
+ * Role permissions belong to a tenant: the Safe-Fare Admin picks one here (the Phase 5 tenant context, so the API
+ * client sends X-Tenant-Id); tenant users work in the tenant of their token and get no picker.
  */
 export function RolePermissionMatrix() {
   const access = useAccess();
-  const canReplace = canPerform(access, "rolePermissions.replace");
-  const canReadAssignments = canViewWidget(access, "roles.permissions");
-  const rolesQ = useApiQuery("platform-roles:list", () => roleAdminService.listRoles());
-  const [roleId, setRoleId] = useState<number | null>(null);
-  const [pendingRole, setPendingRole] = useState<number | null>(null);
-  const catalogQ = useApiQuery(roleId !== null ? "platform-permissions:list" : null, () => roleAdminService.listPermissions());
-  const assignedQ = useApiQuery(roleId !== null && canReadAssignments ? `platform-role-permissions:${roleId}` : null, () => roleAdminService.rolePermissions(roleId!));
-  const [pending, setPending] = useState<PendingChanges>(NO_CHANGES);
+  const ctx = useTenantContext();
+  const profile = useAuth((s) => s.user);
+  const tenantReady = hasTenantContext(access);
+  const canUpdate = canPerform(access, "roleMenuPermissions.update");
+  const canListRoles = canViewWidget(access, "roleMenu.roles");
+  const canReadGrid = canViewWidget(access, "roleMenu.matrix");
+
+  // Query keys carry the tenant, so query data blanks on a switch; state keeps the options while the list reloads.
+  const [tenants, setTenants] = useState<readonly TenantDto[]>([]);
+  const tenantsQ = useApiQuery(ctx.canSelectTenant ? "role-matrix:tenants" : null, async () => {
+    const list = await platformService.activeTenants();
+    setTenants(list.items.filter(tenantSelectable).sort((x, y) => tenantLabel(x).localeCompare(tenantLabel(y))));
+    return list;
+  });
+
+  const rolesQ = useApiQuery(tenantReady && canListRoles ? "role-matrix:roles" : null, () => roleMenuService.listRoles());
+  const roles = useMemo(() => [...(rolesQ.data?.items ?? [])].filter((r) => typeof r.id === "number").sort((a, b) => (a.id ?? 0) - (b.id ?? 0)), [rolesQ.data]);
+  const [roleId, setRoleId] = useState<number | null>(lastRoleId);
+  const role = roles.find((r) => r.id === roleId);
+
+  const matrixQ = useApiQuery(role && canReadGrid ? `role-matrix:grid:${roleId}` : null, () => roleMenuService.getMatrix(roleId!));
+  const [edits, setEdits] = useState<Edits | null>(null);
+  const [saved, setSaved] = useState<SavedGrid | null>(null);
   const [query, setQuery] = useState("");
+  const [note, setNote] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<ReturnType<typeof matrixError> | null>(null);
+  const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<RemovalImpact | null>(null);
+  const [conflictKey, setConflictKey] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
 
-  const roles = useMemo(() => [...(rolesQ.data?.items ?? [])].filter((r) => typeof r.id === "number").sort((a, b) => (a.code ?? "").localeCompare(b.code ?? "")), [rolesQ.data]);
-  const role = roles.find((r) => r.id === roleId);
-  const catalog = useMemo(() => catalogQ.data?.items ?? [], [catalogQ.data]);
-  const assigned = useMemo(() => new Set(assignedQ.data?.permissionCodes ?? []), [assignedQ.data]);
-  const describe = useMemo(() => new Map(catalog.filter((p): p is PermissionDto & { code: string } => !!p.code).map((p) => [p.code, p])), [catalog]);
-  const rows = useMemo(() => buildPermissionMatrix([...catalog.map((p) => p.code).filter((c): c is string => !!c), ...assigned]), [catalog, assigned]);
-  const shown = useMemo(() => filterMatrix(rows, query), [rows, query]);
-  const selected = desiredSelection(assigned, pending);
+  const editKey = `${access.tenantId ?? "none"}|${roleId}`;
+  const dto = saved?.key === editKey && saved.readAt === matrixQ.updatedAt ? saved.dto : matrixQ.data;
+  const grid = useMemo<RoleMenuGrid | null>(() => (dto && role ? readGrid(dto) : null), [dto, role]);
+  const mismatch = grid && roleId !== null ? gridMismatch(grid, { tenantId: access.tenantId, roleId }) : null;
+  const shownGrid = mismatch ? null : grid;
 
-  const block = !role ? "Choose a role." : !canReadAssignments ? "Needs role.permission.read to show this role's permissions." : mappingEditBlock(role, assignedQ.data);
-  const rights: SelectionRights = { locked: block !== null || !canReplace || saving, canAdd: true, canRemove: true };
-  const changes = pending.additions.size + pending.removals.size;
-  const ownRole = access.identity?.roleId === roleId;
-  const plan = planChanges(pending, assigned, { catalog, canAdd: canReplace, canRemove: canReplace, ownRole });
-  const request = replaceRequest(assigned, pending);
-  const problems = [...plan.problems, ...request.problems];
-  const loaded = catalogQ.data !== undefined && assignedQ.data !== undefined;
+  const granted = useMemo(() => (shownGrid ? grantedCodes(shownGrid) : new Set<string>()), [shownGrid]);
+  const selected = edits?.key === editKey ? edits.codes : granted;
+  const usage = useMemo(() => (shownGrid ? codeUsage(shownGrid) : new Map<string, number>()), [shownGrid]);
+  const diff = useMemo(() => (shownGrid ? diffPermissions(shownGrid, selected) : { added: [], removed: [], unchanged: [] }), [shownGrid, selected]);
+  const dirty = hasChanges(diff);
+  const changes = diff.added.length + diff.removed.length;
+  const conflict = conflictKey === editKey;
+  const block = shownGrid ? saveBlock(shownGrid, selected, { canUpdate, conflict }) : "Nothing to save.";
+  const shown = useMemo(() => (shownGrid ? filterMenus(shownGrid.menus, query) : []), [shownGrid, query]);
+  const locked = !shownGrid?.editable || !canUpdate || saving;
+  const guard = useUnsavedGuard(dirty, UNSAVED);
 
-  const toggle = (codes: readonly string[], checked: boolean) => setPending((p) => setCodes(p, codes, checked, assigned, rights));
+  const selectedTenantName = ctx.isPlatformUser ? (ctx.selectedTenantName ?? ctx.selectedTenantCode) : (profile?.tenantName ?? profile?.tenantCode);
+  const tenantText = selectedTenantName ?? (access.tenantId !== null ? `Tenant ${access.tenantId}` : "Your tenant");
 
-  function chooseRole(next: number) {
-    if (next === roleId) return;
-    if (changes > 0) setPendingRole(next);
-    else switchRole(next);
+  function discardEdits() {
+    setEdits(null);
+    setNote(null);
+    setSaveError(null);
+    setConflictKey(null);
   }
-  function switchRole(next: number) {
-    setRoleId(next);
-    setPending(NO_CHANGES);
+
+  function applySelection(code: string, next: ReadonlySet<string>) {
+    if (!shownGrid || next === selected) return;
+    const linked = [...selected].filter((c) => c !== code && !next.has(c));
+    setNote(linked.length ? `Unticking ${code} closes every menu that depends on it, so ${formatNumber(linked.length)} more permission${linked.length === 1 ? " was" : "s were"} unticked: ${linked.join(", ")}.` : null);
+    setEdits({ key: editKey, codes: next, base: edits?.key === editKey ? edits.base : shownGrid });
+  }
+
+  function toggle(cell: GridCell, checked: boolean, menu: GridMenu) {
+    if (!shownGrid || locked) return;
+    const impact = checked ? null : removalImpact(shownGrid, selected, cell.code, menu);
+    if (impact?.affected.length) setPendingRemoval(impact); // a shared code: nothing changes until it is confirmed
+    else {
+      const next = setPermission(shownGrid, selected, cell.code, checked);
+      applySelection(cell.code, next);
+      // Allowed, but easy to miss: the permission is held and the menu stays hidden.
+      if (checked && next !== selected && isMenuOff(menu, next)) setNote(`${menu.title} is unticked, so users of this role won't see that menu until it is ticked.`);
+    }
+  }
+
+  /** Replaces the edits with the server's current grid; if the read fails, the edits stay. */
+  async function reloadLatest() {
+    if (roleId === null || reloading) return;
+    setReloading(true);
+    try {
+      const dto = await roleMenuService.getMatrix(roleId);
+      setSaved({ key: editKey, readAt: matrixQ.updatedAt, dto });
+      setEdits(null);
+      discardEdits();
+    } catch (err) {
+      setSaveError(matrixError(err));
+    } finally {
+      setReloading(false);
+    }
+  }
+
+  function switchRole(id: number) {
+    lastRoleId = id;
+    setRoleId(id);
     setQuery("");
+    discardEdits();
+  }
+  async function switchTenant(t: TenantDto) {
+    if (await ctx.selectTenant(t)) discardEdits();
+  }
+  function chooseRole(id: number) {
+    if (id === roleId) return;
+    if (dirty) setPendingSwitch({ kind: "role", id });
+    else switchRole(id);
+  }
+  function chooseTenant(id: number) {
+    const t = tenants.find((x) => x.id === id);
+    if (!t || id === ctx.selectedTenantId) return;
+    if (dirty) setPendingSwitch({ kind: "tenant", tenant: t });
+    else void switchTenant(t);
   }
 
   async function save() {
-    if (roleId === null || problems.length) return;
+    if (!shownGrid || roleId === null || block !== null || saving) return;
     setSaving(true);
+    setSaveError(null);
     try {
-      await roleAdminService.replaceRolePermissions(roleId, request.permissionCodes);
-      toast.success(`Permissions saved for ${role?.code ?? `role ${roleId}`}`, { description: `${plan.add.length} added · ${plan.remove.length} removed` });
-      setPending(NO_CHANGES);
-      assignedQ.refetch();
+      const outcome = await saveIfUnchanged(edits?.key === editKey ? edits.base : shownGrid, selected, { tenantId: access.tenantId, roleId }, roleMenuService);
+      if (outcome.status === "conflict") {
+        setConflictKey(editKey);
+        setReviewing(false);
+        return;
+      }
+      setSaved({ key: editKey, readAt: matrixQ.updatedAt, dto: outcome.dto });
+      setEdits(null);
+      setNote(null);
+      matrixQ.refetch();
+      if (outcome.unconfirmed.length) {
+        // The server accepted the request, but its response doesn't show the same permissions, so this isn't reported as a success.
+        const failure = { title: "The server didn't confirm this save", detail: `The saved permissions differ for: ${outcome.unconfirmed.join(", ")}. The grid shows the server's state.`, meta: null };
+        setSaveError(failure);
+        toast.error(failure.title, { description: failure.detail });
+        return;
+      }
+      toast.success(`Permissions saved for ${role?.code ?? `role ${roleId}`}`, { description: `${diff.added.length} added · ${diff.removed.length} removed. Users of this role get the change at their next login or token refresh.` });
     } catch (err) {
-      // Nothing changed on the server: keep the selection so the user can retry or reset.
-      toast.error("The server refused the change", { description: describeApiError(err) });
+      // Nothing changed on the server: the edits stay so the user can correct them or retry.
+      const failure = matrixError(err);
+      setSaveError(failure);
+      toast.error(failure.title, { description: failure.detail });
       throw err;
     } finally {
       setSaving(false);
     }
   }
 
+  const switchDescription = pendingSwitch?.kind === "tenant" ? "Switching tenants discards them." : "Switching roles discards them.";
+
   return (
     <div className="space-y-3">
-      <Panel className="p-4">
-        <div className="grid items-center gap-3 @2xl:grid-cols-[minmax(0,180px)_minmax(0,420px)_1fr]">
+      <Panel className="space-y-3 p-4">
+        {ctx.isPlatformUser ? (
+          <div className="grid items-center gap-2 @2xl:grid-cols-[minmax(0,180px)_minmax(0,420px)_1fr]">
+            <label htmlFor="rpm-tenant" className="text-[13px] font-medium text-ink">
+              Select tenant<span className="text-danger" aria-hidden>*</span>
+            </label>
+            {!ctx.canSelectTenant ? (
+              <p className="text-[13px] text-ink-muted">Selecting a tenant needs tenant.all.</p>
+            ) : tenantsQ.error && !tenantsQ.data && tenants.length === 0 ? (
+              <ApiErrorState error={tenantsQ.error} onRetry={tenantsQ.refetch} title="Couldn't load tenants" compact />
+            ) : (
+              <Select value={ctx.selectedTenantId !== null ? String(ctx.selectedTenantId) : ""} onValueChange={(v) => v && chooseTenant(Number(v))} disabled={ctx.pendingTenantId !== null || saving || (tenants.length === 0 && !tenantsQ.data)}>
+                <SelectTrigger id="rpm-tenant" className="h-11 w-full" data-testid="tenant-select">
+                  <SelectValue placeholder={tenantsQ.data ? "Choose a tenant" : "Loading tenants…"}>{ctx.isTenantSelected ? tenantText : undefined}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {tenants.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      <span className="font-medium">{tenantLabel(t)}</span>
+                      {t.code ? <span className="ml-2 font-mono text-xs text-ink-muted">{t.code}</span> : null}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {ctx.pendingTenantId !== null ? <p className="text-xs text-ink-muted">Checking tenant…</p> : tenantsQ.data && tenants.length === 0 ? <p className="text-xs text-ink-muted">No active tenants returned.</p> : null}
+            {ctx.error ? (
+              <p className="rounded-lg bg-danger-soft px-2 py-1.5 text-xs text-danger @2xl:col-span-3" role="alert">
+                {ctx.error}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="grid items-center gap-2 @2xl:grid-cols-[minmax(0,180px)_minmax(0,420px)_1fr]">
           <label htmlFor="rpm-role" className="text-[13px] font-medium text-ink">
             Select role<span className="text-danger" aria-hidden>*</span>
           </label>
           {rolesQ.error && !rolesQ.data ? (
-            <ApiErrorState error={rolesQ.error} onRetry={rolesQ.refetch} compact />
+            <ApiErrorState error={rolesQ.error} onRetry={rolesQ.refetch} title={matrixError(rolesQ.error).title} compact />
           ) : (
-            <Select value={roleId !== null ? String(roleId) : ""} onValueChange={(v) => chooseRole(Number(v))} disabled={!rolesQ.data || saving}>
+            <Select value={role ? String(roleId) : ""} onValueChange={(v) => v && chooseRole(Number(v))} disabled={!rolesQ.data || saving}>
               <SelectTrigger id="rpm-role" className="h-11 w-full" data-testid="role-select">
-                <SelectValue placeholder={rolesQ.data ? "Choose a role" : "Loading roles…"} />
+                <SelectValue placeholder={!tenantReady ? "Select a tenant first" : !canListRoles ? "Needs role.read" : rolesQ.data ? "Choose a role" : "Loading roles…"} />
               </SelectTrigger>
               <SelectContent>
                 {roles.map((r) => (
@@ -130,37 +304,70 @@ export function RolePermissionMatrix() {
               </SelectContent>
             </Select>
           )}
-          {role ? (
-            <p className="text-xs text-ink-muted @2xl:justify-self-end">
-              {role.description || "No description"} · {isGlobalRole(role) ? "Global role" : `Tenant ${role.tenantId} role`}
-              {typeof role.activeUsers === "number" ? ` · ${formatNumber(role.activeUsers)} active user${role.activeUsers === 1 ? "" : "s"}` : ""}
-            </p>
-          ) : null}
         </div>
       </Panel>
 
-      {roleId === null ? (
+      {!tenantReady ? (
         <Panel>
-          <EmptyState icon={ShieldCheck} title="Select a role" description="Choose a role to load the permission catalogue and tick what that role may do." />
+          <EmptyState icon={Building2} title="Select a tenant" description="Role permissions belong to a tenant. Choose one above; nothing is loaded until you do." />
         </Panel>
-      ) : catalogQ.error && !catalogQ.data ? (
+      ) : !canReadGrid ? (
         <Panel>
-          <ApiErrorState error={catalogQ.error} onRetry={catalogQ.refetch} title="Couldn't load the permission catalogue" />
+          <EmptyState icon={Lock} title="No access to role permissions" description="Viewing a role's permissions needs role.permission.read." />
         </Panel>
-      ) : assignedQ.error && !assignedQ.data ? (
+      ) : rolesQ.data && roles.length === 0 ? (
         <Panel>
-          <ApiErrorState error={assignedQ.error} onRetry={assignedQ.refetch} title="Couldn't load this role's permissions" />
+          <EmptyState icon={ShieldCheck} title="No roles returned" description="The server returned no roles for this tenant." />
         </Panel>
-      ) : !loaded && canReadAssignments ? (
+      ) : !role ? (
+        <Panel>
+          <EmptyState icon={ShieldCheck} title="Select a role" description="Choose a role to load its menu permissions." />
+        </Panel>
+      ) : mismatch ? (
+        <Panel>
+          <ApiErrorState error={new Error(mismatch)} title="Couldn't show this role's permissions" onRetry={matrixQ.refetch} />
+          <p className="px-6 pb-6 text-center text-[13px] text-ink-muted">{mismatch} Nothing is shown, to keep tenants apart.</p>
+        </Panel>
+      ) : matrixQ.error && !shownGrid ? (
+        <Panel>
+          <ApiErrorState error={matrixQ.error} onRetry={matrixQ.refetch} title={matrixError(matrixQ.error).title} />
+        </Panel>
+      ) : !shownGrid ? (
         <Panel>
           <LoadingSkeleton variant="table" rows={8} />
         </Panel>
       ) : (
         <>
-          {block || !canReplace ? (
+          {matrixQ.error ? (
+            <p className="rounded-xl bg-warning-soft px-3 py-2 text-[13px] text-warning" role="status">
+              Couldn&apos;t re-read this role from the server: {matrixError(matrixQ.error).detail}{" "}
+              <button type="button" className="font-semibold underline" onClick={matrixQ.refetch}>
+                Try again
+              </button>
+            </p>
+          ) : null}
+          {locked && !saving ? (
             <p className="flex items-start gap-2 rounded-xl bg-warning-soft px-3 py-2 text-[13px] text-warning" role="status" data-testid="matrix-locked">
               <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
-              {block ?? "Read-only: saving needs role.permission.update."}
+              {shownGrid.fullAccess ? `${role.code} has full access by policy. Its permissions can't be edited.` : !shownGrid.editable ? "The server marks this role's permissions as read-only for you." : "Read-only: saving needs role.permission.update."}
+            </p>
+          ) : null}
+          {conflict ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-warning-soft px-3 py-2 text-[13px] text-warning" role="alert" data-testid="matrix-conflict">
+              <TriangleAlert className="size-4 shrink-0" aria-hidden />
+              <p className="min-w-0 flex-1 basis-56">
+                {CONFLICT_MESSAGE}
+                {dirty ? " Your changes stay on screen until you reload, which discards them." : ""}
+              </p>
+              <Button size="sm" variant="outline" onClick={() => void reloadLatest()} disabled={reloading} data-testid="matrix-reload-latest">
+                {reloading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Reload Latest Permissions
+              </Button>
+            </div>
+          ) : null}
+          {saveError ? <SaveError error={saveError} /> : null}
+          {note ? (
+            <p className="rounded-xl bg-brand-tint px-3 py-2 text-[13px] text-brand-deep" role="status" data-testid="matrix-note">
+              {note}
             </p>
           ) : null}
 
@@ -170,19 +377,19 @@ export function RolePermissionMatrix() {
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search module or code" aria-label="Search modules" className="h-11 min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
             </label>
             <p className="text-[12.5px] text-ink-muted tabular @3xl:px-2">
-              {formatNumber(selected.size)} of {formatNumber(rows.reduce((n, r) => n + r.codes.length, 0))} selected
-              {changes ? (
+              {formatNumber(permissionCodesToSave(shownGrid, selected).length)} granted
+              {dirty ? (
                 <span className="ml-1.5 font-medium text-brand-deep">
-                  · +{pending.additions.size} −{pending.removals.size} unsaved
+                  · +{diff.added.length} −{diff.removed.length} unsaved
                 </span>
               ) : null}
             </p>
-            {!rights.locked || changes ? (
+            {!locked || dirty ? (
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setPending(NO_CHANGES)} disabled={!changes || saving}>
+                <Button variant="outline" onClick={conflict ? () => void reloadLatest() : discardEdits} disabled={(!dirty && !conflict) || saving || reloading}>
                   <RotateCcw /> Reset
                 </Button>
-                <Button onClick={() => setReviewing(true)} disabled={!changes || saving || !canReplace} data-testid="matrix-save">
+                <Button onClick={() => setReviewing(true)} disabled={block !== null || saving} data-testid="matrix-save">
                   {saving ? <Loader2 className="animate-spin" /> : <Save />} Save
                 </Button>
               </div>
@@ -190,120 +397,214 @@ export function RolePermissionMatrix() {
           </div>
 
           <Panel className="overflow-hidden">
-            {shown.length === 0 ? (
+            {shownGrid.menus.length === 0 ? (
+              <EmptyState icon={ShieldCheck} title="No menus returned" description="The server returned an empty grid for this role." />
+            ) : shown.length === 0 ? (
               <EmptyState icon={Search} title="No matching modules" description="Change the search." />
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] text-[13px]" data-testid="permission-matrix">
-                  <caption className="sr-only">Permissions of role {role?.code}</caption>
+              <div className="overflow-x-auto" data-testid="matrix-scroll">
+                <table className="w-full min-w-[820px] text-[13px]" data-testid="permission-matrix">
+                  <caption className="sr-only">
+                    Menu permissions of role {role.code} in {tenantText}
+                  </caption>
                   <thead className="dv-thead text-left text-xs">
                     <tr>
                       <th scope="col" className="w-12 px-4 py-3">
-                        <Checkbox
-                          aria-label="Select every shown permission"
-                          checked={checkedOf(groupState(shown.flatMap((r) => r.codes), selected))}
-                          onCheckedChange={(v) => toggle(shown.flatMap((r) => r.codes), v === true)}
-                          disabled={rights.locked}
-                        />
+                        <abbr title="Module access" className="no-underline">
+                          #
+                        </abbr>
                       </th>
                       <th scope="col" className="px-3 py-3">
-                        Module name
+                        Module Name
                       </th>
-                      {MATRIX_ACTIONS.map((a) => {
-                        const codes = shown.map((r) => r.cells[a.key]).filter((c): c is string => !!c);
-                        return (
-                          <th key={a.key} scope="col" className="w-24 px-3 py-3">
-                            <span className="inline-flex items-center gap-2">
-                              <Checkbox aria-label={`Select ${a.label} for every shown module`} checked={checkedOf(groupState(codes, selected))} onCheckedChange={(v) => toggle(codes, v === true)} disabled={rights.locked || codes.length === 0} />
-                              {a.label}
-                            </span>
-                          </th>
-                        );
-                      })}
+                      {OPERATIONS.map((o) => (
+                        <th key={o.key} scope="col" className="w-20 px-3 py-3">
+                          {o.label}
+                        </th>
+                      ))}
                       <th scope="col" className="px-3 py-3">
-                        Other
+                        Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line/70">
-                    {shown.map((row) => (
-                      <tr key={row.module} className={cn("align-middle even:bg-surface-muted/40", row.codes.some((c) => pending.additions.has(c) || pending.removals.has(c)) && "bg-brand-tint/40 even:bg-brand-tint/40")}>
-                        <td className="px-4 py-2.5">
-                          <Checkbox aria-label={`All ${row.label} permissions`} checked={checkedOf(groupState(row.codes, selected))} onCheckedChange={(v) => toggle(row.codes, v === true)} disabled={rights.locked} />
-                        </td>
-                        <th scope="row" className="px-3 py-2.5 text-left font-normal">
-                          <span className="block font-medium text-ink">{row.label}</span>
-                          <span className="block font-mono text-[11px] text-ink-subtle">{row.module}</span>
-                        </th>
-                        {MATRIX_ACTIONS.map((a) => {
-                          const code = row.cells[a.key];
-                          return (
-                            <td key={a.key} className="px-3 py-2.5">
-                              {code ? <CodeBox code={code} label={`${a.label} ${row.label}`} checked={selected.has(code)} changed={pending.additions.has(code) || pending.removals.has(code)} disabled={!codeEditable(code, assigned, rights)} title={describeCode(describe.get(code), code)} onChange={(v) => toggle([code], v)} /> : null}
-                            </td>
-                          );
-                        })}
-                        <td className="px-3 py-2">
-                          {row.others.length ? (
-                            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
-                              {row.others.map((code) => (
-                                <span key={code} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                                  <CodeBox code={code} label={code} checked={selected.has(code)} changed={pending.additions.has(code) || pending.removals.has(code)} disabled={!codeEditable(code, assigned, rights)} title={describeCode(describe.get(code), code)} onChange={(v) => toggle([code], v)} />
-                                  <span className={cn("text-xs", selected.has(code) ? "text-ink" : "text-ink-muted")} aria-hidden>
-                                    {permissionModule(code).action || code}
-                                  </span>
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                        </td>
-                      </tr>
+                    {shown.map((menu) => (
+                      <MenuRows
+                        key={menu.menuKey}
+                        menu={menu}
+                        selected={selected}
+                        box={(cell, label) => <PermissionBox cell={cell} label={label} checked={selected.has(cell.code)} changed={selected.has(cell.code) !== granted.has(cell.code)} disabled={cellDisabled(cell, { locked })} shared={usage.get(cell.code) ?? 1} onChange={(v) => toggle(cell, v, menu)} />}
+                      />
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
           </Panel>
+          {hasUnmappedCells(shownGrid) ? (
+            <p className="text-xs text-ink-muted" data-testid="unmapped-note">
+              {UNMAPPED_NOTE}
+            </p>
+          ) : null}
+          {shownGrid.otherPermissionCodes.length ? (
+            <p className="text-xs text-ink-muted" data-testid="other-codes">
+              Also held by this role, not shown as checkboxes and kept on save: <span className="font-mono">{shownGrid.otherPermissionCodes.join(", ")}</span>
+            </p>
+          ) : null}
         </>
       )}
 
       <ConfirmDialog
-        open={reviewing}
+        open={reviewing && shownGrid !== null}
         onOpenChange={(o) => !o && !saving && setReviewing(false)}
         tone="default"
         title={`Save permissions for ${role?.code ?? "this role"}?`}
-        description="Replaces the role's whole permission list on the server. Everyone holding this role is affected on their next sign-in or token refresh."
-        confirmLabel="Save permissions"
-        confirmDisabled={problems.length > 0}
+        description="This changes the role in one tenant only. Users of this role get the change at their next login or token refresh; anyone signed in keeps their current permissions until then."
+        confirmLabel="Save"
+        confirmDisabled={block !== null}
         onConfirm={save}
       >
         <div className="space-y-2 text-[13px]" data-testid="matrix-review">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+            <dt className="text-ink-muted">Tenant</dt>
+            <dd className="font-medium text-ink">{tenantText}</dd>
+            <dt className="text-ink-muted">Role</dt>
+            <dd className="font-medium text-ink">{role?.code}</dd>
+          </dl>
           <p>
-            <span className="font-medium text-success">+{plan.add.length} added</span> · <span className="font-medium text-danger">−{plan.remove.length} removed</span> · {request.permissionCodes.length} in total
+            <span className="font-medium text-success">+{diff.added.length} added</span> · <span className="font-medium text-danger">−{diff.removed.length} removed</span> · {diff.unchanged.length} unchanged
           </p>
-          {plan.add.length ? <CodeList label="Added" codes={plan.add} /> : null}
-          {plan.remove.length ? <CodeList label="Removed" codes={plan.remove} /> : null}
-          {[...problems.map((t) => ({ t, tone: "text-danger bg-danger-soft" })), ...plan.warnings.map((t) => ({ t, tone: "text-warning bg-warning-soft" }))].map(({ t, tone }) => (
-            <p key={t} className={cn("rounded-lg px-2 py-1.5 text-xs", tone)}>
-              {t}
-            </p>
-          ))}
+          {diff.added.length ? <CodeList label="Added" codes={diff.added} /> : null}
+          {diff.removed.length ? <CodeList label="Removed" codes={diff.removed} /> : null}
+          {diff.unchanged.length ? (
+            <details>
+              <summary className="cursor-pointer text-xs font-medium text-ink-muted">Unchanged ({diff.unchanged.length})</summary>
+              <p className="mt-1 max-h-28 overflow-y-auto font-mono text-[11.5px] break-words text-ink">{diff.unchanged.join(", ")}</p>
+            </details>
+          ) : null}
+          {shownGrid?.otherPermissionCodes.length ? <p className="text-xs text-ink-muted">Kept unchanged, not in the grid: {shownGrid.otherPermissionCodes.join(", ")}</p> : null}
+          {saveError ? <SaveError error={saveError} /> : null}
         </div>
       </ConfirmDialog>
 
       <ConfirmDialog
-        open={pendingRole !== null}
-        onOpenChange={(o) => !o && setPendingRole(null)}
-        tone="danger"
-        title="Discard unsaved changes?"
-        description={`You have ${changes} unsaved change${changes === 1 ? "" : "s"} for ${role?.code ?? "this role"}. Switching roles discards them.`}
-        confirmLabel="Discard and switch"
+        open={pendingRemoval !== null}
+        onOpenChange={(o) => !o && setPendingRemoval(null)}
+        title="Remove from other modules too?"
+        description={
+          <>
+            Unticking <span className="font-mono text-ink">{pendingRemoval?.code}</span> in <span className="font-medium text-ink">{pendingRemoval?.origin}</span> removes it from {role?.code ?? "this role"} everywhere it is used, because one code is one permission.
+          </>
+        }
+        confirmLabel="Remove permissions"
         onConfirm={() => {
-          if (pendingRole !== null) switchRole(pendingRole);
-          setPendingRole(null);
+          if (pendingRemoval) applySelection(pendingRemoval.code, pendingRemoval.next);
+          setPendingRemoval(null);
+        }}
+      >
+        <div className="space-y-2 text-[13px]" data-testid="impact-dialog">
+          {pendingRemoval?.closed.length ? (
+            <p>
+              <span className="font-medium text-ink">Modules that will close:</span> {pendingRemoval.closed.join(", ")}
+            </p>
+          ) : null}
+          <ul className="max-h-48 divide-y divide-line/70 overflow-y-auto rounded-lg border border-line/70">
+            {pendingRemoval?.removed.map((r) => (
+              <li key={r.code} className="px-2.5 py-1.5" data-removed={r.code}>
+                <p className="font-mono text-[12px] break-all text-danger">{r.code}</p>
+                <p className="text-xs text-ink-muted">{r.modules.length ? `Also in: ${r.modules.join(", ")}` : `Only in ${pendingRemoval.origin}`}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingSwitch !== null}
+        onOpenChange={(o) => !o && setPendingSwitch(null)}
+        title="Discard unsaved changes?"
+        description={`You have ${changes} unsaved change${changes === 1 ? "" : "s"} for ${role?.code ?? "this role"}. ${switchDescription}`}
+        confirmLabel="Discard and switch"
+        onConfirm={async () => {
+          const next = pendingSwitch;
+          setPendingSwitch(null);
+          if (next?.kind === "role") switchRole(next.id);
+          else if (next?.kind === "tenant") await switchTenant(next.tenant);
         }}
       />
+
+      <ConfirmDialog
+        open={guard.blocked}
+        onOpenChange={(o) => !o && guard.stay()}
+        title="Leave without saving?"
+        description={`You have ${changes} unsaved change${changes === 1 ? "" : "s"} for ${role?.code ?? "this role"}. Leaving this page discards them.`}
+        confirmLabel="Discard and leave"
+        onConfirm={guard.leave}
+      />
     </div>
+  );
+}
+
+function MenuRows({ menu, box, selected }: { menu: GridMenu; box: (cell: GridCell, label: string) => React.ReactNode; selected: ReadonlySet<string> }) {
+  const off = isMenuOff(menu, selected);
+  const empty = OPERATIONS.length + 1;
+  return (
+    <Fragment>
+      <tr className="bg-surface-muted/60" data-menu={menu.menuKey}>
+        <td className="px-4 py-2.5">{menu.access ? box(menu.access, `${menu.title}: module access`) : null}</td>
+        <th scope="row" className={cn("px-3 py-2.5 text-left font-semibold text-ink", menu.depth > 0 && "pl-8", off && "text-ink-muted")}>
+          {menu.title}
+        </th>
+        <td colSpan={empty} />
+      </tr>
+      {menuRows(menu).map((r, i) => (
+        <tr key={`${r.label}-${i}`} data-resource={r.label}>
+          <td />
+          <th scope="row" className={cn("px-3 py-2.5 text-left font-normal text-ink-muted", menu.depth > 0 ? "pl-12" : "pl-7")}>
+            {r.label}
+          </th>
+          {OPERATIONS.map((o) => {
+            const cell = r[o.key];
+            return (
+              <td key={o.key} className="px-3 py-2.5">
+                {cell ? box(cell, `${menu.title}, ${r.label}: ${o.label}`) : <UnmappedBox label={`${menu.title}, ${r.label}: ${o.label}`} operation={o.label} resource={r.label} />}
+              </td>
+            );
+          })}
+          <td className="px-3 py-2">
+            {r.actions.length ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                {r.actions.map((a) => (
+                  <span key={a.code} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                    {box(a, `${menu.title}, ${r.label}: ${a.label}`)}
+                    <span className={cn("text-xs", selected.has(a.code) ? "text-ink" : "text-ink-muted")} aria-hidden>
+                      {a.label}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </td>
+        </tr>
+      ))}
+    </Fragment>
+  );
+}
+
+function PermissionBox({ cell, label, checked, changed, disabled, shared, onChange }: { cell: GridCell; label: string; checked: boolean; changed: boolean; disabled: boolean; shared: number; onChange: (v: boolean) => void }) {
+  return (
+    <span title={shared > 1 ? `${cell.code} (shared by ${shared} checkboxes)` : cell.code} className={cn("inline-grid rounded-[7px] p-0.5", changed && "ring-2 ring-brand/50")} data-code={cell.code}>
+      <Checkbox aria-label={label} checked={checked} disabled={disabled} onCheckedChange={(v) => onChange(v === true)} className={PERMISSION_CHECKBOX} data-testid="permission-box" />
+    </span>
+  );
+}
+
+/** A cell the server sent as null: always empty and disabled, with no code, so it has no part in a save. */
+function UnmappedBox({ label, operation, resource }: { label: string; operation: string; resource: string }) {
+  return (
+    <span title={`${operation} isn't mapped for ${resource}, so there is no permission to grant here.`} className="inline-grid rounded-[7px] p-0.5" data-unmapped={label}>
+      <Checkbox aria-label={`${label} (not mapped)`} checked={false} disabled className={PERMISSION_CHECKBOX} data-testid="unmapped-box" />
+    </span>
   );
 }
 
@@ -312,25 +613,17 @@ function RoleOption({ role }: { role: RoleDto }) {
     <span className="flex items-center gap-2">
       <span className="font-medium">{role.code}</span>
       {role.description ? <span className="truncate text-xs text-ink-muted">{role.description}</span> : null}
-      {!isGlobalRole(role) ? (
-        <StatusBadge size="sm" tone="neutral">
-          Tenant
-        </StatusBadge>
-      ) : null}
     </span>
   );
 }
 
-function describeCode(p: PermissionDto | undefined, code: string) {
-  if (!p) return `${code} — not in the catalogue (held by this role)`;
-  return `${code}${p.description ? ` — ${p.description}` : ""}${p.scope ? ` (${p.scope})` : ""}`;
-}
-
-function CodeBox({ code, label, checked, changed, disabled, title, onChange }: { code: string; label: string; checked: boolean; changed: boolean; disabled: boolean; title?: string; onChange: (v: boolean) => void }) {
+function SaveError({ error }: { error: ReturnType<typeof matrixError> }) {
   return (
-    <span title={title} className={cn("inline-grid rounded-[6px] p-0.5", changed && "ring-2 ring-brand/40")} data-code={code}>
-      <Checkbox aria-label={label} checked={checked} disabled={disabled} onCheckedChange={(v) => onChange(v === true)} />
-    </span>
+    <div className="rounded-xl bg-danger-soft px-3 py-2 text-[13px] text-danger" role="alert" data-testid="matrix-save-error">
+      <p className="font-medium">{error.title}</p>
+      <p>{error.detail}</p>
+      {error.meta ? <p className="font-mono text-[11px] break-all opacity-80">{error.meta}</p> : null}
+    </div>
   );
 }
 

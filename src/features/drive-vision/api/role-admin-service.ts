@@ -47,11 +47,6 @@ export const roleAdminService = {
     return (await api.post<RolePermissionsDto>(`/roles/${id}/permissions`, { permissionCodes }, PLATFORM)).data ?? {};
   },
 
-  /** PUT /api/v1/roles/{id}/permissions {permissionCodes} → RolePermissionsDto (`role.permission.update`). Replaces the whole list. */
-  async replaceRolePermissions(id: number, permissionCodes: string[]): Promise<RolePermissionsDto> {
-    return (await api.put<RolePermissionsDto>(`/roles/${id}/permissions`, { permissionCodes }, PLATFORM)).data ?? {};
-  },
-
   /** DELETE /api/v1/roles/{id}/permissions?codes=a&codes=b → RolePermissionsDto (`role.permission.delete`). */
   async removeRolePermissions(id: number, codes: string[]): Promise<RolePermissionsDto> {
     return (await api.delete<RolePermissionsDto>(`/roles/${id}/permissions`, { ...PLATFORM, query: { codes } })).data ?? {};

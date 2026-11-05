@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { ExternalLink, FileVideo, ImageIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
 import type { AlarmDto, AlarmTypeDto } from "@/features/drive-vision/api/types";
-import { formatDateTime, formatSeconds, formatTimeWithSeconds } from "@/features/drive-vision/utils/format";
+import { formatLocalDateTime, formatSeconds } from "@/features/drive-vision/utils/format";
 import { formatLatLon } from "@/features/drive-vision/utils/geo";
 import { DetailRow, SlideOverPanel } from "../shared/slide-over-panel";
 import { StatusBadge } from "../shared/status-badge";
@@ -12,7 +12,7 @@ import { EmptyState } from "../shared/feedback";
 import { UnavailableState } from "../shared/api-states";
 import { GeoMap } from "../map/geo-map";
 import { snappedBounds } from "../map/projection";
-import { alarmLabel, alarmPosition, deviceLabel, safeMediaUrl, type AlarmKind } from "./alerts-model";
+import { alarmLabel, alarmPosition, deviceLabel, safeMediaUrl, severityLabel, type AlarmKind } from "./alerts-model";
 
 /** Shown wherever the old demo offered acknowledge / assign / resolve / notes. */
 export const HANDLING_UNSUPPORTED =
@@ -41,7 +41,7 @@ export function EventDetailDrawer({
       onOpenChange={onOpenChange}
       width="lg"
       title={alarm ? alarmLabel(alarm, typeById) : ""}
-      description={alarm ? `${deviceLabel(alarm)}${alarm.alarmTime ? ` · ${formatDateTime(alarm.alarmTime)}` : ""}` : undefined}
+      description={alarm ? `${deviceLabel(alarm)}${alarm.alarmTime ? ` · ${formatLocalDateTime(alarm.alarmTime)}` : ""}` : undefined}
       headerExtra={
         alarm ? (
           <>
@@ -110,13 +110,13 @@ function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<n
             </DetailRow>
           ) : null}
           <DetailRow label="Alarm type">{type?.label ? `${type.label}${type.code ? ` (${type.code})` : ""}` : alarm.alarmTypeId !== undefined ? `#${alarm.alarmTypeId}` : "—"}</DetailRow>
-          <DetailRow label="Started">{alarm.alarmTime ? `${formatDateTime(alarm.alarmTime)} (${formatTimeWithSeconds(alarm.alarmTime)})` : "—"}</DetailRow>
-          {alarm.endedAt ? <DetailRow label="Ended">{formatDateTime(alarm.endedAt)}</DetailRow> : null}
+          <DetailRow label="Started">{alarm.alarmTime ? formatLocalDateTime(alarm.alarmTime) : "—"}</DetailRow>
+          {alarm.endedAt ? <DetailRow label="Ended">{formatLocalDateTime(alarm.endedAt)}</DetailRow> : null}
           {typeof alarm.durationSeconds === "number" ? <DetailRow label="Duration">{formatSeconds(alarm.durationSeconds)}</DetailRow> : null}
           <DetailRow label="Speed">{typeof alarm.speedKmh === "number" ? `${alarm.speedKmh} km/h` : "—"}</DetailRow>
           <DetailRow label="Coordinates">{pos ? <span className="text-xs tabular">{formatLatLon(pos)}</span> : "Not reported"}</DetailRow>
           <DetailRow label="Severity">
-            {typeof alarm.severity === "number" ? <span title="The API doesn't document the severity scale, so it's shown as the raw value.">{alarm.severity} (raw)</span> : "—"}
+            {typeof alarm.severity === "number" ? severityLabel(alarm.severity) : "—"}
           </DetailRow>
           <DetailRow label="Handling status">{alarm.handlingStatus ?? "—"}</DetailRow>
           {alarm.vendorAlarmTime ? <DetailRow label="Vendor time">{alarm.vendorAlarmTime}</DetailRow> : null}

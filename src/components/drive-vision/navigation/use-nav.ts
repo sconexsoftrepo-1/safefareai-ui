@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { CalendarOff, ClipboardCheck, Clock, ShieldCheck, UserRound, type LucideIcon } from "lucide-react";
 import { driverNavEntries, filterNavGroups, type Access } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
-import { ALL_NAV_ITEMS, NAV_GROUPS, type NavGroup } from "./nav-config";
+import { ALL_NAV_ITEMS, NAV_GROUPS, TENANT_NAV_GROUP, navItemFor, type NavGroup } from "./nav-config";
 
 /** Icons for the driver sections, keyed by the backend routePath (see DRIVER_SECTIONS). */
 const SECTION_ICONS: Record<string, LucideIcon> = {
@@ -40,8 +40,19 @@ export function useNavGroups(): NavGroup[] {
   return useMemo(() => navGroupsFor(access), [access]);
 }
 
+/** Moves the item a tenant user sees as Role Permissions out of Platform and into their administration section. */
+function placeTenantItems(groups: NavGroup[]): NavGroup[] {
+  const item = groups.flatMap((g) => g.items).find((i) => i.screen === "permissions");
+  const home = NAV_GROUPS.find((g) => g.label === TENANT_NAV_GROUP);
+  if (!item || !home) return groups;
+  const entry = navItemFor(item, false);
+  const rest = groups.map((g) => ({ ...g, items: g.items.filter((i) => i.screen !== "permissions") })).filter((g) => g.items.length > 0);
+  return rest.some((g) => g.label === home.label) ? rest.map((g) => (g.label === home.label ? { ...g, items: [...g.items, entry] } : g)) : [...rest, { ...home, items: [entry] }];
+}
+
 export function navGroupsFor(access: Access): NavGroup[] {
-  const groups = filterNavGroups(NAV_GROUPS, access);
+  const allowed = filterNavGroups(NAV_GROUPS, access);
+  const groups = access.platform ? allowed : placeTenantItems(allowed);
   const driver = driverNavGroup(access);
   if (!driver) return groups;
   return groups.map((g) => (g.items.some((i) => i.screen === "myWork") ? { ...g, items: [...driver.items, ...g.items.filter((i) => i.screen !== "myWork")] } : g));

@@ -26,7 +26,8 @@ import { transitions } from "../shared/motion";
  */
 function SectionNav() {
   const pathname = usePathname();
-  const current = findNavGroup(pathname);
+  const { platform } = useAccess();
+  const current = findNavGroup(pathname, platform);
   const groups = useNavGroups();
   if (groups.length === 0) return null;
   return (

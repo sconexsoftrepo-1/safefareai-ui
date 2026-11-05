@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CheckCheck, ChevronRight, Loader2, Mail, MailOpen } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,7 +9,8 @@ import { alertService } from "@/features/drive-vision/api/alert-service";
 import { describeApiError } from "@/features/drive-vision/api/errors";
 import type { NotificationDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
-import { formatDateTime, formatRelative } from "@/features/drive-vision/utils/format";
+import { usePolledQuery } from "@/features/drive-vision/hooks/use-polled-query";
+import { formatLocalDateTime } from "@/features/drive-vision/utils/format";
 import { cn } from "@/lib/utils";
 import { ApiErrorState } from "../shared/api-states";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
@@ -17,17 +18,19 @@ import { toast } from "../shared/toast-provider";
 import { HEADER_ICON } from "./header-styles";
 import { canPerform, reachableHref } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
-import { notificationLink } from "./search-model";
+import { severityLabel } from "../alerts/alerts-model";
+import { notificationHref, notificationTime, readNotificationPoll, type NotificationTab } from "./notifications-model";
 
+const POLL_LIMIT = 20;
 const PAGE_SIZE = 20;
 
 /**
- * Header bell on GET /notifications and /notifications/unread-count. The count is read once per
- * page load and again whenever the panel closes (no polling); the list loads only while the panel
- * is open. Read state changes are sent per item or with "Mark all read", and the list and count
- * are re-read from the server afterwards. Links follow the user's role (driver notifications open
- * My Work screens) and are dropped when the user can't open the target; read-state buttons need the
- * `notifications.markRead` action.
+ * Header bell. GET /notifications/poll runs every 5 seconds while signed in (this component lives in the
+ * authenticated shell) and feeds the badge and the AI Events and Alarm tabs; those tabs hold unread items only.
+ * "See more" and the All tab use GET /notifications, which also has read items and the types the poll has no tab for
+ * (a driver's dispatch and leave notices). Read-state changes re-poll at once. Links follow the user's role and are
+ * dropped when the user can't open the target; read-state buttons need the `notifications.markRead` action.
+ * The Safe-Fare Admin receives no notifications, so the backend answers empty and the panel says so.
  */
 export function NotificationCenter() {
   const router = useRouter();
@@ -35,24 +38,48 @@ export function NotificationCenter() {
   const canMark = canPerform(access, "notifications.markRead");
   const alertsHref = reachableHref(access, "/drive-vision/alerts?kind=incidents");
   const [open, setOpen] = useState(false);
-  const [version, setVersion] = useState(0);
+  const [chosenTab, setChosenTab] = useState<NotificationTab | null>(null);
+  const [seeMore, setSeeMore] = useState(false);
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [page, setPage] = useState(1);
   const [busy, setBusy] = useState<number | "all" | null>(null);
-  const countQ = useApiQuery(`notifications:count:${version}`, () => alertService.unreadCount());
-  const listQ = useApiQuery(open ? `notifications:list:${version}` : null, () => alertService.listNotifications({ pageNumber: 1, pageSize: PAGE_SIZE }));
-  const unread = countQ.data;
-  const items = listQ.data?.items ?? [];
-  const refresh = () => setVersion((v) => v + 1);
+
+  const pollQ = usePolledQuery("notifications:poll", (signal) => alertService.pollNotifications(POLL_LIMIT, signal));
+  const poll = useMemo(() => readNotificationPoll(pollQ.data), [pollQ.data]);
+  const tab = chosenTab ?? (poll.ai.unread > 0 ? "AI_EVENT" : poll.alarm.unread > 0 ? "ALARM" : "ALL");
+  const fullList = tab === "ALL" || seeMore;
+  const listQ = useApiQuery(open && fullList ? `notifications:list:${tab}:${unreadOnly}:${page}` : null, () =>
+    alertService.listNotifications({ type: tab === "ALL" ? undefined : tab, unreadOnly: unreadOnly || undefined, pageNumber: page, pageSize: PAGE_SIZE })
+  );
+  const unread = pollQ.data ? poll.unreadTotal : undefined;
+  const tabUnread = tab === "AI_EVENT" ? poll.ai.unread : tab === "ALARM" ? poll.alarm.unread : poll.unreadTotal;
+  const items = fullList ? (listQ.data?.items ?? []) : tab === "AI_EVENT" ? poll.ai.items : poll.alarm.items;
+  const total = listQ.data?.total ?? 0;
+
+  function refresh() {
+    pollQ.refetch();
+    if (fullList) listQ.refetch();
+  }
+
+  function chooseTab(next: NotificationTab) {
+    setChosenTab(next);
+    setSeeMore(false);
+    setUnreadOnly(false);
+    setPage(1);
+  }
 
   async function mark(n: NotificationDto, read: boolean) {
-    if (!canMark || n.id === undefined || busy !== null) return;
+    if (!canMark || n.id === undefined || busy !== null) return false;
     setBusy(n.id);
     try {
       await alertService.markNotification(n.id, read);
-      refresh();
+      return true;
     } catch (err) {
       toast.error("Couldn't update the notification", { description: describeApiError(err) });
+      return false;
     } finally {
       setBusy(null);
+      refresh();
     }
   }
 
@@ -60,77 +87,90 @@ export function NotificationCenter() {
     if (!canMark || busy !== null) return;
     setBusy("all");
     try {
-      await alertService.markAllRead();
-      refresh();
+      await alertService.markAllRead(tab === "ALL" ? undefined : tab);
     } catch (err) {
       toast.error("Couldn't mark all as read", { description: describeApiError(err) });
     } finally {
       setBusy(null);
+      refresh();
     }
   }
 
-  function openItem(n: NotificationDto) {
-    const href = notificationLink(access, n.refType, n.refId);
+  async function openItem(n: NotificationDto) {
+    const href = notificationHref(access, n);
     if (!href) return;
-    if (!n.read) void mark(n, true);
+    if (!n.read && canMark && !(await mark(n, true))) return;
     setOpen(false);
     router.push(href);
   }
 
   const label = typeof unread === "number" ? `Notifications, ${unread} unread` : "Notifications";
+  const emptyText = tab === "AI_EVENT" ? "No unread AI events." : tab === "ALARM" ? "No unread alarms." : "You're all caught up.";
 
   return (
     <Popover
       open={open}
       onOpenChange={(o) => {
         setOpen(o);
-        if (!o) refresh();
+        if (!o) {
+          setChosenTab(null);
+          setSeeMore(false);
+          setUnreadOnly(false);
+          setPage(1);
+        }
       }}
     >
       <PopoverTrigger asChild>
-        <button type="button" className={cn(HEADER_ICON, "relative")} aria-label={label} title={countQ.error ? `Unread count unavailable: ${describeApiError(countQ.error)}` : undefined}>
+        <button type="button" className={cn(HEADER_ICON, "relative")} aria-label={label} title={pollQ.error ? `Notifications may be out of date: ${describeApiError(pollQ.error)}` : undefined} data-testid="notification-bell">
           <Bell className="size-[17px]" />
           {typeof unread === "number" && unread > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 grid min-w-[18px] place-items-center rounded-full bg-brand px-1 text-[10px] leading-[18px] font-semibold text-white tabular" aria-hidden>
+            <span className="absolute -top-0.5 -right-0.5 grid min-w-[18px] place-items-center rounded-full bg-brand px-1 text-[10px] leading-[18px] font-semibold text-white tabular" aria-hidden data-testid="notification-badge">
               {unread > 99 ? "99+" : unread}
             </span>
           ) : null}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={14} className="w-[min(400px,calc(100vw-2rem))] p-0">
+      <PopoverContent align="end" sideOffset={14} collisionPadding={16} className="w-[min(400px,calc(100vw-2rem))] p-0">
         <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
           <p className="text-sm font-semibold text-ink">
             Notifications
             {typeof unread === "number" ? <span className="ml-1.5 text-xs font-normal text-ink-muted">{unread} unread</span> : null}
           </p>
           {canMark ? (
-            <button
-              type="button"
-              onClick={markAll}
-              disabled={busy !== null || !items.some((n) => !n.read)}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50"
-            >
+            <button type="button" onClick={markAll} disabled={busy !== null || tabUnread === 0} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50" data-testid="notification-read-all">
               {busy === "all" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <CheckCheck className="size-3.5" aria-hidden />} Mark all read
             </button>
           ) : null}
         </div>
-        <div className="scrollbar-thin max-h-[60vh] overflow-y-auto">
-          {listQ.error && !listQ.data ? (
+        <div role="tablist" aria-label="Notification type" className="flex gap-1 border-b border-line px-3 py-2">
+          <TabButton label="AI Events" count={poll.ai.unread} active={tab === "AI_EVENT"} onClick={() => chooseTab("AI_EVENT")} />
+          <TabButton label="Alarm" count={poll.alarm.unread} active={tab === "ALARM"} onClick={() => chooseTab("ALARM")} />
+          <TabButton label="All" active={tab === "ALL"} onClick={() => chooseTab("ALL")} />
+        </div>
+        {pollQ.stale ? (
+          <p className="border-b border-line bg-warning-soft px-4 py-1.5 text-[11.5px] text-warning" role="status" data-testid="notification-stale">
+            Couldn&apos;t refresh. Showing the last update{pollQ.updatedAt ? ` from ${formatLocalDateTime(new Date(pollQ.updatedAt))}` : ""}.
+          </p>
+        ) : null}
+        <div className="scrollbar-thin max-h-[55vh] overflow-y-auto" role="tabpanel">
+          {pollQ.error && !pollQ.data && !fullList ? (
+            <ApiErrorState error={pollQ.error} onRetry={pollQ.refetch} compact />
+          ) : fullList && listQ.error && !listQ.data ? (
             <ApiErrorState error={listQ.error} onRetry={listQ.refetch} compact />
-          ) : !listQ.data ? (
+          ) : !(fullList ? listQ.data : pollQ.data) ? (
             <LoadingSkeleton variant="list" rows={4} />
           ) : items.length === 0 ? (
-            <EmptyState icon={Bell} title="No notifications" description="You're all caught up." className="py-8" />
+            <EmptyState icon={Bell} title="No notifications" description={emptyText} className="py-8" />
           ) : (
             <ul className="divide-y divide-line">
               {items.map((n, i) => {
-                const href = notificationLink(access, n.refType, n.refId);
+                const href = notificationHref(access, n);
                 return (
-                  <li key={n.id ?? i} className={cn("flex items-start gap-2 px-4 py-3", !n.read && "bg-brand-tint/40")}>
+                  <li key={n.id ?? i} className={cn("flex items-start gap-2 px-4 py-3", !n.read && "bg-brand-tint/40")} data-notification={n.id}>
                     <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", n.read ? "bg-transparent" : "bg-brand")} aria-hidden />
                     {/* Without a reachable destination the item is plain text, not a dead button. */}
                     {href ? (
-                      <button type="button" onClick={() => openItem(n)} className="min-w-0 flex-1 text-left">
+                      <button type="button" onClick={() => void openItem(n)} disabled={busy !== null} className="min-w-0 flex-1 text-left">
                         <NotificationText n={n} />
                       </button>
                     ) : (
@@ -139,16 +179,16 @@ export function NotificationCenter() {
                       </div>
                     )}
                     {canMark ? (
-                    <button
-                      type="button"
-                      onClick={() => mark(n, !n.read)}
-                      disabled={busy !== null || n.id === undefined}
-                      className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50"
-                      aria-label={n.read ? "Mark as unread" : "Mark as read"}
-                      title={n.read ? "Mark as unread" : "Mark as read"}
-                    >
-                      {busy === n.id ? <Loader2 className="size-3.5 animate-spin" /> : n.read ? <Mail className="size-3.5" /> : <MailOpen className="size-3.5" />}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => void mark(n, !n.read)}
+                        disabled={busy !== null || n.id === undefined}
+                        className="shrink-0 rounded-lg p-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50"
+                        aria-label={n.read ? "Mark as unread" : "Mark as read"}
+                        title={n.read ? "Mark as unread" : "Mark as read"}
+                      >
+                        {busy === n.id ? <Loader2 className="size-3.5 animate-spin" /> : n.read ? <Mail className="size-3.5" /> : <MailOpen className="size-3.5" />}
+                      </button>
                     ) : null}
                   </li>
                 );
@@ -156,28 +196,66 @@ export function NotificationCenter() {
             </ul>
           )}
         </div>
-        {alertsHref ? (
-          <div className="border-t border-line p-1.5">
-            <Link href={alertsHref} onClick={() => setOpen(false)} className="flex items-center justify-between rounded-xl px-2.5 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line p-1.5">
+          {fullList ? (
+            <>
+              <label className="flex items-center gap-1.5 px-2 text-xs text-ink-muted">
+                <input
+                  type="checkbox"
+                  className="size-3.5 accent-[var(--dv-brand)]"
+                  checked={unreadOnly}
+                  onChange={(e) => {
+                    setUnreadOnly(e.target.checked);
+                    setPage(1);
+                  }}
+                />
+                Unread only
+              </label>
+              <span className="flex items-center gap-1 text-xs text-ink-muted">
+                <button type="button" onClick={() => setPage((p) => p - 1)} disabled={page <= 1} className="rounded-lg px-2 py-1 font-medium hover:bg-surface-muted hover:text-ink disabled:opacity-50">
+                  Previous
+                </button>
+                <span className="tabular">Page {page}</span>
+                <button type="button" onClick={() => setPage((p) => p + 1)} disabled={page * PAGE_SIZE >= total} className="rounded-lg px-2 py-1 font-medium hover:bg-surface-muted hover:text-ink disabled:opacity-50">
+                  Next
+                </button>
+              </span>
+            </>
+          ) : (
+            <button type="button" onClick={() => setSeeMore(true)} className="rounded-xl px-2.5 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted" data-testid="notification-see-more">
+              See more
+            </button>
+          )}
+          {alertsHref ? (
+            <Link href={alertsHref} onClick={() => setOpen(false)} className="ml-auto flex items-center gap-1 rounded-xl px-2.5 py-2 text-[13px] font-medium text-ink hover:bg-surface-muted focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
               Open Alerts &amp; Events <ChevronRight className="size-4 text-ink-muted" aria-hidden />
             </Link>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </PopoverContent>
     </Popover>
   );
 }
 
+function TabButton({ label, count, active, onClick }: { label: string; count?: number; active: boolean; onClick: () => void }) {
+  return (
+    <button type="button" role="tab" aria-selected={active} onClick={onClick} className={cn("inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium", active ? "bg-ink text-white" : "text-ink-muted hover:bg-surface-muted hover:text-ink")} data-tab={label}>
+      {label}
+      {count ? <span className={cn("rounded-full px-1.5 text-[11px] font-semibold tabular", active ? "bg-white/20 text-white" : "bg-brand-soft text-brand-deep")}>{count > 99 ? "99+" : count}</span> : null}
+    </button>
+  );
+}
+
 function NotificationText({ n }: { n: NotificationDto }) {
+  const time = notificationTime(n);
   return (
     <>
       <span className="block text-[13px] font-medium text-ink">{n.title ?? n.type ?? "Notification"}</span>
       {n.body ? <span className="mt-0.5 block text-xs text-ink-muted">{n.body}</span> : null}
-      {n.createdAt ? (
-        <time dateTime={n.createdAt} title={formatDateTime(n.createdAt)} className="mt-0.5 block text-[11px] text-ink-subtle">
-          {formatRelative(n.createdAt, new Date())}
-        </time>
-      ) : null}
+      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-ink-subtle">
+        {time ? <time dateTime={time.iso}>{time.text}</time> : null}
+        {typeof n.severity === "number" ? <span>{severityLabel(n.severity)}</span> : null}
+      </span>
       <span className="sr-only">{n.read ? "Read" : "Unread"}</span>
     </>
   );

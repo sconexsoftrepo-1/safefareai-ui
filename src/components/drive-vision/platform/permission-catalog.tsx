@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { canPerform } from "@/features/drive-vision/access/access-policy";
+import { canManageCatalogue, canPerform, canViewWidget } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
 import { roleAdminService } from "@/features/drive-vision/api/role-admin-service";
@@ -35,18 +35,20 @@ function Usage({ code }: { code: string }) {
 }
 
 /**
- * Permission Catalogue (Phase 7; server routePath /platform/permissions). Safe-Fare Admin with
- * permission.manage (platformOnly). Two views:
- * - Role permissions (default): choose a role and tick its permissions in a module grid; Save sends the whole
- *   list with PUT /roles/{id}/permissions (see role-permission-matrix.tsx).
- * - Catalogue: reads GET /permissions without a tenant header; create, edit (description, scope) and delete use
- *   the V10 catalogue operations. Scope values TENANT | PLATFORM come from the V10 request schemas; grouping
+ * Permission Catalogue (Phase 7; server routePath /platform/permissions). Two views:
+ * - Role permissions (default; role.permission.read, also for tenant users): a role's menu permissions in one
+ *   tenant, from GET /roles/{roleId}/menu-permissions (see role-permission-matrix.tsx).
+ * - Catalogue (Safe-Fare Admin with permission.manage): reads GET /permissions without a tenant header; create,
+ *   edit (description, scope) and delete use the V10 catalogue operations. Scope values TENANT | PLATFORM come from the V10 request schemas; grouping
  *   uses the code prefix (derived from the code, not a backend module).
  */
 export function PermissionCatalog() {
   const access = useAccess();
   const can = { create: canPerform(access, "permissions.create"), update: canPerform(access, "permissions.update"), del: canPerform(access, "permissions.delete") };
-  const [tab, setTab] = useState<"roles" | "catalogue">("roles");
+  const showRoles = canViewWidget(access, "roleMenu.matrix");
+  const showCatalogue = canManageCatalogue(access);
+  const [chosenTab, setTab] = useState<"roles" | "catalogue">("roles");
+  const tab = !showCatalogue ? "roles" : !showRoles ? "catalogue" : chosenTab;
   const listQ = useApiQuery(tab === "catalogue" ? "platform-permissions:list" : null, () => roleAdminService.listPermissions());
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState(ALL);
@@ -75,10 +77,10 @@ export function PermissionCatalog() {
   return (
     <div>
       <PageHeader
-        title="Permission Catalogue"
+        title={access.platform ? "Permission Catalogue" : "Role Permissions"}
         description={
           <span className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand-deep">Platform configuration · not tenant-scoped</span>
+            <span className="rounded-full bg-brand-soft px-2.5 py-1 text-[12px] font-semibold text-brand-deep">{tab === "catalogue" ? "Platform configuration · not tenant-scoped" : "Role permissions · per tenant"}</span>
             {tab === "catalogue" && listQ.data ? <span>{formatNumber(perms.length)} permissions</span> : null}
             {tab === "catalogue" && listQ.data && listQ.updatedAt ? <span>Updated {formatTime(new Date(listQ.updatedAt))}</span> : null}
           </span>
@@ -98,18 +100,25 @@ export function PermissionCatalog() {
           ) : undefined
         }
       />
-      <SegmentedControl
-        label="Permission view"
-        className="mb-3"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "roles", label: "Role permissions" },
-          { value: "catalogue", label: "Catalogue" },
-        ]}
-      />
+      {showRoles && showCatalogue ? (
+        <SegmentedControl
+          label="Permission view"
+          className="mb-3"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "roles", label: "Role permissions" },
+            { value: "catalogue", label: "Catalogue" },
+          ]}
+        />
+      ) : null}
 
-      {tab === "roles" ? <RolePermissionMatrix /> : null}
+      {/* Stays mounted on the Catalogue tab so unsaved role permission changes survive a look at the catalogue. */}
+      {showRoles ? (
+        <div hidden={tab !== "roles"}>
+          <RolePermissionMatrix />
+        </div>
+      ) : null}
 
       {tab === "catalogue" ? (
         <>

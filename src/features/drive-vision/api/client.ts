@@ -50,6 +50,16 @@ export function onSessionEnded(listener: (reason: SessionEndReason) => void) {
   };
 }
 
+const sessionRefreshedListeners = new Set<() => void>();
+
+/** Called after this tab exchanged its refresh token. The new token can carry different permissions. */
+export function onSessionRefreshed(listener: () => void) {
+  sessionRefreshedListeners.add(listener);
+  return () => {
+    sessionRefreshedListeners.delete(listener);
+  };
+}
+
 export function endSession(reason: SessionEndReason) {
   const had = readSession() !== null;
   writeSession(null);
@@ -207,6 +217,7 @@ async function refreshUnderLock(before: StoredSession, reason: string): Promise<
     if (!next) throw new ApiError({ kind: "parse", status: 200, message: "Refresh response had no access token", method: "POST", path: "/auth/refresh" });
     writeSession(next);
     await announceRotation(used, next);
+    for (const listener of sessionRefreshedListeners) listener();
     return next;
   } catch (err) {
     // Network/timeout → keep tokens; the user may retry.

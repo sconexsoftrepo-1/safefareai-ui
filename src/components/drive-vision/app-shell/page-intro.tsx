@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { useAccess } from "@/features/drive-vision/access/use-access";
 import { usePreferences } from "@/features/drive-vision/hooks/use-preferences";
 import { useAuth } from "@/features/drive-vision/store/auth-store";
 import { getPageMeta, isWorkspaceRoute } from "../navigation/nav-config";
@@ -21,7 +22,8 @@ export function PageIntro() {
   // Signed-in user from GET /me; the stored preference name is only a fallback.
   const displayName = useAuth((s) => s.user?.displayName) || prefs.displayName;
   const [now] = useState(() => new Date());
-  const meta = getPageMeta(pathname, displayName, now);
+  const { platform } = useAccess();
+  const meta = getPageMeta(pathname, displayName, now, platform);
   const compact = isWorkspaceRoute(pathname);
 
   return (

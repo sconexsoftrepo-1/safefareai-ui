@@ -15,7 +15,8 @@ export function AuthScreenFrame({ children }: { children: React.ReactNode }) {
 
 /**
  * Protects /drive-vision/*: validates the stored session with GET /me, then renders the
- * shell. Without a valid session it redirects to /login, preserving the current path.
+ * shell. Without a valid session it redirects to /login, preserving the current path, except after a sign-out: that
+ * page belongs to the account that just left, not to whoever signs in next.
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -30,6 +31,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (status !== "unauthenticated") return;
+    if (endReason === "signed-out") {
+      router.replace("/login");
+      return;
+    }
     const params = new URLSearchParams({ next: pathname });
     if (endReason === "expired") params.set("reason", "expired");
     router.replace(`/login?${params}`);

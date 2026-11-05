@@ -10,6 +10,7 @@ import type {
   NoteRequest,
   NotificationDto,
   NotificationListQuery,
+  NotificationPollDto,
   ResolveRequest,
 } from "./types";
 
@@ -60,6 +61,11 @@ export const alertService = {
 
   // ── Notifications ──────────────────────────────────────────────────────────
 
+  /** GET /api/v1/notifications/poll?limit= → unread counts and items per tab. Database only; polled every 5 seconds. */
+  async pollNotifications(limit: number, signal?: AbortSignal): Promise<NotificationPollDto> {
+    return (await api.get<NotificationPollDto>("/notifications/poll", { query: { limit }, signal })).data ?? {};
+  },
+
   /** GET /api/v1/notifications → ApiResponseListNotificationDto. */
   async listNotifications(query: NotificationListQuery, signal?: AbortSignal): Promise<ListResult<NotificationDto>> {
     return toList(await api.get<NotificationDto[]>("/notifications", { query: { ...query }, signal }));
@@ -78,9 +84,9 @@ export const alertService = {
     return (await api.post<NotificationDto>(`/notifications/${id}/${read ? "read" : "unread"}`)).data ?? {};
   },
 
-  /** POST /api/v1/notifications/read-all → ApiResponseMapStringInteger. */
-  async markAllRead(): Promise<Record<string, number>> {
-    return (await api.post<Record<string, number>>("/notifications/read-all")).data ?? {};
+  /** POST /api/v1/notifications/read-all?type= → { updated }. No type marks every notification of the user. */
+  async markAllRead(type?: "AI_EVENT" | "ALARM"): Promise<Record<string, number>> {
+    return (await api.post<Record<string, number>>("/notifications/read-all", undefined, { query: { type } })).data ?? {};
   },
 };
 

@@ -1,33 +1,38 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FileVideo, ImageIcon, Info, RefreshCw, X } from "lucide-react";
+import { Building2, FileVideo, ImageIcon, Info, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import type { AlarmDto } from "@/features/drive-vision/api/types";
 import { isApiError } from "@/features/drive-vision/api/errors";
+import { hasTenantContext } from "@/features/drive-vision/access/access-policy";
+import { useAccess } from "@/features/drive-vision/access/use-access";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import type { DateRangeKey } from "@/features/drive-vision/types";
-import { formatDateTime, formatNumber, formatRelative, formatSeconds } from "@/features/drive-vision/utils/format";
+import { formatLocalDateTime, formatNumber, formatRelative, formatSeconds } from "@/features/drive-vision/utils/format";
 import { DATE_RANGE_OPTIONS, resolveDateRange } from "@/features/drive-vision/utils/time";
 import { PageHeader } from "../shared/page-header";
 import { Panel } from "../shared/panel";
 import { DataTable, type DataTableColumn } from "../shared/data-table";
 import { FilterBar, FilterSelect, SegmentedControl } from "../shared/filter-bar";
-import { LoadingSkeleton } from "../shared/feedback";
+import { EmptyState, LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState, DataSourceBadge, DataSourceNotice } from "../shared/api-states";
 import { StatusBadge } from "../shared/status-badge";
 import { EventDetailDrawer } from "./event-detail-drawer";
 import { IncidentsList } from "./incidents";
-import { ALARM_PAGE_SIZE, alarmLabel, alarmQuery, alertsSearch, deviceLabel, parseAlertsView, typeOptions, type AlarmKind, type AlertsTab, type AlertsView } from "./alerts-model";
+import { ALARM_PAGE_SIZE, ALERT_KIND, alarmLabel, alarmQuery, alertsSearch, deviceLabel, parseAlertsView, severityLabel, typeOptions, type AlarmKind, type AlertsTab, type AlertsView } from "./alerts-model";
 
 const KIND_LABEL: Record<AlertsTab, string> = { ai: "AI events", routine: "Routine alarms", incidents: "Incidents" };
+/** For use inside a sentence. */
+const KIND_NOUN: Record<AlertsTab, string> = { ai: "AI events", routine: "routine alarms", incidents: "incidents" };
 
 /**
- * Alerts & Events on live BFF data. AI events and routine alarms: GET /alarms/ai and
- * /alarms/routine, read-only feeds. Incidents: GET /alerts with handling actions (see
- * incidents.tsx). All tabs are server-paged and filtered by time window, device and alarm type;
+ * Alerts & Events. Every tab is a live list on GET /alerts with handling actions, polled while the screen is open (see
+ * incidents.tsx). The AI and Routine tabs also have a History view on the vendor-first GET /alarms/ai and
+ * /alarms/routine: every call of those reaches GPSTrackTech, so they load only when History opens, on a filter change
+ * or on Refresh, and never on a timer. All tabs are server-paged and filtered by time window, device and alarm type;
  * the view lives in the URL so links, reloads and Back keep it.
  */
 export function AlertsPage() {
@@ -43,13 +48,18 @@ export function AlertsPage() {
   const query = useMemo(() => alarmQuery(view, now), [view, now]);
   const filterKey = `${query.from}:${query.to}:${view.deviceId ?? "*"}:${view.typeId ?? "*"}`;
   const fetchKind = (kind: AlarmKind) => (kind === "ai" ? fleetService.aiAlarms : fleetService.routineAlarms);
-  const feed: AlarmKind | null = view.kind === "incidents" ? null : view.kind;
+  const access = useAccess();
+  const feed: AlarmKind | null = view.history && view.kind !== "incidents" ? view.kind : null;
   const other: AlarmKind = view.kind === "ai" ? "routine" : "ai";
+  // Vendor access belongs to a tenant, so the Safe-Fare Admin must have one selected for History.
+  const feedAllowed = feed !== null && hasTenantContext(access);
 
-  const listQ = useApiQuery(feed ? `alerts:${feed}:${filterKey}:${view.page}` : null, () => fetchKind(feed!)(query));
+  const listQ = useApiQuery(feedAllowed ? `alerts:${feed}:${filterKey}:${view.page}` : null, () => fetchKind(feed!)(query));
   // The other feed's count only: page 1 with one item, for the envelope's `total`.
-  const otherQ = useApiQuery(feed ? `alerts:count:${other}:${filterKey}` : null, () => fetchKind(other)({ ...query, pageNumber: 1, pageSize: 1 }));
-  const [incidentTotal, setIncidentTotal] = useState<number | undefined>();
+  const otherQ = useApiQuery(feedAllowed ? `alerts:count:${other}:${filterKey}` : null, () => fetchKind(other)({ ...query, pageNumber: 1, pageSize: 1 }));
+  const [liveTotals, setLiveTotals] = useState<Partial<Record<AlertsTab, number>>>({});
+  const onLiveTotal = useCallback((tab: AlertsTab, total: number | undefined) => setLiveTotals((t) => (t[tab] === total ? t : { ...t, [tab]: total })), []);
+  const refreshLive = useRef<(() => void) | null>(null);
   const onIncidentPage = useCallback((page: number) => router.replace(`/drive-vision/alerts${alertsSearch({ ...view, page, alarmId: null })}`, { scroll: false }), [router, view]);
 
   const devicesQ = useApiQuery("alerts:devices", () => fleetService.listAllDevices());
@@ -58,10 +68,19 @@ export function AlertsPage() {
 
   const items = useMemo(() => listQ.data?.items ?? [], [listQ.data]);
   const total = listQ.data?.total ?? 0;
-  const countOf = (kind: AlertsTab) => (kind === "incidents" ? (view.kind === "incidents" ? incidentTotal : undefined) : kind === view.kind ? listQ.data?.total : otherQ.data?.total);
+  const countOf = (kind: AlertsTab) => {
+    if (feed) return kind === "incidents" ? undefined : kind === view.kind ? listQ.data?.total : otherQ.data?.total;
+    // Incidents counts every kind, so it is only shown on its own tab; the AI and Routine tabs poll each other's total.
+    return (view.kind === "incidents") === (kind === "incidents") ? liveTotals[kind] : undefined;
+  };
+  const liveTotal = liveTotals[view.kind];
 
   const openAlarm = feed && view.alarmId !== null ? items.find((a) => a.id === view.alarmId) : undefined;
   const linkMissing = feed !== null && view.alarmId !== null && !!listQ.data && !openAlarm;
+  const refresh = () => {
+    setNow(new Date());
+    if (!feed) refreshLive.current?.();
+  };
   const range = resolveDateRange(view.range, now);
   const filtersActive = view.deviceId !== null || view.typeId !== null;
   const unavailable503 = isApiError(listQ.error) && listQ.error.status === 503;
@@ -109,7 +128,7 @@ export function AlertsPage() {
       cell: (a) =>
         a.alarmTime ? (
           <div>
-            <p className="whitespace-nowrap tabular">{formatDateTime(a.alarmTime)}</p>
+            <p className="whitespace-nowrap tabular">{formatLocalDateTime(a.alarmTime)}</p>
             <p className="text-xs text-ink-muted">{formatRelative(a.alarmTime, now)}</p>
           </div>
         ) : (
@@ -123,7 +142,7 @@ export function AlertsPage() {
       header: "Severity",
       align: "right",
       hideBelow: "xl",
-      cell: (a) => (typeof a.severity === "number" ? <span className="text-ink-muted tabular" title="Raw value; the API doesn't document the scale">{a.severity}</span> : "—"),
+      cell: (a) => (typeof a.severity === "number" ? <span className="text-ink-muted">{severityLabel(a.severity)}</span> : "—"),
     },
     {
       id: "status",
@@ -145,16 +164,16 @@ export function AlertsPage() {
         eyebrow={<DataSourceBadge source={listQ.data?.source} />}
         title="Alerts & Events"
         description={
-          view.kind === "incidents"
-            ? `${incidentTotal !== undefined ? `${formatNumber(incidentTotal)} incidents · ` : ""}${range.label.toLowerCase()}${filtersActive ? " · filtered" : ""}`
+          feed === null
+            ? `${liveTotal !== undefined ? `${formatNumber(liveTotal)} ${KIND_NOUN[view.kind]} · ` : ""}${range.label.toLowerCase()}${filtersActive ? " · filtered" : ""}`
             : listQ.data
-            ? `${formatNumber(total)} ${KIND_LABEL[view.kind].toLowerCase()} · ${range.label.toLowerCase()}${filtersActive ? " · filtered" : ""}`
+            ? `${formatNumber(total)} ${KIND_NOUN[view.kind]} · ${range.label.toLowerCase()}${filtersActive ? " · filtered" : ""}`
             : listQ.error
-              ? `Couldn't load ${KIND_LABEL[view.kind].toLowerCase()}`
-              : `Loading ${KIND_LABEL[view.kind].toLowerCase()}…`
+              ? `Couldn't load ${KIND_NOUN[view.kind]}`
+              : `Loading ${KIND_NOUN[view.kind]}…`
         }
         actions={
-          <Button variant="outline" onClick={() => setNow(new Date())} disabled={listQ.loading} title="Load again up to the current time">
+          <Button variant="outline" onClick={refresh} disabled={listQ.loading} title="Load again up to the current time">
             <RefreshCw className={listQ.loading || listQ.refreshing ? "animate-spin" : undefined} /> Refresh
           </Button>
         }
@@ -168,6 +187,18 @@ export function AlertsPage() {
           options={(["incidents", "ai", "routine"] as const).map((k) => ({ value: k, label: KIND_LABEL[k], count: countOf(k) }))}
         />
         <FilterBar>
+          {view.kind !== "incidents" ? (
+            <SegmentedControl
+              label="Alert source"
+              size="sm"
+              value={view.history ? "history" : "live"}
+              onChange={(v) => filter({ history: v === "history" })}
+              options={[
+                { value: "live", label: "Live" },
+                { value: "history", label: "History" },
+              ]}
+            />
+          ) : null}
           <FilterSelect label="Time range" value={view.range} onChange={(r: DateRangeKey) => filter({ range: r })} options={DATE_RANGE_OPTIONS} />
           <FilterSelect label="Device" value={view.deviceId === null ? "all" : String(view.deviceId)} onChange={(v) => filter({ deviceId: v === "all" ? null : Number(v) })} options={deviceOptions} className="max-w-56" />
           <FilterSelect label="Alarm type" value={view.typeId === null ? "all" : String(view.typeId)} onChange={(v) => filter({ typeId: v === "all" ? null : Number(v) })} options={alarmTypeOptions} className="max-w-56" />
@@ -199,15 +230,17 @@ export function AlertsPage() {
       ) : null}
 
       <Panel className="overflow-hidden">
-        {view.kind === "incidents" ? (
-          <IncidentsList view={view} now={now} typeById={typeById} onPage={onIncidentPage} onOpen={(alarmId) => go({ alarmId })} onTotal={setIncidentTotal} />
+        {feed === null ? (
+          <IncidentsList view={view} now={now} typeById={typeById} alertKind={view.kind === "incidents" ? undefined : ALERT_KIND[view.kind]} refreshRef={refreshLive} onPage={onIncidentPage} onOpen={(alarmId) => go({ alarmId })} onTotal={onLiveTotal} />
+        ) : !feedAllowed ? (
+          <EmptyState icon={Building2} title="Select a tenant" description="History comes from the vendor account of one tenant. Choose a tenant, or use Live to see every tenant's alerts." />
         ) : listQ.error ? (
           <>
             <ApiErrorState error={listQ.error} onRetry={listQ.refetch} title={unavailable503 ? `${KIND_LABEL[view.kind]} unavailable` : undefined} />
             {unavailable503 ? (
               <p className="-mt-4 px-6 pb-8 text-center text-xs text-ink-muted">
                 <span className="mx-auto block max-w-md">
-                  This server answers 503 both when its data source is down and when it has no stored {KIND_LABEL[view.kind].toLowerCase()} for the request{view.page > 1 ? " (including pages past the end)" : ""}, so this may mean there are none
+                  This server answers 503 both when its data source is down and when it has no stored {KIND_NOUN[view.kind]} for the request{view.page > 1 ? " (including pages past the end)" : ""}, so this may mean there are none
                   {filtersActive ? " for these filters" : " in this period"}. It isn&apos;t shown as an empty list because the server didn&apos;t say so.
                 </span>
               </p>
@@ -226,8 +259,8 @@ export function AlertsPage() {
             isLoading={listQ.refreshing}
             pageSize={ALARM_PAGE_SIZE}
             serverPagination={{ page: view.page, total, onPageChange: (page) => go({ page, alarmId: null }) }}
-            emptyTitle={`No ${KIND_LABEL[view.kind].toLowerCase()}`}
-            emptyDescription={`The server returned no ${KIND_LABEL[view.kind].toLowerCase()} for ${range.label.toLowerCase()}${filtersActive ? " with these filters" : ""}.`}
+            emptyTitle={`No ${KIND_NOUN[view.kind]}`}
+            emptyDescription={`The server returned no ${KIND_NOUN[view.kind]} for ${range.label.toLowerCase()}${filtersActive ? " with these filters" : ""}.`}
             emptyAction={
               filtersActive ? (
                 <Button variant="outline" size="sm" onClick={() => filter({ deviceId: null, typeId: null })}>

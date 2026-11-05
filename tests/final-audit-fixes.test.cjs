@@ -31,20 +31,19 @@ const unknown = accessFor({ userId: 5, platform: false, roleCode: "MANAGER", per
 
 test("GA-16: tenant ADMIN gets every fleet action, and nothing of driver self-service or platform configuration", () => {
   // Phase 7: role / permission configuration lives on platform-only screens — never a tenant ADMIN's, even with the codes.
-  const platformAction = (a) => p.ACTIONS[a].screen !== null && p.SCREENS[p.ACTIONS[a].screen].platformOnly === true;
+  const platformAction = (a) => p.ACTIONS[a].platformOnly === true || (p.ACTIONS[a].screen !== null && p.SCREENS[p.ACTIONS[a].screen].platformOnly === true);
   same(list(admin.actions), list(p.ALL_ACTIONS.filter((a) => a !== "driver.selfService" && !platformAction(a))));
   for (const a of ["roles.create", "roles.update", "roles.delete", "rolePermissions.add", "rolePermissions.remove", "permissions.create", "permissions.update", "permissions.delete"]) assert.equal(p.canPerform(admin, a), false, a);
   assert.equal(p.canPerform(admin, "driver.selfService"), false);
 });
 
-test("GA-16: Driver gets only self-service, own password and own notifications", () => {
-  same(list(driver.actions), ["account.password", "driver.selfService", "notifications.markRead"]);
+test("GA-16: Driver gets only own password and own notifications from the action policy; its buttons use operations", () => {
+  same(list(driver.actions), ["account.password", "notifications.markRead"]);
   for (const a of ["drivers.create", "drivers.update", "drivers.delete", "dispatch.create", "dispatch.update", "swaps.decide", "leave.create", "leave.decide", "alerts.handle", "geofences.delete", "video.export", "users.create", "users.update", "settings.manage"]) assert.equal(p.canPerform(driver, a), false, a);
 });
 
-test("GA-16: a driver without driver.app can't open My Work, so its self-service action is dropped too", () => {
+test("GA-16: a driver without driver.app can't open My Work", () => {
   const d = accessFor({ ...IDENTITIES.driver, permissions: ["own.data.read"] });
-  assert.equal(p.canPerform(d, "driver.selfService"), false);
   same(list(d.actions), ["account.password", "notifications.markRead"]);
 });
 
@@ -77,7 +76,7 @@ test("GA-16: every write entry point consults the action policy", () => {
     "components/drive-vision/video/video-workspace.tsx": ['useCan("video.export")'],
     "components/drive-vision/users/users-page.tsx": ['useCan("users.create")', 'useCan("users.update")'],
     "components/drive-vision/settings/settings-page.tsx": ['useCan("settings.manage")', 'useCan("account.password")'],
-    "components/drive-vision/operations/my-work-page.tsx": ['canPerform(access, "driver.selfService")', 'canPerform(access, "account.password")'],
+    "components/drive-vision/operations/my-work-page.tsx": ['canDriver(access, ', 'canPerform(access, "account.password")'],
     "components/drive-vision/app-shell/notification-center.tsx": ['canPerform(access, "notifications.markRead")'],
   };
   // Phase 5: useActionGate(x) (allowed / tenant-blocked) reads the same central policy as useCan(x).

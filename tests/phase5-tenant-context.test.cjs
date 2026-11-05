@@ -279,7 +279,7 @@ test("P5 switch: ending the session clears the selection", () => {
 // ── Writes ──────────────────────────────────────────────────────────────────
 
 // Phase 5 classified 26 operations (5 / 19 / 2). The device-edit work added PUT /devices/{id} as class B.
-test("P5 writes: the tenant-scoped operations — 8 create (A: 5 + vehicle + sensor reading + device registration), 22 record update (B: 19 + device edit + vehicle + stop recalculation), 3 record delete (C: 2 + vehicle)", () => {
+test("P5 writes: the tenant-scoped operations — 8 create (A: 5 + vehicle + sensor reading + device registration), 23 record update (B: 19 + device edit + vehicle + stop recalculation + role menu permissions), 3 record delete (C: 2 + vehicle)", () => {
   const { policy } = openRealm();
   const byClass = {};
   for (const key of policy.ALL_ACTIONS) {
@@ -287,7 +287,7 @@ test("P5 writes: the tenant-scoped operations — 8 create (A: 5 + vehicle + sen
     assert.equal(def.tenantWrite, def.tenantClass !== undefined, `${key}: tenantWrite ⇔ tenantClass`);
     if (def.tenantClass) byClass[def.tenantClass] = (byClass[def.tenantClass] ?? 0) + def.requires.operations.length;
   }
-  assert.deepEqual({ ...byClass }, { CREATE_REQUIRES_SELECTED_TENANT: 8, EXISTING_RECORD_UPDATE: 22, EXISTING_RECORD_DELETE: 3 });
+  assert.deepEqual({ ...byClass }, { CREATE_REQUIRES_SELECTED_TENANT: 8, EXISTING_RECORD_UPDATE: 23, EXISTING_RECORD_DELETE: 3 });
   for (const key of policy.ALL_ACTIONS) {
     const def = policy.ACTIONS[key];
     if (def.tenantClass === "CREATE_REQUIRES_SELECTED_TENANT") for (const op of def.requires.operations) assert.match(op, /^POST /, `${key}: creates are POSTs`);
@@ -307,7 +307,7 @@ test("P5 writes: Safe-Fare Admin without a tenant — every tenant write blocked
     assert.equal(policy.needsTenantSelection(a, k), true, k);
   }
   for (const k of ["settings.manage", "account.password", "notifications.markRead"]) assert.equal(policy.canPerform(a, k), true, k);
-  same([...policy.tenantBlockedScreens(a)].sort(), ["alerts", "dispatch", "drivers", "geofences", "sensors", "users", "vehicleRegistry", "vehicles", "video", "workforce"]);
+  same([...policy.tenantBlockedScreens(a)].sort(), ["alerts", "dispatch", "drivers", "geofences", "permissions", "sensors", "users", "vehicleRegistry", "vehicles", "video", "workforce"]);
 });
 
 test("P5 writes: with a selected tenant every permitted write is offered; nothing is tenant-blocked", () => {

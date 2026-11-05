@@ -1,0 +1,500 @@
+{
+  "note": "MOCKED: every /api/v1 response is synthetic, from the written brief. Nothing reached the backend.",
+  "results": {
+    "allowed": {
+      "work": {
+        "controls": {
+          "Accept": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Start trip": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Complete trip": {
+            "enabled": 4,
+            "disabled": 0
+          },
+          "Decline": {
+            "enabled": 2,
+            "disabled": 0
+          },
+          "Request swap": {
+            "enabled": 2,
+            "disabled": 0
+          }
+        },
+        "reasons": [
+          "This trip has already started.",
+          "This trip is completed.",
+          "A swap request for this trip is already pending."
+        ],
+        "denied": false
+      },
+      "shifts": {
+        "controls": {
+          "Start shift": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        },
+        "reasons": [],
+        "denied": false
+      },
+      "leave": {
+        "controls": {
+          "Request leave": {
+            "enabled": 1,
+            "disabled": 0
+          },
+          "Cancel request": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        },
+        "reasons": [],
+        "denied": false
+      },
+      "checklist": {
+        "controls": {
+          "Start checklist": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        },
+        "reasons": [],
+        "denied": false
+      },
+      "safety": {
+        "controls": {},
+        "reasons": [],
+        "denied": false
+      },
+      "profile": {
+        "controls": {
+          "Edit contact details": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        },
+        "reasons": [],
+        "denied": false
+      }
+    },
+    "layout": {
+      "work-1366x768": {
+        "pageOverflow": false,
+        "controls": {
+          "Accept": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Start trip": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Complete trip": {
+            "enabled": 4,
+            "disabled": 0
+          },
+          "Decline": {
+            "enabled": 2,
+            "disabled": 0
+          },
+          "Request swap": {
+            "enabled": 2,
+            "disabled": 0
+          }
+        }
+      },
+      "shifts-1366x768": {
+        "pageOverflow": false,
+        "controls": {
+          "Start shift": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "leave-1366x768": {
+        "pageOverflow": false,
+        "controls": {
+          "Request leave": {
+            "enabled": 1,
+            "disabled": 0
+          },
+          "Cancel request": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "checklist-1366x768": {
+        "pageOverflow": false,
+        "controls": {
+          "Start checklist": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "safety-1366x768": {
+        "pageOverflow": false,
+        "controls": {}
+      },
+      "profile-1366x768": {
+        "pageOverflow": false,
+        "controls": {
+          "Edit contact details": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "work-768x1024": {
+        "pageOverflow": false,
+        "controls": {
+          "Accept": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Start trip": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Complete trip": {
+            "enabled": 4,
+            "disabled": 0
+          },
+          "Decline": {
+            "enabled": 2,
+            "disabled": 0
+          },
+          "Request swap": {
+            "enabled": 2,
+            "disabled": 0
+          }
+        }
+      },
+      "shifts-768x1024": {
+        "pageOverflow": false,
+        "controls": {
+          "Start shift": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "leave-768x1024": {
+        "pageOverflow": false,
+        "controls": {
+          "Request leave": {
+            "enabled": 1,
+            "disabled": 0
+          },
+          "Cancel request": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "checklist-768x1024": {
+        "pageOverflow": false,
+        "controls": {
+          "Start checklist": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "safety-768x1024": {
+        "pageOverflow": false,
+        "controls": {}
+      },
+      "profile-768x1024": {
+        "pageOverflow": false,
+        "controls": {
+          "Edit contact details": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "work-390x844": {
+        "pageOverflow": false,
+        "controls": {
+          "Accept": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Start trip": {
+            "enabled": 3,
+            "disabled": 0
+          },
+          "Complete trip": {
+            "enabled": 4,
+            "disabled": 0
+          },
+          "Decline": {
+            "enabled": 2,
+            "disabled": 0
+          },
+          "Request swap": {
+            "enabled": 2,
+            "disabled": 0
+          }
+        }
+      },
+      "shifts-390x844": {
+        "pageOverflow": false,
+        "controls": {
+          "Start shift": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "leave-390x844": {
+        "pageOverflow": false,
+        "controls": {
+          "Request leave": {
+            "enabled": 1,
+            "disabled": 0
+          },
+          "Cancel request": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "checklist-390x844": {
+        "pageOverflow": false,
+        "controls": {
+          "Start checklist": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      },
+      "safety-390x844": {
+        "pageOverflow": false,
+        "controls": {}
+      },
+      "profile-390x844": {
+        "pageOverflow": false,
+        "controls": {
+          "Edit contact details": {
+            "enabled": 1,
+            "disabled": 0
+          }
+        }
+      }
+    },
+    "acceptDialog": true,
+    "afterShiftStart": {
+      "End shift": {
+        "enabled": 1,
+        "disabled": 0
+      }
+    },
+    "cancelDialog": true,
+    "afterCancel": {
+      "controls": {
+        "Request leave": {
+          "enabled": 1,
+          "disabled": 0
+        }
+      }
+    },
+    "leavePanel": true,
+    "checklistPanel": true,
+    "contactPanel": true,
+    "writes": [
+      "POST /driver/dispatches/1/accept",
+      "POST /driver/shifts/start",
+      "POST /driver/shifts/end",
+      "POST /driver/leave-requests/11/cancel"
+    ],
+    "writesDenied": {
+      "work": {
+        "controls": {
+          "Accept": {
+            "enabled": 0,
+            "disabled": 3
+          },
+          "Start trip": {
+            "enabled": 0,
+            "disabled": 3
+          },
+          "Complete trip": {
+            "enabled": 0,
+            "disabled": 4
+          },
+          "Decline": {
+            "enabled": 0,
+            "disabled": 2
+          },
+          "Request swap": {
+            "enabled": 0,
+            "disabled": 2
+          }
+        },
+        "reasons": [
+          "Your role doesn't allow this action",
+          "This trip has already started. Your role doesn't allow this action",
+          "This trip is completed.",
+          "A swap request for this trip is already pending. Your role doesn't allow this action"
+        ],
+        "denied": false
+      },
+      "shifts": {
+        "controls": {
+          "Start shift": {
+            "enabled": 0,
+            "disabled": 1
+          }
+        },
+        "reasons": [
+          "Your role doesn't allow this action"
+        ],
+        "denied": false
+      },
+      "leave": {
+        "controls": {
+          "Request leave": {
+            "enabled": 0,
+            "disabled": 1
+          },
+          "Cancel request": {
+            "enabled": 0,
+            "disabled": 1
+          }
+        },
+        "reasons": [
+          "Your role doesn't allow this action"
+        ],
+        "denied": false
+      },
+      "checklist": {
+        "controls": {
+          "Start checklist": {
+            "enabled": 0,
+            "disabled": 1
+          }
+        },
+        "reasons": [
+          "Your role doesn't allow this action"
+        ],
+        "denied": false
+      },
+      "safety": {
+        "controls": {},
+        "reasons": [],
+        "denied": false
+      },
+      "profile": {
+        "controls": {
+          "Edit contact details": {
+            "enabled": 0,
+            "disabled": 1
+          }
+        },
+        "reasons": [
+          "Your role doesn't allow this action"
+        ],
+        "denied": false
+      }
+    },
+    "operationsMissing": {
+      "work": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "shifts": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "leave": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "checklist": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "safety": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "profile": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      }
+    },
+    "readsDenied": {
+      "work": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "shifts": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "leave": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "checklist": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "safety": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      },
+      "profile": {
+        "controls": {},
+        "reasons": [],
+        "denied": true
+      }
+    },
+    "emptyTemplate": {
+      "controls": {
+        "Start checklist": {
+          "enabled": 0,
+          "disabled": 1
+        }
+      },
+      "reasons": [
+        "The server returned no checklist items"
+      ]
+    },
+    "noProfile": {
+      "controls": {
+        "Request leave": {
+          "enabled": 0,
+          "disabled": 1
+        },
+        "Cancel request": {
+          "enabled": 0,
+          "disabled": 1
+        }
+      },
+      "reasons": [
+        "Your driver profile couldn't be loaded"
+      ]
+    }
+  }
+}

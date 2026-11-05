@@ -1,0 +1,494 @@
+{
+  "note": "MOCKED: every /api/v1 response is synthetic, from the written brief; the live backend was not called and nothing was written to it",
+  "results": {
+    "myWork": [
+      {
+        "row": "My Work",
+        "add": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "edit": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "delete": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "view": {
+          "code": "driver.app.work.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": []
+      },
+      {
+        "row": "Accept or decline trips",
+        "add": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "edit": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "delete": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "view": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "actions": [
+          {
+            "code": "driver.app.work.respond",
+            "label": "Accept or decline trips",
+            "checked": true,
+            "disabled": false
+          }
+        ]
+      },
+      {
+        "row": "Start and complete trips",
+        "add": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "edit": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "delete": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "view": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "actions": [
+          {
+            "code": "driver.app.work.execute",
+            "label": "Start and complete trips",
+            "checked": true,
+            "disabled": false
+          }
+        ]
+      },
+      {
+        "row": "Trip swap requests",
+        "add": {
+          "code": "driver.app.swap.create",
+          "checked": true,
+          "disabled": false
+        },
+        "edit": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "delete": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "view": {
+          "unmapped": true,
+          "checked": false,
+          "disabled": true
+        },
+        "actions": []
+      }
+    ],
+    "unmapped": {
+      "boxes": 30,
+      "ticked": 0,
+      "enabled": 0,
+      "amber": 0,
+      "note": "Disabled empty boxes in the Add, Edit, Delete and View columns are operations that aren't mapped for that row. They don't mean a permission is missing from the role. They can't be selected and are never saved.",
+      "tooltip": "Add isn't mapped for Fleet overview, so there is no permission to grant here.",
+      "ariaLabel": "Fleet Overview, Fleet overview: Add (not mapped)"
+    },
+    "nullClicks": {
+      "saveDisabled": true,
+      "unchanged": true,
+      "ticked": 0,
+      "unsaved": false
+    },
+    "independent": {
+      "rows": [
+        {
+          "row": "My Work",
+          "add": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "code": "driver.app.work.read",
+            "checked": true,
+            "disabled": false
+          },
+          "actions": []
+        },
+        {
+          "row": "Accept or decline trips",
+          "add": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "actions": [
+            {
+              "code": "driver.app.work.respond",
+              "label": "Accept or decline trips",
+              "checked": false,
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "row": "Start and complete trips",
+          "add": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "actions": [
+            {
+              "code": "driver.app.work.execute",
+              "label": "Start and complete trips",
+              "checked": true,
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "row": "Trip swap requests",
+          "add": {
+            "code": "driver.app.swap.create",
+            "checked": true,
+            "disabled": false
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "actions": []
+        }
+      ],
+      "saveDisabled": false
+    },
+    "review": "Save permissions for DRIVER? | This changes the role in one tenant only. Users of this role get the change at their next login or token refresh; anyone signed in keeps their current permissions until then. | Tenant | Ganesh Travels (synthetic) | Role | DRIVER | +0 added · −2 removed · 14 unchanged | Removed | driver.app.swap.create, driver.app.work.respond | Unchanged (14) | Kept unchanged, not in the grid: own.data.read | Cancel | Save",
+    "save": {
+      "requests": [
+        "GET tenant=1",
+        "PUT tenant=1",
+        "GET tenant=1"
+      ],
+      "body": {
+        "permissionCodes": [
+          "driver.app",
+          "driver.app.checklist.read",
+          "driver.app.checklist.submit",
+          "driver.app.leave.cancel",
+          "driver.app.leave.create",
+          "driver.app.leave.read",
+          "driver.app.profile.read",
+          "driver.app.profile.update",
+          "driver.app.safety.read",
+          "driver.app.shift.end",
+          "driver.app.shift.read",
+          "driver.app.shift.start",
+          "driver.app.work.execute",
+          "driver.app.work.read"
+        ]
+      },
+      "removed": [
+        "driver.app.swap.create",
+        "driver.app.work.respond"
+      ],
+      "added": [],
+      "ownDataSent": false,
+      "toast": [
+        "Permissions saved for DRIVER | 0 added · 2 removed. Users of this role get the change at their next login or token refresh."
+      ]
+    },
+    "reloaded": {
+      "rows": [
+        {
+          "row": "My Work",
+          "add": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "code": "driver.app.work.read",
+            "checked": true,
+            "disabled": false
+          },
+          "actions": []
+        },
+        {
+          "row": "Accept or decline trips",
+          "add": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "actions": [
+            {
+              "code": "driver.app.work.respond",
+              "label": "Accept or decline trips",
+              "checked": false,
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "row": "Start and complete trips",
+          "add": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "actions": [
+            {
+              "code": "driver.app.work.execute",
+              "label": "Start and complete trips",
+              "checked": true,
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "row": "Trip swap requests",
+          "add": {
+            "code": "driver.app.swap.create",
+            "checked": false,
+            "disabled": false
+          },
+          "edit": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "delete": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "view": {
+            "unmapped": true,
+            "checked": false,
+            "disabled": true
+          },
+          "actions": []
+        }
+      ],
+      "ticked": [
+        "driver.app",
+        "driver.app.checklist.read",
+        "driver.app.checklist.submit",
+        "driver.app.leave.cancel",
+        "driver.app.leave.create",
+        "driver.app.leave.read",
+        "driver.app.profile.read",
+        "driver.app.profile.update",
+        "driver.app.safety.read",
+        "driver.app.shift.end",
+        "driver.app.shift.read",
+        "driver.app.shift.start",
+        "driver.app.work.execute",
+        "driver.app.work.read"
+      ],
+      "sameAsBackend": true
+    },
+    "tenants": {
+      "1": {
+        "ticked": [
+          "driver.app",
+          "driver.app.checklist.read",
+          "driver.app.checklist.submit",
+          "driver.app.leave.cancel",
+          "driver.app.leave.create",
+          "driver.app.leave.read",
+          "driver.app.profile.read",
+          "driver.app.profile.update",
+          "driver.app.safety.read",
+          "driver.app.shift.end",
+          "driver.app.shift.read",
+          "driver.app.shift.start",
+          "driver.app.work.execute",
+          "driver.app.work.read"
+        ],
+        "myWorkRows": [
+          "My Work",
+          "Accept or decline trips",
+          "Start and complete trips",
+          "Trip swap requests"
+        ],
+        "requests": [
+          "GET /roles/4/menu-permissions tenant=1"
+        ]
+      },
+      "2419": {
+        "ticked": [
+          "driver.app",
+          "driver.app.work.read"
+        ],
+        "myWorkRows": [
+          "My Work",
+          "Accept or decline trips",
+          "Start and complete trips",
+          "Trip swap requests"
+        ],
+        "requests": [
+          "GET /roles/4/menu-permissions tenant=2419"
+        ]
+      },
+      "2499": {
+        "ticked": [
+          "driver.app"
+        ],
+        "myWorkRows": [
+          "My Work"
+        ],
+        "requests": [
+          "GET /roles/4/menu-permissions tenant=2499"
+        ]
+      }
+    },
+    "layout": {
+      "1366x768": {
+        "pageOverflow": false,
+        "matrixScrolls": false,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "768x1024": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "390x844": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      }
+    }
+  }
+}

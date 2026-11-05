@@ -1,4 +1,5 @@
 import { formatSeconds } from "@/features/drive-vision/utils/format";
+import type { DriverOperation } from "@/features/drive-vision/access/access-policy";
 import type { Tone } from "../shared/status-badge";
 
 /** Pure display helpers for the driver screens. Unit-tested. */
@@ -93,4 +94,60 @@ export function tripActionAvailability(trip: TripFacts): Record<TripAction, stri
 export function withheldTripReason(availability: Record<TripAction, string | null>, shown: readonly TripAction[]): string | null {
   const reasons = [...new Set(shown.map((a) => availability[a]).filter((r): r is string => r !== null))];
   return reasons.length ? `${reasons.join(". ")}.` : null;
+}
+
+/** The server operation behind each trip button. */
+export const TRIP_OPERATIONS: Readonly<Record<TripAction, DriverOperation>> = {
+  accept: "work.respond",
+  decline: "work.respond",
+  start: "work.execute",
+  complete: "work.execute",
+  swap: "swap.create",
+};
+
+/** The read operation that opens each driver section. */
+export const SECTION_READ: Readonly<Record<"work" | "shifts" | "leave" | "checklist" | "safety" | "profile", DriverOperation>> = {
+  work: "work.read",
+  shifts: "shift.read",
+  leave: "leave.read",
+  checklist: "checklist.read",
+  safety: "safety.read",
+  profile: "profile.read",
+};
+
+export type ControlBlock = "permission" | "data" | "state" | "loading" | "processing";
+
+export interface DriverControl {
+  disabled: boolean;
+  /** Why it is disabled; null when it is enabled. */
+  block: ControlBlock | null;
+  reason: string | null;
+}
+
+export const PERMISSION_DENIED = "Your role doesn't allow this action";
+
+/**
+ * Enabled = the server allows the operation, the record's state permits it, and nothing is in progress. Every other
+ * result names the first reason, so a disabled control can always say why.
+ */
+export function driverControl(input: { allowed: boolean; missingData?: string | null; state?: string | null; loading?: string | null; processing?: boolean }): DriverControl {
+  const off = (block: ControlBlock, reason: string): DriverControl => ({ disabled: true, block, reason });
+  if (!input.allowed) return off("permission", PERMISSION_DENIED);
+  if (input.missingData) return off("data", input.missingData);
+  if (input.state) return off("state", input.state);
+  if (input.loading) return off("loading", input.loading);
+  if (input.processing) return off("processing", "Another action is in progress");
+  return { disabled: false, block: null, reason: null };
+}
+
+/**
+ * Why a leave request can't be cancelled, or null when it can be offered (the server still decides). The spec's
+ * statuses are PENDING, APPROVED, REJECTED and CANCELLED; only an undecided PENDING request is offered. A request with
+ * no status is judged by decidedAt alone.
+ */
+export function leaveCancelBlock(leave: { id?: number; status?: string; decidedAt?: string }): string | null {
+  if (leave.id === undefined) return "This request has no id from the server";
+  const status = (leave.status ?? "").trim().toUpperCase();
+  if (status && status !== "PENDING") return `This request is ${status.toLowerCase()}`;
+  return set(leave.decidedAt) ? "This request has already been decided" : null;
 }

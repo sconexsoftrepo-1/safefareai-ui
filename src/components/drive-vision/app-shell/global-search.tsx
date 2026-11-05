@@ -11,7 +11,7 @@ import { describeApiError } from "@/features/drive-vision/api/errors";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { canUseFeature, visibleSearchResults } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
-import { ALL_NAV_ITEMS } from "../navigation/nav-config";
+import { ALL_NAV_ITEMS, navItemFor } from "../navigation/nav-config";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { HEADER_ICON } from "./header-styles";
 import { transitions } from "../shared/motion";
@@ -107,7 +107,7 @@ export function GlobalSearch({ open, onOpenChange }: { open: boolean; onOpenChan
 
   const results = useMemo<Result[]>(() => {
     const q = query.trim().toLowerCase();
-    const pageMatches: Result[] = ALL_NAV_ITEMS.filter((p) => !q || p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)).map((p) => ({
+    const pageMatches: Result[] = ALL_NAV_ITEMS.map((p) => navItemFor(p, access.platform)).filter((p) => !q || p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)).map((p) => ({
       id: p.href,
       group: "Pages",
       label: p.label,

@@ -1,0 +1,458 @@
+======================================================================
+SAFE-FARE FLEET BFF - ROLE MENU PERMISSIONS (PERMISSION SCREEN) AND
+LOGIN MENUS
+Date: 2026-11-04
+Base URL: http://185.193.19.156:9096   (all paths start with /api/v1)
+          http://localhost:9096        (local, running now)
+Swagger : http://<host>:9096/swagger-ui/index.html  (role-controller,
+          auth-controller)
+Available after the new jar is deployed (local app already has it).
+======================================================================
+
+----------------------------------------------------------------------
+SCREEN FLOW (like role-menu-permission.png)
+----------------------------------------------------------------------
+  1. Fill "Select Role"      : GET  /api/v1/roles
+  2. Show the grid           : GET  /api/v1/roles/{roleId}/menu-permissions
+  3. User ticks / unticks
+  4. Submit                  : PUT  /api/v1/roles/{roleId}/menu-permissions
+  5. Users of that role get the new menus at their next login or token
+     refresh (POST /api/v1/auth/login, POST /api/v1/auth/refresh).
+
+Grid columns
+  #            = menu.access           (module checkbox: shows the menu)
+  Module Name  = menu.title, and one row per menu.resources[].label
+  Add          = resource.add
+  Edit         = resource.edit
+  Delete       = resource.delete
+  View         = resource.view
+  (extra)      = resource.actions[]   (e.g. Handle alerts, Send device
+                                       commands, Send sensor readings)
+  A null cell = the resource has no such operation: show no checkbox
+  (the blank cells in the screenshot).
+
+----------------------------------------------------------------------
+SAFE-FARE ADMIN: NO TENANT IN THE TOKEN
+----------------------------------------------------------------------
+The Safe-Fare Admin logs in WITHOUT a tenantCode, so the token has no
+tenant (user.tenantId = null, user.platform = true). Role permissions
+belong to a tenant, so the admin chooses the tenant on every request
+instead of in the token:
+
+  X-Tenant-Id: <tenant id>        (header)            or
+  ?tenantId=<tenant id>           (query parameter)
+
+Screen flow for the admin (one extra "Select Tenant" dropdown):
+  1. Login, no tenantCode   : POST /api/v1/auth/login
+                              {"login": "...", "password": "..."}
+  2. Fill "Select Tenant"   : GET  /api/v1/platform/tenants?status=ACTIVE
+                              -> data[].id, code, name
+  3. (optional) check it    : POST /api/v1/platform/switch-tenant
+                              {"tenantId": 1}
+                              -> {"tenantId": 1, "code": "Ganesh",
+                                  "name": "Ganesh Travels",
+                                  "header": "X-Tenant-Id"}
+  4. Fill "Select Role"     : GET  /api/v1/roles
+  5. Show the grid          : GET  /api/v1/roles/{roleId}/menu-permissions
+                              X-Tenant-Id: 1
+  6. Submit                 : PUT  /api/v1/roles/{roleId}/menu-permissions
+                              X-Tenant-Id: 1
+  Keep the selected tenant id in the UI (e.g. in memory / local storage)
+  and send X-Tenant-Id with every call of this screen. Changing the
+  tenant dropdown = reload the grid with the new X-Tenant-Id.
+
+Without a tenant (no header, no ?tenantId=):
+  GET / PUT menu-permissions -> 400 TENANT_REQUIRED
+  {"code": 400, "msg": "Select a tenant (X-Tenant-Id header) for this operation",
+   "data": null, "total": null,
+   "extend": {"errorCode": "TENANT_REQUIRED", "fieldErrors": [], "requestId": "..."}}
+
+Other tenant errors
+  400 INVALID_TENANT        the tenant id does not exist or is not ACTIVE
+  403 TENANT_ACCESS_DENIED  a tenant user sent another tenant's id
+                            (tenant users never need the header: their
+                            tenant always comes from their account)
+
+Admin's own menus: the admin's login response "menus" contains every
+menu, including the platform menus (Tenants, Global Roles, Permission
+Catalog, Menus & Screens, Reference Data). They are never in the
+role-permission grid, because tenant roles cannot get them.
+
+----------------------------------------------------------------------
+COMMON RULES
+----------------------------------------------------------------------
+Headers
+  Authorization: Bearer <accessToken from POST /api/v1/auth/login>
+  Content-Type : application/json            (PUT / POST requests)
+  X-Tenant-Id  : <tenant id>   Safe-Fare Admin only (or ?tenantId=):
+                 REQUIRED for this screen, see the section above.
+                 Tenant users leave it out: they always work in their
+                 own tenant (taken from the token).
+
+Tenant
+  Role definitions (ADMIN, OPERATOR, ...) are global; their permissions
+  are per tenant. A save changes the role in ONE tenant only.
+
+Permissions needed
+  GET  menu-permissions : role.permission.read
+  PUT  menu-permissions : role.permission.update
+  GET  /roles           : role.read
+  (ADMIN has all of these automatically.)
+
+Every checkbox is a permission code
+  Each cell has "permissionCode". The same code can appear on several
+  menus; it is ONE permission, so all its checkboxes have the same
+  state. When the user ticks or unticks one, tick / untick every cell
+  with the same permissionCode. Shared codes today:
+    device.read : Dashboard, Live Monitoring, Vehicles & Assets
+                  (Vehicles > View), Fleet AI Assistant, Notifications,
+                  Profile & Settings, Global Search
+    alarm.read  : Alerts & Events (Alerts > View), Safety Analytics
+    video.live  : Live Monitoring (action), Historical Video (action)
+    driver.app  : all driver menus (My Work, My Shifts, ...)
+
+Disabled checkboxes
+  editable = false: show the checkbox but disable it. Reasons:
+    - the role is ADMIN (full access by policy, never editable), or
+    - the logged-in user does not have role.permission.update, or
+    - the logged-in user does not hold that permission himself
+      (nobody can give away a permission they do not have).
+
+Module checkbox unticked
+  When "#" (access) is unticked, untick and disable the other boxes of
+  that menu in the UI. Note access is usually the same code as the
+  first View box (e.g. Vehicles & Assets: device.read).
+
+Response envelope (every API)
+  {"code": 200, "msg": "Success", "data": ..., "total": null, "extend": null}
+
+Error envelope
+  {"code": 409, "msg": "<reason>", "data": null, "total": null,
+   "extend": {"errorCode": "PROTECTED_ROLE", "fieldErrors": [],
+              "requestId": "d4f263db-f089-4ea2-bd7b-cc8f36a3c7d3"}}
+
+
+======================================================================
+1. ROLE LIST (Select Role dropdown)
+======================================================================
+GET /api/v1/roles
+Permission: role.read
+
+Current roles
+  roleId  code         description
+  1       ADMIN        Administrator: full access within the tenant
+  2       FLEET OWNER  Fleet manager
+  3       OPERATOR     Operations user
+  4       DRIVER       Driver
+  9       DISPATCHER   Dispatcher: plans dispatches and driver work
+  10      VIEWER       Viewer: read-only access
+
+Response 200 (data, shortened)
+  [
+    {"id": 1, "code": "ADMIN", "description": "Administrator: full access within the tenant",
+     "protectedRole": true, "fullAccess": true, "tenantId": 1, ...},
+    {"id": 3, "code": "OPERATOR", "description": "Operations user",
+     "protectedRole": false, "fullAccess": false, "tenantId": 1, ...}
+  ]
+
+
+======================================================================
+2. GET THE PERMISSION GRID OF A ROLE
+======================================================================
+GET /api/v1/roles/{roleId}/menu-permissions
+Permission: role.permission.read
+
+Path parameter
+  roleId   long   from GET /api/v1/roles
+
+Request examples
+  GET /api/v1/roles/3/menu-permissions
+  GET /api/v1/roles/3/menu-permissions      (Safe-Fare Admin)
+      X-Tenant-Id: 1
+
+Response fields (data)
+  tenantId               long     tenant the grid belongs to
+  roleId                 long
+  roleCode               string   e.g. OPERATOR
+  fullAccess             bool     true for ADMIN (everything ticked)
+  editable               bool     false = whole grid read-only
+  menus[]                         one per menu, in menu order
+    menuId               long
+    menuKey              string   e.g. vehicles_assets
+    title                string   e.g. "Vehicles & Assets"
+    icon                 string
+    parentId             long|null
+    sortOrder            int
+    access               Cell|null  module checkbox (#); null = the
+                                    menu needs no permission
+    resources[]                     rows of the menu
+      label              string   e.g. "Vehicles", "Device groups"
+      view               Cell|null
+      add                Cell|null
+      edit               Cell|null
+      delete             Cell|null
+      actions[]          ActionCell  extra checkboxes (may be empty)
+  otherPermissionCodes   string[] permissions of the role that no
+                                  checkbox shows (e.g. own.data.read);
+                                  kept unchanged when the grid is saved
+
+  Cell        {"permissionCode": string, "granted": bool, "editable": bool}
+  ActionCell  {"label": string, "permissionCode": string,
+               "granted": bool, "editable": bool}
+
+  granted  = the checkbox is ticked
+  editable = the checkbox can be changed by the logged-in user
+
+Platform-only screens (Tenants, Global Roles, Permission Catalog,
+Menus & Screens, Reference Data) are never in the grid.
+
+Response 200 (data, shortened to 4 menus)
+  {
+    "tenantId": 1,
+    "roleId": 3,
+    "roleCode": "OPERATOR",
+    "fullAccess": false,
+    "editable": true,
+    "menus": [
+      {
+        "menuId": 4, "menuKey": "dashboard", "title": "Fleet Overview",
+        "icon": "layout-dashboard", "parentId": null, "sortOrder": 10,
+        "access": {"permissionCode": "device.read", "granted": true, "editable": true},
+        "resources": [
+          {"label": "Fleet overview",
+           "view":   {"permissionCode": "device.read", "granted": true, "editable": true},
+           "add": null, "edit": null, "delete": null, "actions": []}
+        ]
+      },
+      {
+        "menuId": 7, "menuKey": "vehicles_assets", "title": "Vehicles & Assets",
+        "icon": "truck", "parentId": null, "sortOrder": 40,
+        "access": {"permissionCode": "device.read", "granted": true, "editable": true},
+        "resources": [
+          {"label": "Vehicles",
+           "view":   {"permissionCode": "device.read",   "granted": true,  "editable": true},
+           "add":    {"permissionCode": "device.create", "granted": false, "editable": true},
+           "edit":   {"permissionCode": "device.update", "granted": false, "editable": true},
+           "delete": {"permissionCode": "device.delete", "granted": false, "editable": true},
+           "actions": []},
+          {"label": "Device groups",
+           "view":   {"permissionCode": "group.read",   "granted": true,  "editable": true},
+           "add":    {"permissionCode": "group.create", "granted": false, "editable": true},
+           "edit":   {"permissionCode": "group.update", "granted": false, "editable": true},
+           "delete": {"permissionCode": "group.delete", "granted": false, "editable": true},
+           "actions": []},
+          {"label": "Maintenance reminders",
+           "view":   {"permissionCode": "maintenance.read",   "granted": true,  "editable": true},
+           "add":    {"permissionCode": "maintenance.create", "granted": false, "editable": true},
+           "edit":   {"permissionCode": "maintenance.update", "granted": false, "editable": true},
+           "delete": null,
+           "actions": []},
+          {"label": "Service renewals",
+           "view": null, "add": null, "edit": null, "delete": null,
+           "actions": [{"label": "Service renewals", "permissionCode": "renewal.manage",
+                        "granted": false, "editable": true}]}
+        ]
+      },
+      {
+        "menuId": 9, "menuKey": "alerts_events", "title": "Alerts & Events",
+        "icon": "bell-ring", "parentId": null, "sortOrder": 60,
+        "access": {"permissionCode": "alarm.read", "granted": true, "editable": true},
+        "resources": [
+          {"label": "Alerts",
+           "view": {"permissionCode": "alarm.read", "granted": true, "editable": true},
+           "add": null, "edit": null, "delete": null, "actions": []},
+          {"label": "Handle alerts",
+           "view": null, "add": null, "edit": null, "delete": null,
+           "actions": [{"label": "Handle alerts", "permissionCode": "alarm.handle",
+                        "granted": true, "editable": true}]},
+          {"label": "Alarm rules",
+           "view":   {"permissionCode": "alarm.rule.read",   "granted": true,  "editable": true},
+           "add":    {"permissionCode": "alarm.rule.create", "granted": false, "editable": true},
+           "edit":   {"permissionCode": "alarm.rule.update", "granted": false, "editable": true},
+           "delete": {"permissionCode": "alarm.rule.delete", "granted": false, "editable": true},
+           "actions": []}
+        ]
+      },
+      {
+        "menuId": 66, "menuKey": "sensors", "title": "Sensors",
+        "icon": "cpu", "parentId": null, "sortOrder": 47,
+        "access": {"permissionCode": "sensor.read", "granted": false, "editable": true},
+        "resources": [
+          {"label": "Sensors",
+           "view": {"permissionCode": "sensor.read", "granted": false, "editable": true},
+           "add": null, "edit": null, "delete": null,
+           "actions": [{"label": "Sensors", "permissionCode": "sensor.ingest",
+                        "granted": false, "editable": true}]}
+        ]
+      }
+    ],
+    "otherPermissionCodes": ["own.data.read"]
+  }
+
+  A menu with no operations has an empty resources list and only the
+  module checkbox.
+
+ADMIN (roleId 1): fullAccess true, editable false, every checkbox
+granted true and editable false (except driver.app menus, which ADMIN
+does not have).
+
+Errors
+  401 UNAUTHENTICATED   missing or invalid token
+  403 FORBIDDEN         no role.permission.read
+  404 NOT_FOUND         unknown roleId
+  400 TENANT_REQUIRED   Safe-Fare Admin without X-Tenant-Id
+
+
+======================================================================
+3. SAVE THE GRID (Submit)
+======================================================================
+PUT /api/v1/roles/{roleId}/menu-permissions
+Permission: role.permission.update
+
+Request body
+  permissionCodes   string[]   required. The permissionCode of EVERY
+                               ticked checkbox (module, view, add, edit,
+                               delete and action boxes). Duplicates are
+                               fine. Max 300.
+
+How it is saved
+  - Grid codes in the list         -> given to the role.
+  - Grid codes NOT in the list     -> removed from the role.
+  - otherPermissionCodes           -> kept unchanged.
+  - Only the tenant of the caller (or X-Tenant-Id) is changed.
+  - Recorded in the audit log (ROLE_PERMISSIONS_REPLACE).
+
+Request example (OPERATOR: Dashboard and Vehicles view + add, Vehicle
+registry view, Alerts view + handle)
+  PUT /api/v1/roles/3/menu-permissions
+  {
+    "permissionCodes": [
+      "device.read",
+      "device.create",
+      "vehicle.read",
+      "alarm.read",
+      "alarm.handle"
+    ]
+  }
+
+Response 200
+  The saved grid, same shape as GET (section 2), e.g.
+  menus[vehicles_assets].resources[Vehicles].add.granted = true
+
+Errors
+  400 VALIDATION_FAILED  permissionCodes missing / too many
+  400 INVALID_VALUE      a code that is not a checkbox of the grid,
+                         e.g. "own.data.read" or a platform code
+                         ("Not a checkbox of the menu grid: [...]")
+  401 UNAUTHENTICATED
+  403 FORBIDDEN          no role.permission.update, or the request
+                         changes a permission the caller does not hold
+                         ("You cannot grant or remove permissions you
+                          do not hold: [...]")
+  404 NOT_FOUND          unknown roleId
+  409 PROTECTED_ROLE     roleId is ADMIN ("ADMIN has full access within
+                         its tenant by policy; its permissions cannot be
+                         edited")
+
+
+======================================================================
+4. LOGIN RESPONSE WITH MENUS
+======================================================================
+POST /api/v1/auth/login        (public)
+POST /api/v1/auth/refresh      (public, same response)
+
+Request (login)
+  {"tenantCode": "Ganesh", "login": "user@example.com", "password": "******"}
+
+  tenantCode: the user's tenant. Leave it out for the Safe-Fare Admin.
+
+Request (refresh)
+  {"refreshToken": "<refreshToken from login>"}
+
+New field in the response: data.menus
+  The menus this user can open, built from the role's permissions in the
+  user's tenant, in menu order. Use it to build the sidebar and to
+  show / hide buttons. Same as GET /api/v1/me/permissions -> screens.
+  (The backend still checks the permission on every API call.)
+
+  menus[]
+    menuKey        string    e.g. vehicles_assets
+    title          string
+    routePath      string    e.g. /vehicles
+    icon           string
+    parentId       long|null
+    readOnly       bool      true = only View is allowed on this menu
+    resources[]              per resource of the menu
+      label        string
+      read         bool|null    View allowed   (null = no such operation)
+      create       bool|null    Add allowed
+      update       bool|null    Edit allowed
+      delete       bool|null    Delete allowed
+    operations[]             every operation of the menu
+      operation      string  READ | CREATE | UPDATE | DELETE | ACTION
+      permissionCode string
+      label          string
+      allowed        bool
+
+Response 200 (shortened)
+  {
+    "code": 200,
+    "msg": "Success",
+    "data": {
+      "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
+      "tokenType": "Bearer",
+      "expiresIn": 900,
+      "refreshToken": "x0rZ...",
+      "refreshExpiresIn": 1209600,
+      "user": {
+        "id": 1500, "tenantId": 1, "tenantCode": "Ganesh",
+        "tenantName": "Ganesh Travels", "platform": false,
+        "displayName": "Operator User", "email": "operator@example.com",
+        "role": {"id": 3, "code": "OPERATOR"},
+        "permissions": ["alarm.handle", "alarm.read", "device.create",
+                        "device.read", "own.data.read", "vehicle.read"],
+        ...
+      },
+      "menus": [
+        {"menuKey": "dashboard", "title": "Fleet Overview", "routePath": "/dashboard",
+         "icon": "layout-dashboard", "parentId": null, "readOnly": true,
+         "resources": [{"label": "Fleet overview", "read": true,
+                        "create": null, "update": null, "delete": null}],
+         "operations": [{"operation": "READ", "permissionCode": "device.read",
+                         "label": "Fleet overview", "allowed": true}]},
+        {"menuKey": "vehicles_assets", "title": "Vehicles & Assets", "routePath": "/vehicles",
+         "icon": "truck", "parentId": null, "readOnly": false,
+         "resources": [
+           {"label": "Vehicles", "read": true, "create": true, "update": false, "delete": false},
+           {"label": "Device groups", "read": false, "create": false, "update": false, "delete": false},
+           {"label": "Maintenance reminders", "read": false, "create": false, "update": false, "delete": null}
+         ],
+         "operations": [
+           {"operation": "READ",   "permissionCode": "device.read",   "label": "Vehicles", "allowed": true},
+           {"operation": "CREATE", "permissionCode": "device.create", "label": "Vehicles", "allowed": true},
+           {"operation": "UPDATE", "permissionCode": "device.update", "label": "Vehicles", "allowed": false},
+           {"operation": "DELETE", "permissionCode": "device.delete", "label": "Vehicles", "allowed": false},
+           {"operation": "ACTION", "permissionCode": "renewal.manage", "label": "Service renewals", "allowed": false}
+         ]},
+        {"menuKey": "vehicles", "title": "Vehicles", "routePath": "/vehicle-registry", ...},
+        {"menuKey": "alerts_events", "title": "Alerts & Events", "routePath": "/alerts", ...}
+      ]
+    },
+    "total": null,
+    "extend": null
+  }
+
+  Menus whose module permission the user does not have are not listed
+  (in the example: Historical Video, Users, Role Permissions, ...).
+
+After a role change
+  The user's current token keeps the old permissions until it expires
+  (expiresIn, 15 minutes). Call POST /api/v1/auth/refresh (or log in
+  again) to get the new permissions and menus.
+
+Errors
+  400 VALIDATION_FAILED     login / password / refreshToken missing
+  401 INVALID_CREDENTIALS   login: wrong tenant code, login or password,
+                            or the user is not active
+  401 INVALID_TOKEN         refresh: unknown, revoked or expired
+                            refresh token

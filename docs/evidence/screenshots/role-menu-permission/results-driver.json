@@ -1,0 +1,376 @@
+{
+  "note": "MOCKED: the DRIVER grid is a synthetic fixture rebuilt from the written brief; the live backend was not called",
+  "results": {
+    "roles": [
+      "ADMIN Administrator: full access within the tenant",
+      "FLEET OWNER Fleet manager",
+      "OPERATOR Operations user",
+      "DRIVER Driver",
+      "DISPATCHER Dispatcher: plans dispatches and driver work",
+      "VIEWER Viewer: read-only access"
+    ],
+    "rows": {
+      "My Work": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "edit": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "driver.app.work.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": [
+          {
+            "code": "driver.app.work.respond",
+            "label": "Accept or decline trips",
+            "checked": true,
+            "disabled": false
+          },
+          {
+            "code": "driver.app.work.execute",
+            "label": "Start and complete trips",
+            "checked": true,
+            "disabled": false
+          }
+        ]
+      },
+      "Trip swap requests": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "driver.app.swap.create",
+          "checked": true,
+          "disabled": false
+        },
+        "edit": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "actions": []
+      },
+      "My Shifts": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "driver.app.shift.start",
+          "checked": true,
+          "disabled": false
+        },
+        "edit": {
+          "code": "driver.app.shift.end",
+          "checked": true,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "driver.app.shift.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": []
+      },
+      "My Leave": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "driver.app.leave.create",
+          "checked": true,
+          "disabled": false
+        },
+        "edit": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "driver.app.leave.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": [
+          {
+            "code": "driver.app.leave.cancel",
+            "label": "Cancel leave request",
+            "checked": false,
+            "disabled": false
+          }
+        ]
+      },
+      "Shift Checklist": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "driver.app.checklist.submit",
+          "checked": true,
+          "disabled": false
+        },
+        "edit": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "driver.app.checklist.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": []
+      },
+      "My Safety": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "edit": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "driver.app.safety.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": []
+      },
+      "My Profile": {
+        "parent": {
+          "code": "driver.app",
+          "checked": true,
+          "disabled": true
+        },
+        "add": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "edit": {
+          "code": "driver.app.profile.update",
+          "checked": false,
+          "disabled": false
+        },
+        "delete": {
+          "code": "NO CODE",
+          "checked": false,
+          "disabled": false
+        },
+        "view": {
+          "code": "driver.app.profile.read",
+          "checked": true,
+          "disabled": false
+        },
+        "actions": []
+      }
+    },
+    "counts": {
+      "coded": 25,
+      "nullBoxes": 22,
+      "nullTicked": 0
+    },
+    "other": "Also held by this role, not shown as checkboxes and kept on save: own.data.read",
+    "independent": {
+      "respond": {
+        "code": "driver.app.work.respond",
+        "checked": false,
+        "disabled": false
+      },
+      "execute": {
+        "code": "driver.app.work.execute",
+        "checked": true,
+        "disabled": false
+      },
+      "cancel": {
+        "code": "driver.app.leave.cancel",
+        "checked": true,
+        "disabled": false
+      },
+      "profileEdit": {
+        "code": "driver.app.profile.update",
+        "checked": true,
+        "disabled": false
+      },
+      "parent": {
+        "code": "driver.app",
+        "checked": true,
+        "disabled": true
+      },
+      "impactDialog": null
+    },
+    "pendingNote": "Won't be saved: My Safety, My Safety: Add. These cells have no permission code, so saving them requires backend mapping. Everything else saves normally.",
+    "review": "Save permissions for DRIVER? | This changes the role in one tenant only. Users of this role get the change at their next login or token refresh; anyone signed in keeps their current permissions until then. | Tenant | Ganesh Travels (synthetic) | Role | DRIVER | +2 added · −1 removed · 13 unchanged | Added | driver.app.leave.cancel, driver.app.profile.update | Removed | driver.app.work.respond | Unchanged (13) | Kept unchanged, not in the grid: own.data.read | Won't be saved: My Safety, My Safety: Add. These cells have no permission code, so saving them requires backend mapping. Everything else saves normally. | Cancel | Save",
+    "save": {
+      "requests": [
+        "GET tenant=1",
+        "PUT tenant=1",
+        "GET tenant=1"
+      ],
+      "body": {
+        "permissionCodes": [
+          "driver.app",
+          "driver.app.checklist.read",
+          "driver.app.checklist.submit",
+          "driver.app.leave.cancel",
+          "driver.app.leave.create",
+          "driver.app.leave.read",
+          "driver.app.profile.read",
+          "driver.app.profile.update",
+          "driver.app.safety.read",
+          "driver.app.shift.end",
+          "driver.app.shift.read",
+          "driver.app.shift.start",
+          "driver.app.swap.create",
+          "driver.app.work.execute",
+          "driver.app.work.read"
+        ]
+      },
+      "added": [
+        "driver.app.leave.cancel",
+        "driver.app.profile.update"
+      ],
+      "removed": [
+        "driver.app.work.respond"
+      ],
+      "ownDataSent": false,
+      "driverAppSent": true,
+      "toast": [
+        "Permissions saved for DRIVER | 2 added · 1 removed. Users of this role get the change at their next login or token refresh."
+      ]
+    },
+    "reloaded": {
+      "respond": {
+        "code": "driver.app.work.respond",
+        "checked": false,
+        "disabled": false
+      },
+      "cancel": {
+        "code": "driver.app.leave.cancel",
+        "checked": true,
+        "disabled": false
+      },
+      "profileEdit": {
+        "code": "driver.app.profile.update",
+        "checked": true,
+        "disabled": false
+      },
+      "execute": {
+        "code": "driver.app.work.execute",
+        "checked": true,
+        "disabled": false
+      },
+      "parent": {
+        "code": "driver.app",
+        "checked": true,
+        "disabled": true
+      },
+      "nullStillEmpty": {
+        "code": null,
+        "checked": false,
+        "disabled": false
+      },
+      "other": "Also held by this role, not shown as checkboxes and kept on save: own.data.read"
+    },
+    "tenantSwitch": {
+      "tenant1Ticked": 20,
+      "tenant2Ticked": 8,
+      "tenant2Codes": [
+        "driver.app",
+        "driver.app.safety.read",
+        "driver.app.work.read"
+      ],
+      "requests": [
+        "GET /roles/4/menu-permissions tenant=2"
+      ]
+    },
+    "layout": {
+      "1366x768": {
+        "pageOverflow": false,
+        "matrixScrolls": false,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "768x1024": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "390x844": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,301 @@
+{
+  "_source": "SYNTHETIC. Not a captured API response. The My Work rows, the codes assigned to role 4 in tenant 1 and otherPermissionCodes come from the written briefs of 2026-11-05, so every driver.app.* cell is granted and the three driver.app.work CRUD codes are outside the grid. driver.app, menuId, menuKey, icon, sortOrder and the non-driver menus are placeholders from the earlier fixture. Replace this file with the real GET /roles/4/menu-permissions data.",
+  "tenantId": 1,
+  "roleId": 4,
+  "roleCode": "DRIVER",
+  "fullAccess": false,
+  "editable": true,
+  "menus": [
+    {
+      "menuId": 4,
+      "menuKey": "dashboard",
+      "title": "Fleet Overview",
+      "icon": "layout-dashboard",
+      "parentId": null,
+      "sortOrder": 10,
+      "access": {
+        "permissionCode": "device.read",
+        "granted": false,
+        "editable": true
+      },
+      "resources": [
+        {
+          "label": "Fleet overview",
+          "view": {
+            "permissionCode": "device.read",
+            "granted": false,
+            "editable": true
+          },
+          "add": null,
+          "edit": null,
+          "delete": null,
+          "actions": []
+        }
+      ]
+    },
+    {
+      "menuId": 5,
+      "menuKey": "live_monitoring",
+      "title": "Live Monitoring",
+      "icon": "radar",
+      "parentId": null,
+      "sortOrder": 20,
+      "access": {
+        "permissionCode": "device.read",
+        "granted": false,
+        "editable": true
+      },
+      "resources": [
+        {
+          "label": "Live map",
+          "view": {
+            "permissionCode": "device.read",
+            "granted": false,
+            "editable": true
+          },
+          "add": null,
+          "edit": null,
+          "delete": null,
+          "actions": []
+        }
+      ]
+    },
+    {
+      "menuId": 101,
+      "menuKey": "driver_work",
+      "title": "My Work",
+      "icon": "briefcase",
+      "parentId": null,
+      "sortOrder": 100,
+      "access": {
+        "permissionCode": "driver.app",
+        "granted": true,
+        "editable": false
+      },
+      "resources": [
+        {
+          "label": "My Work",
+          "view": {
+            "permissionCode": "driver.app.work.read",
+            "granted": true,
+            "editable": true
+          },
+          "add": null,
+          "edit": null,
+          "delete": null,
+          "actions": []
+        },
+        {
+          "label": "Accept or decline trips",
+          "view": null,
+          "add": null,
+          "edit": null,
+          "delete": null,
+          "actions": [
+            {
+              "label": "Accept or decline trips",
+              "permissionCode": "driver.app.work.respond",
+              "granted": true,
+              "editable": true
+            }
+          ]
+        },
+        {
+          "label": "Start and complete trips",
+          "view": null,
+          "add": null,
+          "edit": null,
+          "delete": null,
+          "actions": [
+            {
+              "label": "Start and complete trips",
+              "permissionCode": "driver.app.work.execute",
+              "granted": true,
+              "editable": true
+            }
+          ]
+        },
+        {
+          "label": "Trip swap requests",
+          "view": null,
+          "add": {
+            "permissionCode": "driver.app.swap.create",
+            "granted": true,
+            "editable": true
+          },
+          "edit": null,
+          "delete": null,
+          "actions": []
+        }
+      ]
+    },
+    {
+      "menuId": 102,
+      "menuKey": "driver_shifts",
+      "title": "My Shifts",
+      "icon": "clock",
+      "parentId": null,
+      "sortOrder": 110,
+      "access": {
+        "permissionCode": "driver.app",
+        "granted": true,
+        "editable": false
+      },
+      "resources": [
+        {
+          "label": "My Shifts",
+          "view": {
+            "permissionCode": "driver.app.shift.read",
+            "granted": true,
+            "editable": true
+          },
+          "add": {
+            "permissionCode": "driver.app.shift.start",
+            "granted": true,
+            "editable": true
+          },
+          "edit": {
+            "permissionCode": "driver.app.shift.end",
+            "granted": true,
+            "editable": true
+          },
+          "delete": null,
+          "actions": []
+        }
+      ]
+    },
+    {
+      "menuId": 103,
+      "menuKey": "driver_leave",
+      "title": "My Leave",
+      "icon": "calendar-off",
+      "parentId": null,
+      "sortOrder": 120,
+      "access": {
+        "permissionCode": "driver.app",
+        "granted": true,
+        "editable": false
+      },
+      "resources": [
+        {
+          "label": "My Leave",
+          "view": {
+            "permissionCode": "driver.app.leave.read",
+            "granted": true,
+            "editable": true
+          },
+          "add": {
+            "permissionCode": "driver.app.leave.create",
+            "granted": true,
+            "editable": true
+          },
+          "edit": null,
+          "delete": null,
+          "actions": [
+            {
+              "label": "Cancel leave request",
+              "permissionCode": "driver.app.leave.cancel",
+              "granted": true,
+              "editable": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "menuId": 104,
+      "menuKey": "driver_checklist",
+      "title": "Shift Checklist",
+      "icon": "clipboard-check",
+      "parentId": null,
+      "sortOrder": 130,
+      "access": {
+        "permissionCode": "driver.app",
+        "granted": true,
+        "editable": false
+      },
+      "resources": [
+        {
+          "label": "Shift Checklist",
+          "view": {
+            "permissionCode": "driver.app.checklist.read",
+            "granted": true,
+            "editable": true
+          },
+          "add": {
+            "permissionCode": "driver.app.checklist.submit",
+            "granted": true,
+            "editable": true
+          },
+          "edit": null,
+          "delete": null,
+          "actions": []
+        }
+      ]
+    },
+    {
+      "menuId": 105,
+      "menuKey": "driver_safety",
+      "title": "My Safety",
+      "icon": "shield-check",
+      "parentId": null,
+      "sortOrder": 140,
+      "access": {
+        "permissionCode": "driver.app",
+        "granted": true,
+        "editable": false
+      },
+      "resources": [
+        {
+          "label": "My Safety",
+          "view": {
+            "permissionCode": "driver.app.safety.read",
+            "granted": true,
+            "editable": true
+          },
+          "add": null,
+          "edit": null,
+          "delete": null,
+          "actions": []
+        }
+      ]
+    },
+    {
+      "menuId": 106,
+      "menuKey": "driver_profile",
+      "title": "My Profile",
+      "icon": "user-round",
+      "parentId": null,
+      "sortOrder": 150,
+      "access": {
+        "permissionCode": "driver.app",
+        "granted": true,
+        "editable": false
+      },
+      "resources": [
+        {
+          "label": "My Profile",
+          "view": {
+            "permissionCode": "driver.app.profile.read",
+            "granted": true,
+            "editable": true
+          },
+          "add": null,
+          "edit": {
+            "permissionCode": "driver.app.profile.update",
+            "granted": true,
+            "editable": true
+          },
+          "delete": null,
+          "actions": []
+        }
+      ]
+    }
+  ],
+  "otherPermissionCodes": [
+    "driver.app.work.create",
+    "driver.app.work.update",
+    "driver.app.work.delete",
+    "own.data.read"
+  ]
+}

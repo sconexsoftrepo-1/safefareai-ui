@@ -243,11 +243,13 @@ test("P7 apply sequence: add ok + remove 409 → partial, and the follow-up read
 // ── Access control ──────────────────────────────────────────────────────────
 
 const SFA = { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] };
-const PLATFORM_SCREENS = ["roles", "permissions"];
+const PLATFORM_SCREENS = ["roles"];
 const PLATFORM_ACTIONS = ["roles.create", "roles.update", "roles.delete", "rolePermissions.add", "rolePermissions.remove", "permissions.create", "permissions.update", "permissions.delete"];
 
-test("P7 access: only the Safe-Fare Admin reaches Global Roles / Permission Catalogue and their actions", () => {
+test("P7 access: only the Safe-Fare Admin reaches Global Roles and the catalogue's actions", () => {
   const a = access(SFA);
+  assert.equal(p.canAccessScreen(a, "permissions"), true);
+  assert.equal(p.canManageCatalogue(a), true);
   for (const s of PLATFORM_SCREENS) {
     assert.equal(p.canAccessScreen(a, s), true, s);
     assert.equal(p.decideRoute("authenticated", a, p.SCREEN_ROUTES[s]).kind, "allow");
@@ -281,6 +283,7 @@ test("P7 access: denied for tenant ADMIN (even with every code), Fleet Owner, Op
     }
     for (const act of PLATFORM_ACTIONS) assert.equal(p.canPerform(a, act), false, `${label}: ${act}`);
     for (const w of ["roles.permissions", "permissions.catalog"]) assert.equal(p.canViewWidget(a, w), false, `${label}: widget ${w}`);
+    assert.equal(p.canManageCatalogue(a), false, `${label}: catalogue view`);
     assert.ok(!nav.navGroupsFor(a).some((g) => g.items.some((i) => PLATFORM_SCREENS.includes(i.screen))), `${label}: nav`);
   }
 });
@@ -288,7 +291,8 @@ test("P7 access: denied for tenant ADMIN (even with every code), Fleet Owner, Op
 test("P7 access: platform=true but missing the precise code → that screen / action / widget denied (fail closed)", () => {
   const without = (...codes) => access({ ...SFA, permissions: ALL_CODES.filter((c) => !codes.includes(c)) });
   assert.equal(p.canAccessScreen(without("role.read"), "roles"), false);
-  assert.equal(p.canAccessScreen(without("permission.manage"), "permissions"), false);
+  assert.equal(p.canAccessScreen(without("permission.manage", "role.permission.read"), "permissions"), false);
+  assert.equal(p.canManageCatalogue(without("permission.manage")), false, "the catalogue view still needs permission.manage");
   const noManage = without("role.manage");
   assert.equal(p.canAccessScreen(noManage, "roles"), true, "read-only roles screen");
   for (const act of ["roles.create", "roles.update", "roles.delete"]) assert.equal(p.canPerform(noManage, act), false, act);
@@ -318,7 +322,7 @@ test("P7 regression: platform screens use only the platform-wide service; the Us
   const svc = read("features/drive-vision/api/role-admin-service.ts");
   const calls = [...svc.matchAll(/api\.(get|post|put|delete)</g)].length;
   const platform = [...svc.matchAll(/PLATFORM\b|\.\.\.PLATFORM/g)].length;
-  assert.ok(calls === 12 && platform >= 12, `every one of the 12 calls passes tenant:"none" (${calls} calls)`);
+  assert.ok(calls === 11 && platform >= 11, `every one of the 11 calls passes tenant:"none" (${calls} calls)`);
 });
 
 // ── Phase 7 UI enhancement: checkbox-based selection ────────────────────────
@@ -415,64 +419,23 @@ test("P7-UI save path: existing add / remove operations only (no replace-all), t
   assert.doesNotMatch(editor, /replace|api\.put|PUT \/roles/i);
   assert.match(editor, /setPending\(\(p\) => pendingAfterApply\(p, added, removed\)\)/, "pending changes survive failures");
   assert.match(editor, /Always re-read[\s\S]*rpQ\.refetch\(\);\s*onChanged\(\);/);
-  // The full-replace PUT exists only for the Permission Catalogue's role matrix, never the Global Roles editor.
-  assert.match(read("features/drive-vision/api/role-admin-service.ts"), /async replaceRolePermissions\(id: number, permissionCodes: string\[\]\)[\s\S]*?api\.put<RolePermissionsDto>\(`\/roles\/\$\{id\}\/permissions`, \{ permissionCodes \}, PLATFORM\)/);
-  assert.match(read("components/drive-vision/platform/role-permission-matrix.tsx"), /roleAdminService\.replaceRolePermissions\(roleId, request\.permissionCodes\)/);
+  assert.doesNotMatch(read("features/drive-vision/api/role-admin-service.ts"), /api\.put<RolePermissionsDto>/, "the full-replace PUT left with the old matrix");
 });
 
-// ── Permission Catalogue: role × module matrix (full-replace save) ──────────
+// ── Permission Catalogue ────────────────────────────────────────────────────
 
-test("Matrix: module = code minus its last segment; create/update/delete/read become Add/Edit/Delete/View, the rest Other", () => {
-  same(m.permissionModule("alarm.rule.create"), { module: "alarm.rule", action: "create" });
-  same(m.permissionModule("device.read"), { module: "device", action: "read" });
-  same(m.permissionModule("solo"), { module: "solo", action: "" });
-  assert.equal(m.moduleLabel("alarm.rule"), "Alarm rule");
-  assert.equal(m.moduleLabel("own.data"), "Own data");
-  const rows = m.buildPermissionMatrix(["alarm.read", "alarm.handle", ...ALARM.slice(2), "device.read", "device.update", "tenant.all", "device.read"]);
-  same(rows.map((r) => r.module), ["alarm", "alarm.rule", "device", "tenant"]);
-  const alarm = rows[0];
-  same(alarm.cells, { read: "alarm.read" });
-  same(alarm.others, ["alarm.handle"]);
-  same(rows[1].cells, { create: "alarm.rule.create", update: "alarm.rule.update", delete: "alarm.rule.delete" });
-  same(rows[2].codes, ["device.read", "device.update"], "duplicates dropped");
-  same(rows[3].others, ["tenant.all"]);
-  same(m.filterMatrix(rows, "rule").map((r) => r.module), ["alarm.rule"]);
-  same(m.filterMatrix(rows, "handle").map((r) => r.module), ["alarm"]);
-  assert.equal(m.filterMatrix(rows, " ").length, 4);
+test("the old full-replace matrix is gone; what Global Roles uses stays", () => {
+  for (const name of ["buildPermissionMatrix", "filterMatrix", "replaceRequest", "permissionModule", "moduleLabel", "MATRIX_ACTIONS"]) assert.equal(m[name], undefined, name);
+  assert.equal(p.ACTIONS["rolePermissions.replace"], undefined);
+  for (const name of ["groupState", "desiredSelection", "setCodes", "codeEditable", "pendingAfterApply", "planChanges", "summarizeApply"]) assert.equal(typeof m[name], "function", name);
+  const roles = read("components/drive-vision/platform/global-roles.tsx");
+  assert.match(roles, /<RolePermissionEditor key=\{detail\.id\} role=\{detail\} onChanged=\{listQ\.refetch\} \/>/, "Global Roles keeps its editor");
+  for (const a of ["rolePermissions.add", "rolePermissions.remove"]) assert.ok(p.ACTIONS[a], a);
 });
 
-test("Matrix save body: the whole selection (assigned − removals + additions), sorted; > 300 codes blocks", () => {
-  const pending = { additions: set("device.create"), removals: set("alarm.handle") };
-  const r = m.replaceRequest(ASSIGNED, pending);
-  same(r.permissionCodes, ["alarm.read", "device.create", "device.read"]);
-  same(r.problems, []);
-  same(m.replaceRequest(set(), m.NO_CHANGES).permissionCodes, [], "an empty list is a valid full replace");
-  const many = new Set(Array.from({ length: 301 }, (_, i) => `x.c${i}`));
-  assert.equal(m.replaceRequest(many, m.NO_CHANGES).problems.length, 1);
-});
-
-test("Matrix access: saving needs role.permission.update on the Permission Catalogue screen; platform-wide, never tenant-blocked", () => {
-  const def = p.ACTIONS["rolePermissions.replace"];
-  assert.equal(def.screen, "permissions");
-  assert.equal(def.tenantWrite, false);
-  same([...def.requires.anyOf], ["role.permission.update"]);
-  same([...def.requires.operations], ["PUT /api/v1/roles/{id}/permissions"]);
-  const a = access(SFA);
-  assert.equal(p.canPerform(a, "rolePermissions.replace"), true);
-  assert.equal(a.tenantBlockedActions.has("rolePermissions.replace"), false);
-  assert.equal(p.canPerform(access({ ...SFA, permissions: ALL_CODES.filter((c) => c !== "role.permission.update") }), "rolePermissions.replace"), false);
-  assert.equal(p.canPerform(access({ ...IDENTITIES.tenantAdmin, permissions: ALL_CODES }), "rolePermissions.replace"), false, "tenant ADMIN never");
-});
-
-test("Matrix UI: role first, then the catalogue and the role's permissions; save reviews, then PUTs the full list", () => {
-  const ui = read("components/drive-vision/platform/role-permission-matrix.tsx");
-  assert.match(ui, /useApiQuery\(roleId !== null \? "platform-permissions:list" : null/, "catalogue loads only after a role is chosen");
-  assert.match(ui, /roleAdminService\.rolePermissions\(roleId!\)/);
-  assert.match(ui, /canPerform\(access, "rolePermissions\.replace"\)/);
-  assert.match(ui, /locked: block !== null \|\| !canReplace \|\| saving/, "locked roles, missing rights and in-flight saves freeze the boxes");
-  assert.match(ui, /onConfirm=\{save\}/, "save goes through the review dialog");
-  assert.match(ui, /setPending\(NO_CHANGES\);\s*assignedQ\.refetch\(\);/, "success re-reads the server's list");
+test("Catalogue screen: Role permissions is the default view, Catalogue the second", () => {
+  // The role grid itself: tests/role-menu-permission.test.cjs.
   const page = read("components/drive-vision/platform/permission-catalog.tsx");
   assert.match(page, /useState<"roles" \| "catalogue">\("roles"\)/, "Role permissions is the default view");
-  assert.match(page, /\{tab === "roles" \? <RolePermissionMatrix \/> : null\}/);
+  assert.match(page, /<div hidden=\{tab !== "roles"\}>\s*<RolePermissionMatrix \/>/, "kept mounted so unsaved changes survive a tab switch");
 });

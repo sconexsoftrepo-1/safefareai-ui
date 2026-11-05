@@ -98,6 +98,7 @@ test("P4 contract: platform screen and every widget requirement mirror the V10 '
   for (const [label, req] of reqs) {
     assert.ok(req.operations.length > 0, label);
     for (const key of req.operations) {
+      if (req.offSpec?.operations.includes(key)) continue;
       const op = ops.get(key);
       assert.ok(op, `${label}: ${key} is a V10 operation`);
       same([...(req.anyOf ?? [])].sort(), [...contract.permissionCodes(contract.permissionOf(op))].sort());

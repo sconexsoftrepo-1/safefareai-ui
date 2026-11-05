@@ -1,0 +1,516 @@
+POLLING APIS: NOTIFICATIONS, ALERTS, AI EVENTS AND ALARMS
+=========================================================
+
+Base URL : http://<server>:9096
+Times    : ISO-8601 UTC, e.g. 2026-11-04T04:20:54Z (09:50:54 IST).
+Examples : the values in the responses below are samples.
+
+
+1. WHICH API TO POLL
+--------------------
+UI screen                   API                                         Reads from   Poll every
+Notification panel (bell)   GET /api/v1/notifications/poll              Database     5 seconds
+Alerts screen, AI Events    GET /api/v1/alerts?kind=AI&openOnly=true    Database     5 seconds
+Alerts screen, Alarm        GET /api/v1/alerts?kind=ROUTINE&openOnly=true  Database  5 seconds
+AI events history           GET /api/v1/alarms/ai                       Vendor       Do not poll
+Routine alarms history      GET /api/v1/alarms/routine                  Vendor       Do not poll
+Routine alarms, last 24 h   GET /api/v1/alarms/routine/recent           Vendor       Do not poll
+
+Why /alarms/* should not be polled:
+- Every call goes to GPSTrackTech, so every open browser would add its own vendor call
+  every 5 seconds.
+- The backend already polls the vendor every 5 seconds and saves alarms to the database.
+  /notifications/poll and /alerts therefore show new alarms without any vendor call
+  from the UI.
+- Call /alarms/* once when a screen opens or when the user clicks Search or Refresh.
+
+
+2. COMMON REQUEST HEADERS
+-------------------------
+Authorization: Bearer <accessToken>     Required on every call
+X-Tenant-Id: <tenant id>                Safe-Fare Admin only (or ?tenantId=<tenant id>)
+
+Tenant users do not need X-Tenant-Id. If they send it, it must be their own tenant.
+
+Safe-Fare Admin without a tenant:
+- /alerts           : returns alerts of every tenant.
+- /alarms/*         : always send X-Tenant-Id, because vendor access belongs to a tenant.
+- /notifications/*  : always empty. Notifications are created only for tenant users, so
+                      the Safe-Fare Admin never receives any.
+
+
+3. NOTIFICATIONS POLLING
+------------------------
+
+3.1 Poll the notification panel (call every 5 seconds)
+    GET /api/v1/notifications/poll
+
+    Permission : any signed-in user; returns only that user's notifications
+    Recipients : new alarms go to active ADMIN and FLEET OWNER users of the tenant
+
+    Query parameter   Required   Default   Description
+    limit             No         20        Items per tab, 1 to 50
+
+    Request:
+    GET /api/v1/notifications/poll?limit=20
+    Authorization: Bearer <accessToken>
+
+    Response 200:
+    {
+      "code": 200,
+      "msg": "Success",
+      "data": {
+        "unreadTotal": 35,
+        "aiEvents": {
+          "type": "AI_EVENT",
+          "unread": 34,
+          "items": [
+            {
+              "id": 912,
+              "type": "AI_EVENT",
+              "severity": 3,
+              "title": "AP29Z0001:Pedestrian Collision",
+              "body": "AP29Z0001 (13600000003) Pedestrian Collision at 2026-11-04 09:50:54",
+              "refType": "ALARM",
+              "refId": "837",
+              "createdAt": "2026-11-04T04:20:57Z",
+              "readAt": null,
+              "read": false,
+              "details": {
+                "kind": "AI",
+                "alarmId": 837,
+                "deviceId": 1215,
+                "deviceName": "AP29Z0001",
+                "terminalNo": "13600000003",
+                "alarmTypeId": 208,
+                "alarmName": "Pedestrian Collision",
+                "alarmTime": "2026-11-04T04:20:54Z",
+                "vendorAlarmTime": "2026-11-04 09:50:54"
+              }
+            }
+          ]
+        },
+        "alarm": {
+          "type": "ALARM",
+          "unread": 1,
+          "items": [
+            {
+              "id": 905,
+              "type": "ALARM",
+              "severity": 3,
+              "title": "AP29Z0001:Storage Failure",
+              "body": "AP29Z0001 (13600000003) Storage Failure at 2026-11-04 08:24:27",
+              "refType": "ALARM",
+              "refId": "829",
+              "createdAt": "2026-11-04T02:54:31Z",
+              "readAt": null,
+              "read": false,
+              "details": {
+                "kind": "ROUTINE",
+                "alarmId": 829,
+                "deviceId": 1215,
+                "deviceName": "AP29Z0001",
+                "terminalNo": "13600000003",
+                "alarmTypeId": 33,
+                "alarmName": "Storage Failure",
+                "alarmTime": "2026-11-04T02:54:27Z",
+                "vendorAlarmTime": "2026-11-04 08:24:27"
+              }
+            }
+          ]
+        }
+      },
+      "total": null,
+      "extend": null
+    }
+
+    UI mapping:
+    AI Events count   data.aiEvents.unread
+    Alarm count       data.alarm.unread
+    Row first line    item.title
+    Row second line   item.details.vendorAlarmTime
+    Red dot           every row (items holds unread notifications only)
+
+    Notes:
+    - Use the two tab counts for the tab badges. unreadTotal also counts other types
+      (SENSOR, DISPATCH, LEAVE, SWAP, SHIFT).
+    - "Alert assigned" notifications also have type ALARM, so they appear in the Alarm
+      tab. They have no details object, so show item.createdAt for them.
+    - severity: 1 severe, 2 moderate, 3 general, 4 notice.
+
+    Errors:
+    400 VALIDATION_FAILED or INVALID_VALUE   limit is not between 1 and 50
+    401                                      Token missing, invalid or expired
+
+3.2 See More (full list with paging)
+    GET /api/v1/notifications
+
+    Query parameter   Required   Default   Description
+    type              No         all       AI_EVENT, ALARM, SENSOR, DISPATCH, ...
+    unreadOnly        No         false     true returns unread only
+    pageNumber        No         1         Page, starting at 1
+    pageSize          No         20        1 to 100
+
+    Request:
+    GET /api/v1/notifications?type=AI_EVENT&pageNumber=1&pageSize=20
+    Authorization: Bearer <accessToken>
+
+    Response 200:
+    {
+      "code": 200,
+      "msg": "Success",
+      "data": [ { same fields as an item in 3.1 } ],
+      "total": 34,
+      "extend": null
+    }
+
+3.3 Read all (one tab)
+    POST /api/v1/notifications/read-all?type=AI_EVENT
+
+    Query parameter   Required   Description
+    type              No         AI_EVENT or ALARM. Without it, every notification
+                                 of the user is marked as read.
+
+    Request body: none
+
+    Response 200:
+    { "code": 200, "msg": "Success", "data": { "updated": 34 }, "total": null, "extend": null }
+
+3.4 Click one notification
+    POST /api/v1/notifications/{id}/read
+
+    Request body: none
+    Response 200: data is the notification with "read": true and readAt set.
+    Error 404 NOT_FOUND: the notification does not exist or belongs to another user.
+
+    Then open the alert with GET /api/v1/alerts/{details.alarmId}.
+
+3.5 Mark one notification as unread
+    POST /api/v1/notifications/{id}/unread
+
+    Request body: none
+    Response 200: data is the notification with "read": false and readAt null.
+
+3.6 Unread count only
+    GET /api/v1/notifications/unread-count
+
+    Response 200:
+    { "code": 200, "msg": "Success", "data": { "unread": 35 }, "total": null, "extend": null }
+
+
+4. ALERTS AND AI EVENTS POLLING
+-------------------------------
+
+4.1 Alerts list (call every 5 seconds while the screen is open)
+    GET /api/v1/alerts
+
+    Permission : alarm.read
+    Reads from : database only
+    Sorted by  : alarmTime, newest first
+
+    Query parameter   Required   Default         Description
+    kind              No         all             AI = AI events, ROUTINE = routine alarms
+    openOnly          No         false           true = NEW, ACKNOWLEDGED, IN_PROGRESS.
+                                                 This overrides status.
+    status            No         all             NEW, ACKNOWLEDGED, IN_PROGRESS, RESOLVED,
+                                                 DISMISSED (several allowed)
+    severity          No         all             1 to 4 (several allowed)
+    from              No         last 7 days     Start time (UTC)
+    to                No         now             End time (UTC); range at most 92 days
+    alarmTypeIds      No         all             Alarm type ids (several allowed)
+    deviceIds         No         all             Local device ids (several allowed)
+    driverId          No         all             Driver id
+    assigneeUserId    No         all             Assigned user id
+    keyword           No         none            Vehicle, device ID, alarm name, driver
+                                                 or vendor alarm id
+    pageNumber        No         1               Page, starting at 1
+    pageSize          No         20              1 to 100
+
+    AI Events request:
+    GET /api/v1/alerts?kind=AI&openOnly=true&pageNumber=1&pageSize=20
+    Authorization: Bearer <accessToken>
+
+    Routine alarms request:
+    GET /api/v1/alerts?kind=ROUTINE&openOnly=true&pageNumber=1&pageSize=20
+    Authorization: Bearer <accessToken>
+
+    Response 200:
+    {
+      "code": 200,
+      "msg": "Success",
+      "data": [
+        {
+          "id": 837,
+          "vendorAlarmId": "2117785541147627520",
+          "alarmTime": "2026-11-04T04:20:54Z",
+          "endedAt": null,
+          "deviceId": 1215,
+          "deviceName": "AP29Z0001",
+          "terminalNo": "13600000003",
+          "alarmTypeId": 208,
+          "alarmName": "Pedestrian Collision",
+          "kind": "AI",
+          "severity": 3,
+          "speedKmh": 42.0,
+          "lat": 17.4239,
+          "lon": 78.4483,
+          "address": null,
+          "durationSeconds": 3,
+          "mediaStatus": "PENDING",
+          "handlingStatus": "NEW",
+          "handlingOutcome": null,
+          "handledBy": null,
+          "handledAt": null,
+          "driverId": null,
+          "driverName": null,
+          "assigneeUserId": null,
+          "assigneeName": null
+        }
+      ],
+      "total": 34,
+      "extend": null
+    }
+
+    Notes:
+    - alarmTime is UTC, so convert it to local time in the UI.
+    - total is the number of matching alerts, for paging.
+    - mediaStatus: PENDING, PARTIAL, COMPLETE, NONE, UNAVAILABLE, FAILED.
+
+    Errors:
+    400 INVALID_VALUE   Wrong status or kind, from is after to, or range over 92 days
+    401                 Token missing, invalid or expired
+    403 FORBIDDEN       The user's role does not have alarm.read
+
+4.2 One alert with history and evidence (call on click, do not poll)
+    GET /api/v1/alerts/{id}
+
+    Permission: alarm.read
+
+    Response 200:
+    {
+      "code": 200,
+      "msg": "Success",
+      "data": {
+        "alert": { same fields as a row in 4.1 },
+        "actions": [
+          {
+            "id": 15,
+            "actionType": "ASSIGN",
+            "actorUserId": 2,
+            "actorName": "Fleet Admin",
+            "assigneeUserId": 7,
+            "assigneeName": "Control Room",
+            "note": "Please check",
+            "automatic": false,
+            "createdAt": "2026-11-04T04:25:00Z",
+            "stepNo": null
+          }
+        ],
+        "evidence": [
+          {
+            "id": 44,
+            "mediaType": "IMAGE",
+            "channel": null,
+            "url": "https://.../image.jpg",
+            "status": "PENDING",
+            "contentType": null,
+            "sizeBytes": null,
+            "durationMs": null,
+            "storedAt": null,
+            "createdAt": "2026-11-04T04:20:57Z"
+          }
+        ]
+      },
+      "total": null,
+      "extend": null
+    }
+
+    Error 404 NOT_FOUND: the alert does not exist in this tenant.
+
+
+5. ALARMS AND EVENTS APIS (VENDOR-FIRST)
+----------------------------------------
+Each call asks GPSTrackTech first, saves the result and returns it. If the vendor fails,
+the saved data is returned instead. Call these on screen open or Search, not on a timer.
+
+Permission: alarm.read
+
+5.1 AI events by time range
+    GET /api/v1/alarms/ai
+
+    Query parameter   Required   Default   Description
+    from              Yes                  Start time (UTC)
+    to                Yes                  End time (UTC); range at most 31 days
+    alarmTypeIds      No         all       Alarm type ids (several allowed)
+    deviceIds         No         all       Local device ids, at most 100
+    pageNumber        No         1         Page, starting at 1
+    pageSize          No         20        1 to 100
+
+    Request:
+    GET /api/v1/alarms/ai?from=2026-11-04T00:00:00Z&to=2026-11-04T23:59:59Z&pageNumber=1&pageSize=20
+    Authorization: Bearer <accessToken>
+
+    Response 200:
+    {
+      "code": 200,
+      "msg": "Success",
+      "data": [
+        {
+          "id": 837,
+          "vendorAlarmId": "2117785541147627520",
+          "deviceId": 1215,
+          "terminalNo": "13600000003",
+          "deviceName": "AP29Z0001",
+          "alarmTypeId": 208,
+          "alarmName": "Pedestrian Collision",
+          "alarmTime": "2026-11-04T04:20:54Z",
+          "vendorAlarmTime": "2026-11-04 09:50:54",
+          "endedAt": null,
+          "severity": 3,
+          "speedKmh": 42.0,
+          "lat": 17.4239,
+          "lon": 78.4483,
+          "durationSeconds": 3,
+          "videoUrl": "https://.../clip.mp4",
+          "imageUrl": "https://.../image.jpg",
+          "handlingStatus": "NEW"
+        }
+      ],
+      "total": 34,
+      "extend": {
+        "source": "VENDOR",
+        "stale": false,
+        "fallbackReason": null,
+        "syncedAt": null,
+        "persisted": true,
+        "message": null
+      }
+    }
+
+5.2 Routine alarms by time range
+    GET /api/v1/alarms/routine
+
+    Query parameters: same as 5.1.
+
+    Request:
+    GET /api/v1/alarms/routine?from=2026-11-04T00:00:00Z&to=2026-11-04T23:59:59Z&pageNumber=1&pageSize=20
+    Authorization: Bearer <accessToken>
+
+    Response 200: same format as 5.1, for example:
+    {
+      "code": 200,
+      "msg": "Success",
+      "data": [
+        {
+          "id": 829,
+          "vendorAlarmId": "R5f2c...",
+          "deviceId": 1215,
+          "terminalNo": "13600000003",
+          "deviceName": "AP29Z0001",
+          "alarmTypeId": 33,
+          "alarmName": "Storage Failure",
+          "alarmTime": "2026-11-04T02:54:27Z",
+          "vendorAlarmTime": "2026-11-04 08:24:27",
+          "endedAt": null,
+          "severity": 3,
+          "speedKmh": 0.0,
+          "lat": 17.4239,
+          "lon": 78.4483,
+          "durationSeconds": null,
+          "videoUrl": null,
+          "imageUrl": null,
+          "handlingStatus": "NEW"
+        }
+      ],
+      "total": 1,
+      "extend": {
+        "source": "VENDOR",
+        "stale": false,
+        "fallbackReason": null,
+        "syncedAt": null,
+        "persisted": true,
+        "message": null
+      }
+    }
+
+    A routine alarm that cannot be stored is still returned, with "id": null and
+    "severity": null. Its alert and notification do not exist.
+
+5.3 Routine alarms of the last 24 hours
+    GET /api/v1/alarms/routine/recent
+
+    Query parameter   Required   Default   Description
+    alarmTypeIds      No         all       Alarm type ids (several allowed)
+    deviceIds         No         all       Local device ids, at most 100
+    pageNumber        No         1         Page, starting at 1
+    pageSize          No         20        1 to 100
+
+    Request:
+    GET /api/v1/alarms/routine/recent?pageNumber=1&pageSize=20
+    Authorization: Bearer <accessToken>
+
+    Response 200: same format as 5.2.
+
+5.4 Where the data came from (extend, on all three APIs)
+    Field            Meaning
+    source           VENDOR (fresh) or LOCAL (saved data)
+    stale            true when the data is not confirmed fresh
+    fallbackReason   Why saved data was used: VENDOR_EMPTY, VENDOR_NOT_CONFIGURED,
+                     VENDOR_UNREACHABLE, VENDOR_TIMEOUT, VENDOR_RATE_LIMITED, VENDOR_ERROR,
+                     VENDOR_INVALID_RESPONSE, NOT_LINKED_TO_VENDOR
+    syncedAt         When the saved data was last synced, if known
+    persisted        For VENDOR: whether the data was saved
+    message          Text to show the user; also returned in msg
+
+    When the vendor is down, the response is still 200:
+    "msg": "Vendor unavailable; showing previously stored data"
+    "extend": {
+      "source": "LOCAL",
+      "stale": true,
+      "fallbackReason": "VENDOR_UNREACHABLE",
+      "syncedAt": null,
+      "persisted": null,
+      "message": "Vendor unavailable; showing previously stored data"
+    }
+
+5.5 Errors for 5.1 to 5.3
+    400 VALIDATION_FAILED or INVALID_VALUE
+                         from or to is missing (5.1, 5.2), from is after to, the range is
+                         over 31 days, or more than 100 devices are selected
+    401                  Token missing, invalid or expired
+    403 FORBIDDEN        The user's role does not have alarm.read
+    404 NOT_FOUND        A deviceId does not exist in this tenant
+    503 DATA_UNAVAILABLE The vendor is down and nothing is saved locally
+
+    If a tenant has more than 100 active devices, the UI must send deviceIds. Without
+    them the call returns 400.
+
+
+6. ERROR RESPONSE FORMAT
+------------------------
+Every error uses the same format:
+{
+  "code": 400,
+  "msg": "Invalid value",
+  "data": null,
+  "total": null,
+  "extend": {
+    "errorCode": "INVALID_VALUE",
+    "fieldErrors": [],
+    "requestId": "..."
+  }
+}
+
+
+7. SUGGESTED UI POLLING RULES
+-----------------------------
+- Poll /notifications/poll every 5 seconds while the user is logged in.
+- Poll /alerts every 5 seconds only while the Alerts screen is open.
+- Start the next poll after the previous one finishes, so slow calls do not overlap.
+- Pause polling when the browser tab is hidden, and poll once when it becomes visible.
+- Stop polling on 401, refresh the token, then start again.
+- On a network error or 5xx, keep showing the last data and try again at the next poll.
+- After Read all, or after clicking a notification, poll once straight away so the
+  counts update immediately.
+- New alarm delay: about 10 seconds at most after the vendor has it (5 seconds for the
+  backend poll and 5 seconds for the UI poll).

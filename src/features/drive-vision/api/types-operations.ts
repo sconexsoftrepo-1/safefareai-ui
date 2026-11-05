@@ -668,7 +668,7 @@ export interface AlertRow {
   alarmTypeId?: number;
   alarmName?: string;
   kind?: string;
-  /** Integer scale undocumented. */
+  /** 1 severe, 2 moderate, 3 general, 4 notice (docs/contracts/polling-apis.txt). */
   severity?: number;
   speedKmh?: number;
   lat?: number;
@@ -676,7 +676,7 @@ export interface AlertRow {
   address?: string;
   durationSeconds?: number;
   mediaStatus?: string;
-  /** Values undocumented. */
+  /** NEW, ACKNOWLEDGED, IN_PROGRESS, RESOLVED, DISMISSED. */
   handlingStatus?: string;
   handlingOutcome?: string;
   handledBy?: number;
@@ -775,6 +775,34 @@ export interface NotificationDto {
   createdAt?: string;
   readAt?: string;
   read?: boolean;
+  /** Alarm notifications only; "Alert assigned" and other types have none. */
+  details?: NotificationDetails | null;
+}
+
+export interface NotificationDetails {
+  kind?: string;
+  alarmId?: number;
+  deviceId?: number;
+  deviceName?: string;
+  terminalNo?: string;
+  alarmTypeId?: number;
+  alarmName?: string;
+  alarmTime?: string;
+  /** The vendor's local clock as text, with no time zone: "2026-11-04 09:50:54". */
+  vendorAlarmTime?: string;
+}
+
+export interface NotificationTabDto {
+  type?: string;
+  unread?: number;
+  items?: NotificationDto[];
+}
+
+/** GET /notifications/poll (docs/contracts/polling-apis.txt; not in api-docs-v10.json). */
+export interface NotificationPollDto {
+  unreadTotal?: number;
+  aiEvents?: NotificationTabDto;
+  alarm?: NotificationTabDto;
 }
 
 export interface NotificationListQuery {

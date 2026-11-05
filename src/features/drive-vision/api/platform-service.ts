@@ -12,6 +12,11 @@ export const platformService = {
     return toList(await api.get<TenantDto[]>("/platform/tenants", { signal }));
   },
 
+  /** GET /api/v1/platform/tenants?status=ACTIVE: the tenants the Safe-Fare Admin can work in. */
+  async activeTenants(signal?: AbortSignal): Promise<ListResult<TenantDto>> {
+    return toList(await api.get<TenantDto[]>("/platform/tenants", { query: { status: "ACTIVE" }, signal }));
+  },
+
   /**
    * POST /api/v1/platform/tenants {CreateTenantRequest} → CreatedTenantDto. NOT in the V10 spec: contract from
    * the backend team (observed 201 response). PLATFORM_WIDE: sent without a tenant header even when a tenant is

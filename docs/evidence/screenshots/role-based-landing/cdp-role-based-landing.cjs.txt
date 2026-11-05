@@ -1,0 +1,190 @@
+// Role-based landing (headless Edge via CDP, production build, the real login form). EVERY */api/v1/* request is answered
+// locally with SYNTHETIC data: the accounts below exist only in this script, nothing reaches the backend, and no real
+// credentials are used. This proves the frontend's routing, not the live accounts.
+const fs = require("fs");
+const path = require("path");
+const ROOT = "C:/Sconex-Projects/Drive Vision";
+const OUT = `${ROOT}/docs/evidence/screenshots/role-based-landing`;
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const VIEWPORTS = [[1366, 768], [768, 1024], [390, 844]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { IDENTITIES } = require(`${ROOT}/tests/helpers/identities.cjs`);
+const driver = JSON.parse(fs.readFileSync(`${ROOT}/tests/fixtures/driver-me-permissions.json`, "utf8"));
+delete driver._source;
+
+const ACCOUNTS = {
+  admin: { mode: "Safe-Fare Admin", login: "admin@example.invalid", identity: { ...IDENTITIES.platformAdmin, userId: 1 }, landing: "/drive-vision/platform", other: "/drive-vision/tenants" },
+  fleet: { mode: "Tenant user", login: "fleet@example.invalid", identity: { ...IDENTITIES.fleetOwner, roleCode: "FLEET OWNER", roleId: 2, userId: 3, tenantId: 1, homeTenantId: 1 }, landing: "/drive-vision/overview", other: "/drive-vision/alerts" },
+  driver: { mode: "Tenant user", login: "driver@example.invalid", identity: driver, landing: "/drive-vision/my-work", other: "/drive-vision/my-work/leave" },
+};
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+
+let current = null;
+let refreshFails = false;
+let trail = [];
+
+async function onPaused({ requestId, request }) {
+  const p = new URL(request.url).pathname.replace(/^.*\/api\/v1/, "");
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let status = 200, res = ok([], 0);
+  if (p === "/auth/login") {
+    const body = JSON.parse(request.postData);
+    current = Object.values(ACCOUNTS).find((a) => a.login === body.login) ?? null;
+    res = ok({ accessToken: jwt(), tokenType: "Bearer", expiresIn: 3600, refreshToken: "synthetic", refreshExpiresIn: 86400 });
+  } else if (p === "/auth/refresh") {
+    if (refreshFails) { status = 401; res = { code: 401, msg: "Expired", data: null, extend: { errorCode: "INVALID_TOKEN", fieldErrors: [], requestId: "mock" } }; }
+    else res = ok({ accessToken: jwt(), tokenType: "Bearer", expiresIn: 3600, refreshToken: "synthetic", refreshExpiresIn: 86400 });
+  } else if (p === "/auth/logout") res = ok(null);
+  else if (p === "/me") res = ok({ id: current?.identity.userId, displayName: `Synthetic ${current?.login.split("@")[0]}`, email: current?.login });
+  else if (p === "/me/permissions") res = ok(current?.identity);
+  else if (p === "/driver/me") res = ok({ id: 1, name: "Synthetic driver", status: "ACTIVE" });
+  else if (p === "/driver/assignment") res = ok({});
+  else if (p === "/dashboard/overview" || p.startsWith("/platform/overview")) res = ok({});
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: false }); }
+async function go(url, ms = 1600) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+const where = () => evaluate(`location.pathname + location.search`);
+async function waitPath(pred, ms = 6000) { const end = Date.now() + ms; while (Date.now() < end) { const w = await where(); if (pred(w)) return w; await sleep(100); } return where(); }
+async function mouseClick(expr) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) return false;
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(300);
+  return true;
+}
+async function fill(selector, value) {
+  await mouseClick(`document.querySelector(${JSON.stringify(selector)})`);
+  await send("Input.insertText", { text: value });
+  await sleep(80);
+}
+const btn = (t) => `[...document.querySelectorAll('button')].find(b => b.offsetParent !== null && b.textContent.trim() === ${JSON.stringify(t)})`;
+
+async function login(account) {
+  await mouseClick(btn(account.mode));
+  if (account.mode === "Tenant user") await fill("[name=tenantCode]", "SYNTHETIC");
+  await fill("[name=login]", account.login);
+  await fill("[name=password]", "synthetic-test-value");
+  trail = [];
+  await mouseClick(`document.querySelector('button[type=submit]')`);
+  const landed = await waitPath((w) => !w.startsWith("/login"));
+  await sleep(900);
+  return landed;
+}
+async function logout() {
+  await mouseClick(`[...document.querySelectorAll('[aria-label="Open profile menu"]')].find(b => b.offsetParent !== null)`);
+  await sleep(250);
+  await mouseClick(`[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.trim() === 'Sign out')`);
+  return waitPath((w) => w.startsWith("/login"));
+}
+const denied = () => evaluate(`document.body.innerText.includes("You don't have access to this page")`);
+const overflow = () => evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
+const history = async () => { const h = await send("Page.getNavigationHistory"); return h; };
+async function traverse(delta) { const h = await history(); await send("Page.navigateToHistoryEntry", { entryId: h.entries[h.currentIndex + delta].id }); await sleep(1100); }
+
+const R = { runs: {} };
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+    else if (msg.method === "Page.frameNavigated") trail.push(msg.params.frame.url.replace(APP, ""));
+    else if (msg.method === "Page.navigatedWithinDocument") trail.push(msg.params.url.replace(APP, ""));
+  };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+
+  // Every account in turn on one tab, in an order where each follows a different one, at every viewport.
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    await go(`${APP}/login`, 1200);
+    await evaluate(`sessionStorage.clear()`);
+    await go(`${APP}/login`, 1200);
+    for (const key of ["driver", "admin", "fleet", "driver"]) {
+      const a = ACCOUNTS[key];
+      const run = { account: key, startedFrom: await where() };
+      run.landed = await login(a);
+      run.navigations = [...trail];
+      run.ok = run.landed === a.landing;
+      await shot(`${key}-landing-${w}x${h}`);
+      await send("Page.reload"); await sleep(1800);
+      run.afterRefresh = await where();
+      await go(`${APP}${a.other}`, 1600);
+      run.otherPage = await where();
+      run.otherPageDenied = await denied();
+      run.overflow = await overflow();
+      run.afterLogout = await logout();
+      (R.runs[`${w}x${h}`] ??= []).push(run);
+      await sleep(500);
+    }
+  }
+  await viewport(1366, 768);
+
+  // Entry points, with a live session.
+  R.entry = {};
+  for (const [key, a] of Object.entries(ACCOUNTS)) {
+    await go(`${APP}/login`, 1000);
+    await login(a);
+    trail = [];
+    await go(`${APP}/`, 2200);
+    R.entry[key] = { root: await where(), trail: [...trail] };
+    await go(`${APP}/drive-vision`, 1800);
+    R.entry[key].index = await where();
+    await logout();
+  }
+
+  // Deep links and history.
+  await go(`${APP}/login`, 900);
+  await login(ACCOUNTS.admin);
+  await go(`${APP}/drive-vision/overview`, 1800);
+  R.adminFleetOverview = { path: await where(), denied: await denied() };
+  await go(`${APP}/drive-vision/tenants`, 1500);
+  await traverse(-1); R.back = await where();
+  await traverse(1); R.forward = await where();
+  await go(`${APP}/drive-vision/my-work`, 1800);
+  R.adminDeniedDeepLink = { path: await where(), denied: await denied() };
+  await shot("admin-denied-deep-link-1366x768");
+  await sleep(1200);
+  R.adminDeniedStable = await where();
+  await mouseClick(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Sign out')`);
+  await waitPath((w) => w.startsWith("/login"));
+  R.loginAfterDeniedSignOut = await where();
+
+  // Stale link: the exact URL the bug produced.
+  await go(`${APP}/login?next=${encodeURIComponent("/drive-vision/my-work")}`, 1000);
+  R.staleLink = { landed: await login(ACCOUNTS.admin), trail: [...trail] };
+  await shot("admin-stale-next-link-1366x768");
+  await logout();
+
+  // Deep link kept through sign-in, unauthenticated.
+  await go(`${APP}/drive-vision/alerts`, 1600);
+  R.deepLinkLogin = { login: await where(), landed: await login(ACCOUNTS.fleet) };
+  await logout();
+
+  // An expired session, then a different account.
+  await login(ACCOUNTS.driver);
+  await evaluate(`(() => { const k = 'safefare:session:v1'; const s = JSON.parse(sessionStorage.getItem(k)); s.accessExpiresAt = 1; sessionStorage.setItem(k, JSON.stringify(s)); })()`);
+  refreshFails = true;
+  await go(`${APP}/drive-vision/my-work`, 2200);
+  R.expired = { login: await where() };
+  refreshFails = false;
+  R.expired.landed = await login(ACCOUNTS.admin);
+
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ note: "MOCKED: synthetic accounts and responses through the real login form. Nothing reached the backend. No live account was used.", results: R }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch(async (e) => { console.error(e); await shot("failure").catch(() => {}); fs.writeFileSync(path.join(OUT, "results.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

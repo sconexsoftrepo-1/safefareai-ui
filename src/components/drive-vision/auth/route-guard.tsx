@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CircleSlash, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { decideRoute, homeScreen, landingRedirect } from "@/features/drive-vision/access/access-policy";
+import { decideRoute, homeScreen, landingRedirect, revokedRouteRedirect } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { signOut, useAuth } from "@/features/drive-vision/store/auth-store";
 import { ALL_NAV_ITEMS } from "../navigation/nav-config";
@@ -22,11 +22,23 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
   const status = useAuth((s) => s.status);
   const access = useAccess();
   const decision = decideRoute(status, access, pathname);
-  // The default landing (Overview) is fleet-only; send e.g. a driver to their own home screen instead.
+  // Generic entry points resolve to this user's own default; nothing is rendered until they do.
   const landing = decision.kind === "forbidden" ? landingRedirect(access, pathname) : null;
   useEffect(() => {
     if (landing) router.replace(landing);
   }, [landing, router]);
+
+  // The page this user had open: if a permission re-read takes it away, they move to their default instead of a dead end.
+  const openPath = useRef<string | null>(null);
+  useEffect(() => {
+    if (decision.kind === "allow") openPath.current = pathname;
+    else if (decision.kind === "forbidden") {
+      const fallback = revokedRouteRedirect(access, pathname, openPath.current === pathname);
+      openPath.current = null;
+      if (fallback) router.replace(fallback);
+    }
+  }, [decision.kind, access, pathname, router]);
+
   if (landing) return null;
 
   // AuthGate owns the unauthenticated / checking / session-error states and never renders the shell for them.

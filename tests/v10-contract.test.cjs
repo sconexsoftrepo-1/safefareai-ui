@@ -119,7 +119,21 @@ const OFF_SPEC_CALLS = {
   "POST /devices/{}/stops/recalculate": "Rebuild stop visits and alerts",
   // Alcohol detection — contract from the backend team 2026-11-03 (docs/contracts/alcohol-detection-api.txt); tests/sensors.test.cjs.
   "GET /devices/{}/sensors/alcohol": "Latest alcohol detection result",
+  // Role menu permissions — contract from the backend team 2026-11-04 (docs/contracts/role-menu-permission-api.txt); tests/role-menu-permission.test.cjs.
+  "GET /roles/{}/menu-permissions": "A role's menu permission grid",
+  "PUT /roles/{}/menu-permissions": "Save a role's menu permission grid",
+  // Polling — contract from the backend team 2026-11-04 (docs/contracts/polling-apis.txt); tests/notifications-alerts-polling.test.cjs.
+  "GET /notifications/poll": "Unread counts and items per tab",
 };
+
+/** Query parameters outside V10, each from a backend-supplied contract. */
+const OFF_SPEC_QUERY = [
+  /GET \/api\/v1\/platform\/tenants \?status: query parameter sent by the frontend is not a V10 parameter/,
+  // docs/contracts/polling-apis.txt 3.3; tests/notifications-alerts-polling.test.cjs.
+  /POST \/api\/v1\/notifications\/read-all \?type: query parameter sent by the frontend is not a V10 parameter/,
+  // docs/contracts/polling-apis.txt 3.1 (`details` on a notification).
+  /\/api\/v1\/notifications[^ ]* data(\[\])?\.details: field read by the frontend is not in the V10 response schema/,
+];
 
 test("every call site matches a V10 operation (method + path), except the documented off-spec calls", () => {
   const off = RESULT.sites.filter((s) => !s.operation).map((s) => `${s.method} ${s.path}`);
@@ -128,7 +142,7 @@ test("every call site matches a V10 operation (method + path), except the docume
 });
 
 test("no call site contradicts V10: query parameters, required parameters, request bodies, response fields, value sets, auth", () => {
-  same(findings("error").filter((f) => !(/no V10 operation matches/.test(f.msg) && Object.keys(OFF_SPEC_CALLS).some((k) => f.key.startsWith(`${k} `)))).map((f) => `${f.key}: ${f.msg} (${f.site})`), []);
+  same(findings("error").filter((f) => !(/no V10 operation matches/.test(f.msg) && Object.keys(OFF_SPEC_CALLS).some((k) => f.key.startsWith(`${k} `)))).map((f) => `${f.key}: ${f.msg} (${f.site})`).filter((line) => !OFF_SPEC_QUERY.some((r) => r.test(line))), []);
 });
 
 test("warnings are exactly the documented ones", () => {
@@ -288,7 +302,6 @@ const CASES = [
   ["role permissions", (s) => s.roles.rolePermissions(4), { method: "GET", path: "/api/v1/roles/4/permissions" }],
   ["add role permissions", (s) => s.roles.addRolePermissions(4, ["device.read"]), { method: "POST", path: "/api/v1/roles/4/permissions", body: { permissionCodes: ["device.read"] } }],
   ["remove role permissions", (s) => s.roles.removeRolePermissions(4, ["device.read", "driver.read"]), { method: "DELETE", path: "/api/v1/roles/4/permissions", query: { codes: ["device.read", "driver.read"] } }],
-  ["replace role permissions", (s) => s.roles.replaceRolePermissions(4, ["device.read", "driver.read"]), { method: "PUT", path: "/api/v1/roles/4/permissions", body: { permissionCodes: ["device.read", "driver.read"] } }],
   ["admin permissions", (s) => s.roles.listPermissions(), { method: "GET", path: "/api/v1/permissions" }],
   ["create permission", (s) => s.roles.createPermission({ code: "report.export", description: "Export", scope: "TENANT" }), { method: "POST", path: "/api/v1/permissions", body: { code: "report.export", description: "Export", scope: "TENANT" } }],
   ["update permission", (s) => s.roles.updatePermission("report.export", { description: "Export", scope: "PLATFORM" }), { method: "PUT", path: "/api/v1/permissions/report.export", body: { description: "Export", scope: "PLATFORM" } }],

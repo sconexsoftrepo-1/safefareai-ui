@@ -604,6 +604,56 @@ export interface PermissionDto {
   scope?: string;
 }
 
+// Role menu permissions: NOT in the V10 spec; contract from the backend team, 2026-11-04
+// (docs/contracts/role-menu-permission-api.txt).
+
+/** One checkbox of the role menu grid. `null` in a parent field = no such operation (no checkbox). */
+export interface RoleMenuCellDto {
+  permissionCode?: string;
+  /** The checkbox is ticked. */
+  granted?: boolean;
+  /** The signed-in user may change it. */
+  editable?: boolean;
+}
+
+export interface RoleMenuActionCellDto extends RoleMenuCellDto {
+  label?: string;
+}
+
+export interface RoleMenuResourceDto {
+  label?: string;
+  view?: RoleMenuCellDto | null;
+  add?: RoleMenuCellDto | null;
+  edit?: RoleMenuCellDto | null;
+  delete?: RoleMenuCellDto | null;
+  actions?: RoleMenuActionCellDto[];
+}
+
+export interface RoleMenuDto {
+  menuId?: number;
+  menuKey?: string;
+  title?: string;
+  icon?: string;
+  parentId?: number | null;
+  sortOrder?: number;
+  /** Module checkbox; null = the menu needs no permission. */
+  access?: RoleMenuCellDto | null;
+  resources?: RoleMenuResourceDto[];
+}
+
+/** GET / PUT /api/v1/roles/{roleId}/menu-permissions. */
+export interface RoleMenuPermissionsDto {
+  tenantId?: number;
+  roleId?: number;
+  roleCode?: string;
+  fullAccess?: boolean;
+  /** false = the whole grid is read-only. */
+  editable?: boolean;
+  menus?: RoleMenuDto[];
+  /** Permissions of the role that no checkbox shows; the backend keeps them on save. */
+  otherPermissionCodes?: string[];
+}
+
 /** GET/POST/DELETE /api/v1/roles/{id}/permissions → `RolePermissionsDto`. */
 export interface RolePermissionsDto {
   roleId?: number;

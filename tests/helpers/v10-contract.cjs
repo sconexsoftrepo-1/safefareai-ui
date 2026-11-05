@@ -258,7 +258,8 @@ function collectCallSites() {
           method = callee.name.text.toUpperCase();
           pathArg = node.arguments[0];
           const hasBody = ["POST", "PUT", "PATCH"].includes(method);
-          bodyNode = hasBody ? node.arguments[1] : null;
+          // A literal `undefined` sends no body: it only holds the place of the options argument.
+          bodyNode = hasBody && node.arguments[1]?.getText() !== "undefined" ? node.arguments[1] : null;
           optsNode = hasBody ? node.arguments[2] : node.arguments[1];
           queryNode = objectProp(optsNode, "query");
         } else if (ts.isIdentifier(callee) && callee.text === "sourced") {

@@ -7,8 +7,8 @@ import { AlertCircle, ArrowRight, Building2, ChartColumn, Clock, Eye, EyeOff, Lo
 import { Input } from "@/components/ui/input";
 import { API_BASE_URL, API_DEBUG, DEFAULT_TENANT_CODE } from "@/features/drive-vision/api/config";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
-import { bootstrapAuth, signIn, useAuth } from "@/features/drive-vision/store/auth-store";
-import { defaultLanding } from "@/features/drive-vision/access/access-policy";
+import { bootstrapAuth, signIn, useAuth, mayResumeRoute } from "@/features/drive-vision/store/auth-store";
+import { postLoginRoute } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { cn } from "@/lib/utils";
 import truck from "@/assets/truck.png";
@@ -114,8 +114,6 @@ export function LoginScreen() {
   const params = useSearchParams();
   const requested = safeNext(params.get("next"));
   const access = useAccess();
-  // No (valid) next: the default for this identity — platform dashboard for the Safe-Fare Admin, else Overview.
-  const next = requested ?? defaultLanding(access) ?? FALLBACK_PATH;
   const expired = params.get("reason") === "expired";
   const status = useAuth((s) => s.status);
 
@@ -131,8 +129,9 @@ export function LoginScreen() {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated") router.replace(next);
-  }, [status, next, router]);
+    if (status !== "authenticated") return;
+    router.replace(postLoginRoute(access, mayResumeRoute(access.identity) ? requested : null) ?? FALLBACK_PATH);
+  }, [status, access, requested, router]);
 
   const set = (field: Field) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setValues((v) => ({ ...v, [field]: e.target.value }));
