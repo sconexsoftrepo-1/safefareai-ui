@@ -24,6 +24,8 @@ import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
 import { useAccess, useCan } from "@/features/drive-vision/access/use-access";
 import { safeHttpUrl } from "../reports/reports-model";
+import { EvidenceViewer } from "./evidence-viewer";
+import { availabilityLabel, evidenceFromRow, type EvidenceItem } from "./evidence-model";
 import { ALARM_PAGE_SIZE, alarmLabel, deviceLabel, incidentQuery, severityLabel, type AlertKindParam, type AlertsTab, type AlertsView } from "./alerts-model";
 
 const SEARCH_DEBOUNCE_MS = 350;
@@ -216,6 +218,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
   const [pending, setPending] = useState<Pending | null>(null);
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<ResolveOutcome | "">("");
+  const [viewing, setViewing] = useState<EvidenceItem | null>(null);
   const canHandle = useCan("alerts.handle");
   const detail = updated && updated.id === id ? updated.data : detailQ.data;
   const alert = detail?.alert;
@@ -314,16 +317,30 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
               ) : (
                 <ul className="divide-y divide-line text-[13px]">
                   {evidence.map((e, i) => {
-                    // Placeholder hosts (the BFF returned https://example.invalid/… on 2026-10-29, #29) are never linked.
+                    const item = id !== null ? evidenceFromRow(e, id, i, evidence.length > 1) : null;
+                    // A type the viewer can't show keeps its link. Placeholder hosts (#29) are never linked.
                     const url = safeHttpUrl(e.url);
                     return (
                       <li key={e.id ?? i} className="flex items-center gap-2 py-1.5">
                         <span className="min-w-0 flex-1 truncate">
                           {e.mediaType ?? "Media"}
                           {typeof e.channel === "number" ? ` · ch ${e.channel}` : ""}
-                          {e.status ? ` · ${e.status}` : ""}
+                          {item ? (availabilityLabel(item) ? ` · ${availabilityLabel(item)}` : "") : e.status ? ` · ${e.status}` : ""}
                         </span>
-                        {url ? (
+                        {item?.state === "ready" ? (
+                          <button type="button" onClick={() => setViewing(item)} className="text-xs font-medium text-brand-deep hover:underline" data-testid="evidence-open">
+                            Open
+                          </button>
+                        ) : item ? (
+                          <>
+                            <span className={item.noteIsError ? "text-xs text-danger" : "text-xs text-ink-muted"} title={item.state === "unusable" ? "The server returned a link that can't be opened (placeholder or non-web address)" : undefined} data-testid="evidence-unavailable">
+                              {item.note}
+                            </span>
+                            <button type="button" disabled className="cursor-not-allowed text-xs font-medium text-ink-muted" data-testid="evidence-open-disabled">
+                              Open
+                            </button>
+                          </>
+                        ) : url ? (
                           <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-brand-deep hover:underline">
                             Open
                           </a>
@@ -337,6 +354,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                   })}
                 </ul>
               )}
+              <EvidenceViewer item={viewing} context={alarmLabel(alert, typeById)} onClose={() => setViewing(null)} />
             </section>
 
             <section aria-labelledby="inc-history">

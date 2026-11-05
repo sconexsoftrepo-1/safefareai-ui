@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { ExternalLink, FileVideo, ImageIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { FileVideo, ImageIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
 import type { AlarmDto, AlarmTypeDto } from "@/features/drive-vision/api/types";
 import { formatLocalDateTime, formatSeconds } from "@/features/drive-vision/utils/format";
 import { formatLatLon } from "@/features/drive-vision/utils/geo";
@@ -12,7 +12,9 @@ import { EmptyState } from "../shared/feedback";
 import { UnavailableState } from "../shared/api-states";
 import { GeoMap } from "../map/geo-map";
 import { snappedBounds } from "../map/projection";
-import { alarmLabel, alarmPosition, deviceLabel, safeMediaUrl, severityLabel, type AlarmKind } from "./alerts-model";
+import { alarmLabel, alarmPosition, deviceLabel, severityLabel, type AlarmKind } from "./alerts-model";
+import { EvidenceViewer } from "./evidence-viewer";
+import { evidenceFromAlarm, type EvidenceItem } from "./evidence-model";
 
 /** Shown wherever the old demo offered acknowledge / assign / resolve / notes. */
 export const HANDLING_UNSUPPORTED =
@@ -65,32 +67,36 @@ export function EventDetailDrawer({
 function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<number | undefined, AlarmTypeDto> }) {
   const pos = useMemo(() => alarmPosition(alarm), [alarm]);
   const bounds = useMemo(() => (pos ? snappedBounds([pos]) : null), [pos]);
-  const image = safeMediaUrl(alarm.imageUrl);
-  const video = safeMediaUrl(alarm.videoUrl);
+  const media = [evidenceFromAlarm(alarm, "image"), evidenceFromAlarm(alarm, "video")].filter((m): m is EvidenceItem => m !== null);
+  const [viewing, setViewing] = useState<EvidenceItem | null>(null);
   const type = typeById.get(alarm.alarmTypeId);
 
   return (
     <div className="space-y-6">
       <section aria-label="Evidence" className="flex flex-wrap items-center gap-2 rounded-2xl border border-line p-3 text-[13px]">
-        {image || video ? (
+        {media.length ? (
           <>
             <span className="text-ink-muted">Evidence from the vendor:</span>
-            {image ? (
-              <a href={image} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-info hover:underline">
-                <ImageIcon className="size-3.5" aria-hidden /> Image <ExternalLink className="size-3" aria-hidden />
-              </a>
-            ) : null}
-            {video ? (
-              <a href={video} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-info hover:underline">
-                <FileVideo className="size-3.5" aria-hidden /> Video <ExternalLink className="size-3" aria-hidden />
-              </a>
-            ) : null}
+            {media.map((m) => {
+              const Icon = m.kind === "image" ? ImageIcon : FileVideo;
+              const label = m.kind === "image" ? "Image" : "Video";
+              return m.state === "ready" ? (
+                <button key={m.key} type="button" onClick={() => setViewing(m)} className="inline-flex items-center gap-1 font-medium text-info hover:underline" data-testid="evidence-open">
+                  <Icon className="size-3.5" aria-hidden /> {label}
+                </button>
+              ) : (
+                <span key={m.key} className="inline-flex items-center gap-1 text-ink-muted" data-testid="evidence-unavailable">
+                  <Icon className="size-3.5" aria-hidden /> {label}: {m.note}
+                </span>
+              );
+            })}
           </>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-ink-muted">
             <ImageIcon className="size-3.5" aria-hidden /> No image or video attached to this alarm.
           </span>
         )}
+        <EvidenceViewer item={viewing} context={alarmLabel(alarm, typeById)} onClose={() => setViewing(null)} />
       </section>
 
       <div className="grid gap-5 md:grid-cols-2">

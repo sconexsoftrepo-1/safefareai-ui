@@ -21,7 +21,7 @@ import { HEADER_CONTROL, HEADER_ICON, HEADER_PILL } from "./header-styles";
 import { transitions } from "../shared/motion";
 
 /**
- * Section switcher (reference: centred pill nav with a black active pill). Each section
+ * Section switcher: centred nav with a coral active highlight. Each section
  * opens its first page; the rail below lists every page.
  */
 function SectionNav() {
@@ -40,11 +40,11 @@ function SectionNav() {
             href={group.items[0].href}
             aria-current={active ? "true" : undefined}
             className={cn(
-              "relative rounded-full px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none @min-[1180px]:px-4",
-              active ? "text-white" : "text-ink-muted hover:text-ink"
+              "relative rounded-control px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none @min-[1180px]:px-4",
+              active ? "font-semibold text-brand-deep" : "text-ink hover:bg-powder/60"
             )}
           >
-            {active ? <motion.span layoutId="section-active" className="absolute inset-0 rounded-full bg-ink" transition={transitions.layout} aria-hidden /> : null}
+            {active ? <motion.span layoutId="section-active" className="absolute inset-0 rounded-control bg-brand-soft" transition={transitions.layout} aria-hidden /> : null}
             <span className="relative">{group.short ?? group.label}</span>
           </Link>
         );
@@ -96,7 +96,7 @@ export function DriveVisionTopbar({ onOpenNav, onOpenSearch }: { onOpenNav: () =
                   onClick={() => setAssistantOpen(!assistantOpen)}
                   aria-pressed={assistantOpen}
                   aria-label="Toggle Iris assistant"
-                  className={cn(HEADER_ICON, "hidden sm:grid", assistantOpen && "bg-ink text-white hover:bg-ink")}
+                  className={cn(HEADER_ICON, "hidden sm:grid", assistantOpen && "bg-brand-soft text-brand-deep hover:bg-brand-soft")}
                 >
                   <Sparkles className="size-[17px]" />
                 </button>

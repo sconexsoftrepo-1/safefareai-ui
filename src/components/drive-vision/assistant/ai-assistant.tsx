@@ -183,7 +183,7 @@ export function DriveVisionAIAssistant() {
             />
             <span
               className="relative grid size-12 place-items-center rounded-full border border-line/70 bg-surface transition-shadow duration-200 ease-dv group-focus-visible:ring-[3px] group-focus-visible:ring-brand/35"
-              style={{ boxShadow: "0 1px 2px rgb(31 30 38 / 0.06), 0 12px 28px -14px rgb(217 68 42 / 0.4)" }}
+              style={{ boxShadow: "0 1px 2px rgb(36 52 77 / 0.06), 0 12px 28px -14px rgb(217 68 42 / 0.4)" }}
             >
               <AssistantOrb />
             </span>

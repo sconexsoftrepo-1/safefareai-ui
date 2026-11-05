@@ -65,11 +65,9 @@ export function FleetStatusCard({ segments, total, online, issues }: { segments:
           </ResponsiveContainer>
           <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
             <div>
-              <p className="text-[23px] leading-none font-semibold tracking-tight tabular">{onlinePct}%</p>
-              <p className="mt-0.5 text-[11px] font-medium text-ink-muted">online</p>
-              <p className="text-[11px] text-ink-subtle tabular">
-                {online} of {total}
-              </p>
+              <p className="text-[26px] leading-none font-bold tracking-tight tabular">{total}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-ink-muted">vehicles</p>
+              <p className="text-[11px] text-ink-muted tabular">{onlinePct}% online</p>
             </div>
           </div>
         </motion.div>

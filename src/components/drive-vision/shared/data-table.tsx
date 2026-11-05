@@ -184,7 +184,7 @@ export function DataTable<T>({
                   aria-selected={selectable ? selected : undefined}
                   className={cn(
                     "group transition-colors duration-150 outline-none",
-                    onRowClick && "cursor-pointer hover:bg-surface-muted/80 focus-visible:bg-surface-muted focus-visible:shadow-[inset_3px_0_0_var(--dv-brand)]",
+                    onRowClick && "cursor-pointer hover:bg-powder/40 focus-visible:bg-powder/40 focus-visible:shadow-[inset_3px_0_0_var(--dv-brand)]",
                     (selected || active) && "bg-brand-tint hover:bg-brand-tint"
                   )}
                 >

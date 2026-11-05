@@ -33,7 +33,7 @@ export function SearchInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={label}
-        className="h-10 w-full rounded-full border border-line/80 bg-surface pr-9 pl-10 shadow-[0_1px_2px_rgb(31_30_38/0.04)] transition-[border-color,box-shadow] duration-150 ease-dv text-sm text-ink outline-none placeholder:text-ink-subtle hover:border-line-strong focus-visible:border-brand/60 focus-visible:ring-[3px] focus-visible:ring-brand/15 [&::-webkit-search-cancel-button]:hidden"
+        className="h-10 w-full rounded-control border border-line bg-surface pr-9 pl-10 shadow-[0_1px_2px_rgb(36_52_77/0.04)] transition-[border-color,box-shadow] duration-150 ease-dv text-sm text-ink outline-none placeholder:text-ink-subtle hover:border-line-strong focus-visible:border-brand/60 focus-visible:ring-[3px] focus-visible:ring-brand/15 [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <button
@@ -64,7 +64,7 @@ export function FilterSelect<V extends string>({
 }) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as V)}>
-      <SelectTrigger aria-label={label} className={cn("min-w-36 rounded-full border-line/80 bg-surface pl-4", className)}>
+      <SelectTrigger aria-label={label} className={cn("min-w-36 rounded-control border-line bg-surface pl-4", className)}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -96,7 +96,7 @@ export function SegmentedControl<V extends string>({
 }) {
   const id = useId();
   return (
-    <div role="radiogroup" aria-label={label} className={cn("inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-line/70 bg-surface p-1 shadow-[0_1px_2px_rgb(31_30_38/0.04)] scrollbar-none", className)}>
+    <div role="radiogroup" aria-label={label} className={cn("inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-control border border-line bg-surface p-1 shadow-[0_1px_2px_rgb(36_52_77/0.04)] scrollbar-none", className)}>
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -107,15 +107,15 @@ export function SegmentedControl<V extends string>({
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cn(
-              "relative inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium whitespace-nowrap transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none",
+              "relative inline-flex shrink-0 items-center gap-1.5 rounded-[7px] font-medium whitespace-nowrap transition-colors duration-200 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none",
               size === "sm" ? "h-7 px-2.5 text-xs" : "h-8 px-3.5 text-[13px]",
-              active ? "text-white" : "text-ink-muted hover:text-ink"
+              active ? "font-semibold text-brand-deep" : "text-ink hover:bg-powder/50"
             )}
           >
-            {active ? <motion.span layoutId={`seg-${id}`} className="absolute inset-0 rounded-full bg-ink" transition={transitions.layout} /> : null}
+            {active ? <motion.span layoutId={`seg-${id}`} className="absolute inset-0 rounded-[7px] bg-brand-soft" transition={transitions.layout} /> : null}
             <span className="relative">{o.label}</span>
             {o.count !== undefined ? (
-              <span className={cn("relative rounded-full px-1.5 text-[11px] tabular", active ? "bg-white/20" : "bg-surface-sunken")}>{o.count}</span>
+              <span className={cn("relative rounded-full px-1.5 text-[11px] tabular", active ? "bg-white/70" : "bg-surface-sunken")}>{o.count}</span>
             ) : null}
           </button>
         );

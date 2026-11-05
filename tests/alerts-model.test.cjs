@@ -47,10 +47,3 @@ test("alarmPosition rejects missing, out-of-range and 0,0 coordinates", () => {
   assert.equal(m.alarmPosition({ lon: 3 }), null);
 });
 
-test("safeMediaUrl only allows absolute http(s) links", () => {
-  assert.equal(m.safeMediaUrl("https://cdn.example/a.jpg"), "https://cdn.example/a.jpg");
-  assert.equal(m.safeMediaUrl("javascript:alert(1)"), null);
-  assert.equal(m.safeMediaUrl("data:image/png;base64,AA"), null);
-  assert.equal(m.safeMediaUrl("/relative.jpg"), null);
-  assert.equal(m.safeMediaUrl(undefined), null);
-});

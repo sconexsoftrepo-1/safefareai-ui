@@ -234,10 +234,10 @@ test("GA-04: enforced headers — framing limited to this origin, nosniff, refer
   assert.equal(header(hs, "Content-Security-Policy"), "frame-ancestors 'self'; object-src 'none'; base-uri 'self'");
 });
 
-test("GA-04: report-only CSP allows the configured BFF and base map, and nothing else external", () => {
+test("GA-04: report-only CSP allows the configured BFF, base map and evidence hosts, and nothing else external", () => {
   const env = { NODE_ENV: "production", NEXT_PUBLIC_API_BASE_URL: "https://bff.example.test/", NEXT_PUBLIC_MAPTILER_KEY: "k" };
   const csp = header(sec.securityHeaders(env), "Content-Security-Policy-Report-Only");
-  assert.match(csp, /connect-src 'self' https:\/\/bff\.example\.test https:\/\/api\.maptiler\.com;/);
+  assert.match(csp, /connect-src 'self' https:\/\/bff\.example\.test https:\/\/api\.maptiler\.com https:\/\/gpstracktech\.com https:\/\/\*\.gpstracktech\.com;/, "alert evidence hosts are the one addition");
   assert.match(csp, /worker-src 'self' blob:/);
   assert.match(csp, /frame-ancestors 'self'/);
   assert.doesNotMatch(csp, /unsafe-eval|ws:/, "no dev-only sources in production");

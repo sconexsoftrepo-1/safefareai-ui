@@ -11,10 +11,10 @@ type Accent = "neutral" | "brand" | "mint" | "sky" | "peach" | "lavender";
 const accentChip: Record<Accent, string> = {
   neutral: "bg-surface-sunken text-ink-muted",
   brand: "bg-brand-soft text-brand-deep",
-  mint: "bg-mint text-success",
-  sky: "bg-sky text-info",
-  peach: "bg-peach text-serious",
-  lavender: "bg-lavender text-ai-ink",
+  mint: "bg-powder text-info",
+  sky: "bg-powder text-info",
+  peach: "bg-brand-soft text-brand-deep",
+  lavender: "bg-powder text-info",
 };
 
 export interface MetricTrend {
@@ -85,8 +85,7 @@ export function TrendChip({ trend, inverted = false }: { trend: MetricTrend; inv
 /**
  * KPI card (reference "Total Spending" tile): muted label with an icon chip on the right,
  * a large value, then a trend chip and a short period/secondary line.
- * `tone="featured"` renders the soft coral tile (white-led wash, coral chip and hairline) — use
- * once per view for the headline KPI so it stands out without dominating the page.
+ * `tone="featured"` gives the headline KPI a coral chip and a coral label — use once per view.
  */
 export function MetricCard({
   label,
@@ -123,14 +122,9 @@ export function MetricCard({
     <div
       className={cn(
         "group @container relative flex h-full min-h-[132px] flex-col overflow-hidden rounded-card border p-[18px] transition-[box-shadow,border-color,transform] duration-200 ease-dv",
-        featured
-          ? "border-brand-line/80 bg-brand-wash shadow-brand-soft"
-          : tone === "muted"
-            ? "border-transparent bg-surface-muted"
-            : "border-line/60 bg-surface shadow-card",
+        tone === "muted" ? "border-line bg-surface" : "border-line bg-surface shadow-card",
         href && "group-hover/link:-translate-y-0.5 group-active/link:translate-y-0 group-active/link:duration-75",
-        href && featured && "group-hover/link:border-brand-line group-hover/link:shadow-brand",
-        href && !featured && "group-hover/link:border-line-strong group-hover/link:bg-surface group-hover/link:shadow-hover",
+        href && "group-hover/link:border-line-strong group-hover/link:shadow-hover",
         className
       )}
     >
@@ -142,7 +136,7 @@ export function MetricCard({
             Live
           </span>
         ) : null}
-        <span className={cn("grid size-8 shrink-0 place-items-center rounded-full", featured ? "bg-brand text-white shadow-brand-soft" : accentChip[accent])}>
+        <span className={cn("grid size-9 shrink-0 place-items-center rounded-control", featured ? "bg-brand-soft text-brand-deep" : accentChip[accent])}>
           <Icon className="size-4" aria-hidden />
         </span>
       </div>
@@ -150,7 +144,7 @@ export function MetricCard({
       {/* Value block sits at the bottom so tiles stretched by the grid keep label-top / number-bottom alignment. */}
       <div className="mt-auto pt-2.5">
         <div className="flex items-end justify-between gap-3">
-          <p className="text-[24px] leading-none font-semibold tracking-[-0.02em] whitespace-nowrap text-ink tabular @[12rem]:text-[30px]">{value}</p>
+          <p className="text-[24px] leading-none font-bold tracking-[-0.02em] whitespace-nowrap text-ink tabular @[12rem]:text-[28px]">{value}</p>
           {spark && spark.length > 0 ? <Sparkline values={spark} label={`${label} trend`} className="shrink-0" /> : null}
         </div>
 

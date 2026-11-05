@@ -19,7 +19,7 @@ export function RemindersList({ reminders, limit = 6 }: { reminders: Reminder[];
         return (
           <li key={r.id}>
             <Link href={r.href} className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none">
-              <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", overdue ? "bg-danger-soft text-danger" : r.daysLeft <= 7 ? "bg-peach text-serious" : "bg-sky text-info")}>
+              <span className={cn("grid size-9 shrink-0 place-items-center rounded-control", overdue ? "bg-danger-soft text-danger" : r.daysLeft <= 7 ? "bg-peach text-serious" : "bg-sky text-info")}>
                 <Icon className="size-4" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">

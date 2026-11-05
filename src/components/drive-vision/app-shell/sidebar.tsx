@@ -19,7 +19,7 @@ export const RAIL_EXPANDED = 228;
 /** Coral brand disc (reference: round mark) with the SafeFare AI eye glyph. */
 export function BrandGlyph({ className }: { className?: string }) {
   return (
-    <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-full bg-brand-gradient text-white shadow-brand", className)} aria-hidden>
+    <span className={cn("relative grid size-9 shrink-0 place-items-center rounded-control bg-brand-gradient text-white", className)} aria-hidden>
       <ScanEye className="size-[18px]" strokeWidth={2.1} />
     </span>
   );
@@ -78,14 +78,14 @@ export function SidebarNav({ onNavigate, layoutGroup }: { onNavigate?: () => voi
                     aria-current={isActive ? "page" : undefined}
                     className={cn(
                       "relative flex h-10 items-center gap-3 rounded-full px-3.5 text-[13.5px] font-medium transition-colors duration-150 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none",
-                      isActive ? "text-white" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
+                      isActive ? "font-semibold text-brand-deep" : "text-ink hover:bg-powder/60"
                     )}
                   >
-                    {isActive ? <motion.span layoutId={`${layoutGroup}-active`} className="absolute inset-0 rounded-full bg-ink" transition={transitions.layout} aria-hidden /> : null}
+                    {isActive ? <motion.span layoutId={`${layoutGroup}-active`} className="absolute inset-0 rounded-control bg-brand-soft" transition={transitions.layout} aria-hidden /> : null}
                     <item.icon className="relative size-[18px] shrink-0" aria-hidden />
                     <span className="relative truncate">{item.label}</span>
                     {item.label === "Alerts & Events" && alertBadge > 0 ? (
-                      <span className={cn("relative ml-auto rounded-full px-1.5 py-px text-[11px] font-semibold tabular", isActive ? "bg-white/20 text-white" : "bg-brand-soft text-brand-deep")} aria-label={`${alertBadge} open alerts`}>
+                      <span className={cn("relative ml-auto rounded-full px-1.5 py-px text-[11px] font-semibold tabular", isActive ? "bg-white/70 text-brand-deep" : "bg-brand-soft text-brand-deep")} aria-label={`${alertBadge} open alerts`}>
                         {alertBadge}
                       </span>
                     ) : null}
@@ -116,7 +116,7 @@ function RailTooltip({ label, enabled, children }: { label: string; enabled: boo
 // Height tiers (see `short` / `shorter` variants in globals.css) keep all 12 destinations
 // visible without an inner scrollbar on 1280×720 / 1366×768 screens.
 const RAIL_ITEM =
-  "relative flex h-9 shrink-0 items-center rounded-full transition-[background-color,color] duration-150 ease-dv active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-brand/40 focus-visible:outline-none short:h-8 shorter:h-7";
+  "relative flex h-9 shrink-0 items-center rounded-control transition-[background-color,color] duration-150 ease-dv active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-brand/40 focus-visible:outline-none short:h-8 shorter:h-7";
 const RAIL_ICON_ONLY = "mx-auto w-9 justify-center short:w-8 shorter:w-7";
 
 function RailLink({ item, active, expanded, badge }: { item: NavItem; active: boolean; expanded: boolean; badge?: number }) {
@@ -126,9 +126,9 @@ function RailLink({ item, active, expanded, badge }: { item: NavItem; active: bo
         href={item.href}
         aria-current={active ? "page" : undefined}
         aria-label={expanded ? undefined : badge ? `${item.label}, ${badge} open` : item.label}
-        className={cn(RAIL_ITEM, expanded ? "gap-3 px-2.5" : RAIL_ICON_ONLY, active ? "text-white" : "text-ink-muted hover:bg-surface-sunken hover:text-ink")}
+        className={cn(RAIL_ITEM, expanded ? "gap-3 px-2.5" : RAIL_ICON_ONLY, active ? "text-brand-deep" : "text-ink hover:bg-powder/60")}
       >
-        {active ? <motion.span layoutId="rail-active" className="absolute inset-0 rounded-full bg-ink" transition={transitions.layout} aria-hidden /> : null}
+        {active ? <motion.span layoutId="rail-active" className="absolute inset-0 rounded-control bg-brand-soft" transition={transitions.layout} aria-hidden /> : null}
         <item.icon className="relative size-[17px] shrink-0" strokeWidth={1.9} aria-hidden />
         <AnimatePresence initial={false}>
           {expanded ? (
@@ -145,7 +145,7 @@ function RailLink({ item, active, expanded, badge }: { item: NavItem; active: bo
         </AnimatePresence>
         {badge ? (
           expanded ? (
-            <span className={cn("relative ml-auto rounded-full px-1.5 py-px text-[11px] font-semibold tabular", active ? "bg-white/20 text-white" : "bg-brand-soft text-brand-deep")} aria-hidden>
+            <span className={cn("relative ml-auto rounded-full px-1.5 py-px text-[11px] font-semibold tabular", active ? "bg-white/70 text-brand-deep" : "bg-brand-soft text-brand-deep")} aria-hidden>
               {badge}
             </span>
           ) : (
@@ -186,7 +186,7 @@ export function DriveVisionRail() {
     >
       <nav
         aria-label="SafeFare AI"
-        className="scrollbar-thin min-h-0 shrink overflow-x-hidden overflow-y-auto rounded-[28px] border border-line/60 bg-surface p-2.5 shadow-card shorter:py-2"
+        className="scrollbar-thin min-h-0 shrink overflow-x-hidden overflow-y-auto rounded-card border border-line bg-surface p-2.5 shadow-card shorter:py-2"
       >
         <ul className="flex flex-col gap-0.5 shorter:gap-0">
           {groups.map((group, gi) => (
@@ -220,7 +220,7 @@ export function DriveVisionRail() {
             onClick={() => updatePreferences({ sidebarExpanded: !expanded })}
             aria-expanded={expanded}
             aria-label={expanded ? "Collapse navigation" : "Expand navigation"}
-            className={cn(RAIL_ITEM, "text-ink-muted hover:bg-surface-sunken hover:text-ink", expanded ? "gap-3 px-2.5" : RAIL_ICON_ONLY)}
+            className={cn(RAIL_ITEM, "text-ink hover:bg-powder/60", expanded ? "gap-3 px-2.5" : RAIL_ICON_ONLY)}
           >
             {expanded ? <PanelLeftClose className="size-[17px] shrink-0" aria-hidden /> : <PanelLeftOpen className="size-[17px] shrink-0" aria-hidden />}
             {expanded ? <span className="text-[13px] font-medium whitespace-nowrap">Collapse</span> : null}

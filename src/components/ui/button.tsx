@@ -5,16 +5,16 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-full text-sm font-medium whitespace-nowrap transition-[background-color,color,border-color,box-shadow,transform] duration-150 ease-dv outline-none active:scale-[0.97] active:duration-75 focus-visible:ring-[3px] focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-control text-sm font-semibold whitespace-nowrap transition-[background-color,color,border-color,box-shadow,transform] duration-150 ease-dv outline-none active:scale-[0.97] active:duration-75 focus-visible:ring-[3px] focus-visible:ring-ring/35 disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-ink text-white shadow-[0_6px_14px_-8px_rgb(31_30_38/0.55)] hover:bg-ink/85",
-        brand: "bg-brand text-white shadow-brand hover:bg-brand-deep",
+        default: "bg-brand text-white shadow-brand-soft hover:bg-brand-hover disabled:bg-surface-sunken disabled:text-ink-muted disabled:opacity-100 disabled:shadow-none",
+        brand: "bg-brand text-white shadow-brand-soft hover:bg-brand-hover disabled:bg-surface-sunken disabled:text-ink-muted disabled:opacity-100 disabled:shadow-none",
         destructive: "bg-danger text-white hover:bg-danger/90 focus-visible:ring-danger/25",
-        outline: "border border-line bg-surface text-ink hover:border-line-strong hover:bg-surface-muted",
-        secondary: "bg-surface-sunken text-ink hover:bg-line",
-        ghost: "text-ink hover:bg-surface-muted",
+        outline: "border border-line bg-surface text-ink hover:border-line-strong hover:bg-powder/40",
+        secondary: "bg-powder text-ink hover:bg-powder/70",
+        ghost: "text-ink hover:bg-powder/40",
         link: "text-ink underline-offset-4 hover:underline",
       },
       size: {

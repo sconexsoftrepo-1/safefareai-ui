@@ -1,0 +1,163 @@
+{
+  "note": "MOCKED: synthetic figures for screenshots only. Nothing reached the backend.",
+  "results": {
+    "label": "before",
+    "screens": {
+      "01-platform-overview": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 477,
+          "ui-monospace": 6
+        },
+        "h1": {
+          "text": "Platform Overview",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "02-fleet-overview": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 469
+        },
+        "h1": {
+          "text": "Good afternoon, Synthetic fleet",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "03-live-monitoring": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 78
+        },
+        "h1": {
+          "text": "Live Monitoring",
+          "size": "22px",
+          "weight": "600"
+        }
+      },
+      "04-vehicles-assets": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 178,
+          "ui-monospace": 6
+        },
+        "h1": {
+          "text": "Vehicles & Assets",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "05-global-roles": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 178,
+          "ui-monospace": 18
+        },
+        "h1": {
+          "text": "Global Roles",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "06-permission-catalogue": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 77
+        },
+        "h1": {
+          "text": "Permission Catalogue",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "07-driver-my-work": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 104
+        },
+        "h1": {
+          "text": "My Work",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "08-my-leave": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 81
+        },
+        "h1": {
+          "text": "My Leave",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "09-shift-checklist": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 76
+        },
+        "h1": {
+          "text": "Shift Checklist",
+          "size": "30px",
+          "weight": "600"
+        }
+      },
+      "10-my-profile": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 118
+        },
+        "h1": {
+          "text": "My Profile",
+          "size": "30px",
+          "weight": "600"
+        }
+      }
+    },
+    "widths": {},
+    "unmatched": [
+      "/alarms/ai",
+      "/alarms/routine",
+      "/driver/checklists",
+      "/me/preferences",
+      "/monitor/realtime",
+      "/notifications/poll",
+      "/reference/device-models",
+      "/reference/object-types"
+    ],
+    "errors": []
+  }
+}

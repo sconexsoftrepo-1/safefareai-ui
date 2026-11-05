@@ -336,7 +336,7 @@ function TrackPlayback() {
                         setPlaying((p) => !p);
                       }}
                       disabled={last === 0}
-                      className="grid size-11 place-items-center rounded-full bg-ink text-white shadow-[0_6px_14px_-8px_rgb(31_30_38/0.55)] transition-[background-color,transform] duration-150 ease-dv hover:bg-ink/85 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none active:scale-95 active:duration-75 disabled:opacity-45"
+                      className="grid size-11 place-items-center rounded-full bg-ink text-white shadow-[0_6px_14px_-8px_rgb(36_52_77/0.55)] transition-[background-color,transform] duration-150 ease-dv hover:bg-ink/85 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none active:scale-95 active:duration-75 disabled:opacity-45"
                       aria-label={playing ? "Pause playback" : "Play through points"}
                     >
                       {playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}

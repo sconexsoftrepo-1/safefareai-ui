@@ -79,7 +79,7 @@ export function DailyTrendPanel({ rows }: { rows: TrendRow[] }) {
         className="mb-2"
         items={[
           { label: "Trips", color: SERIES.s1, value: trips === null ? "—" : formatNumber(trips) },
-          { label: "Alarms", color: SERIES.s3, value: n(sumColumn(rows, "alarms")) },
+          { label: "Alarms", color: SERIES.s2, value: n(sumColumn(rows, "alarms")) },
           { label: "Distance", color: "transparent", value: distance === null ? "—" : formatKm(distance) },
         ]}
       />
@@ -91,7 +91,7 @@ export function DailyTrendPanel({ rows }: { rows: TrendRow[] }) {
             <YAxis allowDecimals={false} {...AXIS_PROPS} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: "var(--dv-surface-muted)" }} />
             <Bar dataKey="trips" name="Trips" fill={SERIES.s1} radius={[4, 4, 0, 0]} isAnimationActive={false} />
-            <Bar dataKey="alarms" name="Alarms" fill={SERIES.s3} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+            <Bar dataKey="alarms" name="Alarms" fill={SERIES.s2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>

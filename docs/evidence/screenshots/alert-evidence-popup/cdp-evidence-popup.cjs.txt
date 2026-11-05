@@ -1,0 +1,291 @@
+// Alert evidence popup (headless Edge via CDP, production build). MOCKED, but with real media: the PNG and WebM below are
+// generated in the browser and really decoded and played. They are served from a made-up media.gpstracktech.com, so no vendor
+// server is contacted, and every /api/v1 response is synthetic. This is not verification against real vendor media.
+// FULLSCREEN IS SIMULATED: requestFullscreen() never settles in this automated browser, even on a bare div, headless or in a
+// visible window. A stand-in below records the call and fires fullscreenchange, which proves the wiring, not real fullscreen.
+const fs = require("fs");
+const path = require("path");
+const ROOT = "C:/Sconex-Projects/Drive Vision";
+const OUT = `${ROOT}/docs/evidence/screenshots/alert-evidence-popup`;
+const DOWNLOADS = process.argv[2];
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { IDENTITIES } = require(`${ROOT}/tests/helpers/identities.cjs`);
+fs.mkdirSync(DOWNLOADS, { recursive: true });
+
+const M = "https://media.gpstracktech.com";
+const SIGN = "?Expires=1893456000&Signature=ab%2Bcd%3D";
+const EVIDENCE = [
+  [1, "IMAGE", `/ok.png${SIGN}`, "READY", "image/png"],
+  [2, "VIDEO", `/ok.webm${SIGN}`, "READY", "video/webm"],
+  [3, "IMAGE", `/nocors.png${SIGN}`, "READY", null],
+  [4, "IMAGE", `/missing.png${SIGN}`, "READY", null],
+  [5, "VIDEO", `/expired.webm${SIGN}`, "READY", null],
+  [6, "VIDEO", `/hevc.mp4${SIGN}`, "READY", "video/hevc"],
+  [7, "IMAGE", `/corrupt.png${SIGN}`, "READY", null],
+  [8, "IMAGE", `/hidden.png${SIGN}`, "READY", null],
+  [9, "IMAGE", `/ok.png${SIGN}&row=pending`, "PENDING", null],
+  [10, "IMAGE", `/ok.png${SIGN}&row=failed`, "FAILED", null],
+  [11, "IMAGE", `/flaky.png${SIGN}`, "READY", null],
+  [12, "IMAGE", `/missing.png${SIGN}&row=pending`, "PENDING", null],
+  [13, "VIDEO", null, "READY", null],
+  [14, "VIDEO", null, "PENDING", null],
+].map(([id, mediaType, url, status, contentType]) => ({ id, mediaType, channel: id === 2 ? 1 : null, url: url ? `${M}${url}` : null, status, contentType, sizeBytes: null, durationMs: null }));
+const ALERT = { id: 501, alarmName: "Pedestrian Collision", alarmTypeId: 208, kind: "AI", severity: 1, deviceId: 1, deviceName: "Coach 12", alarmTime: "2026-11-05T04:20:54Z", mediaStatus: "COMPLETE", handlingStatus: "NEW" };
+const ALARM = { ...ALERT, id: 777, imageUrl: `${M}/ok.png${SIGN}`, videoUrl: `${M}/ok.webm${SIGN}`, lat: 17.42, lon: 78.44 };
+const media = {};
+const mediaRequests = [];
+
+let ws, seq = 0, targets = 0;
+const newPages = [], downloads = [];
+let step = "startup";
+let flakyDown = true;
+const progress = {};
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true, userGesture: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: "*" }, { name: "Access-Control-Allow-Headers", value: "*" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  if (u.host === "media.gpstracktech.com") {
+    mediaRequests.push(u.pathname + u.search);
+    const name = u.pathname.slice(1);
+    if (name === "flaky.png" && flakyDown) return send("Fetch.failRequest", { requestId, errorReason: "ConnectionFailed" });
+    const allow = !["nocors.png", "hidden.png"].includes(name);
+    const headers = (type) => [...(allow ? cors() : []), { name: "Content-Type", value: type }];
+    const reply = (status, type, body) => send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: headers(type), body: body.toString("base64") });
+    if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: allow ? 204 : 403, responseHeaders: allow ? cors() : [], body: "" });
+    if (name === "ok.png" || name === "nocors.png" || name === "flaky.png") return reply(200, "image/png", media.png);
+    if (name === "ok.webm") return reply(200, "video/webm", media.webm);
+    if (name === "corrupt.png") return reply(200, "image/png", Buffer.from("not an image"));
+    if (name === "expired.webm") return reply(403, "text/plain", Buffer.from("Expired"));
+    return reply(404, "text/plain", Buffer.from("Not found"));
+  }
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: [...cors(), { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }], body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let res = ok([], 0);
+  if (p === "/me") res = ok({ id: 2, displayName: "Synthetic admin", email: "admin@example.invalid" });
+  else if (p === "/me/permissions") res = ok({ ...IDENTITIES.tenantAdmin, userId: 2, tenantId: 1, homeTenantId: 1 });
+  else if (p === "/alerts") res = ok([ALERT], 1);
+  else if (p === "/alerts/501") res = ok({ alert: ALERT, actions: [], evidence: EVIDENCE });
+  else if (p === "/alarms/ai") res = ok([ALARM], 1);
+  await send("Fetch.fulfillRequest", { requestId, responseCode: 200, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); }
+async function go(url, ms = 2000) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function mouseClick(expr, wait = 450) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) throw new Error(`no element: ${expr}`);
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(wait);
+  return true;
+}
+const key = async (k, code = k, vk = 27) => { await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, windowsVirtualKeyCode: vk }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk }); await sleep(450); };
+const q = (t) => `document.querySelector('[data-testid=${t}]')`;
+const openBtn = (n) => `[...document.querySelectorAll('[data-testid=evidence-open]')][${n}]`;
+const viewerOpen = () => evaluate(`!!${q("evidence-viewer")}`);
+const closeBtn = `document.querySelector('[aria-label="Close evidence"]')`;
+const errorInfo = () => evaluate(`(() => { const e = ${q("evidence-error")}; return e ? { problem: e.dataset.problem, text: e.innerText.replace(/\\s*\\n\\s*/g, ' | ') } : null; })()`);
+const download = async () => { await mouseClick(q("evidence-download"), 1300); return evaluate(`(() => { const r = ${q("evidence-download-result")}; return r ? { status: r.dataset.status, text: r.innerText } : null; })()`); };
+const close = async () => { await mouseClick(closeBtn, 500); };
+const onError = async (n, wait = 1300) => { await mouseClick(openBtn(n), wait); return errorInfo(); };
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+    else if (msg.method === "Target.targetCreated" && msg.params.targetInfo.type === "page") { targets++; newPages.push({ url: msg.params.targetInfo.url, openedByApp: msg.params.targetInfo.openerId === page.id, step }); }
+    else if (msg.method === "Page.downloadWillBegin") downloads.push(msg.params.suggestedFilename);
+    else if (msg.method === "Target.targetInfoChanged" && msg.params.targetInfo.type === "page") { const n = newPages.findLast((x) => !x.url); if (n) n.url = msg.params.targetInfo.url; }
+  };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Target.setDiscoverTargets", { discover: true });
+  // Downloads are set on the browser endpoint: on a page session the setting doesn't reach blob downloads.
+  const browserWs = new WebSocket((await (await fetch(`${CDP}/json/version`)).json()).webSocketDebuggerUrl);
+  await new Promise((r) => (browserWs.onopen = r));
+  browserWs.onmessage = (mm) => { const d = JSON.parse(mm.data); if (d.method === "Browser.downloadProgress") progress[d.params.state] = (progress[d.params.state] ?? 0) + 1; };
+  browserWs.send(JSON.stringify({ id: 1, method: "Browser.setDownloadBehavior", params: { behavior: "allow", downloadPath: DOWNLOADS.replace(/\//g, "\\"), eventsEnabled: true } }));
+  await sleep(300);
+  // The save picker is a system dialog headless can't answer, so downloads here take the Blob path; the picker path is unit-tested.
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: "delete window.showSaveFilePicker; Object.defineProperty(window, 'showSaveFilePicker', { value: undefined });" });
+
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: `
+    (() => {
+      let current = null; window.__fsCalls = [];
+      Object.defineProperty(Document.prototype, 'fullscreenElement', { get: () => current, configurable: true });
+      Element.prototype.requestFullscreen = function () { current = this; window.__fsCalls.push('enter:' + (this.dataset.testid ?? this.tagName)); document.dispatchEvent(new Event('fullscreenchange')); return Promise.resolve(); };
+      Document.prototype.exitFullscreen = function () { current = null; window.__fsCalls.push('exit'); document.dispatchEvent(new Event('fullscreenchange')); return Promise.resolve(); };
+    })();` });
+
+  // Real media, made by the browser.
+  await viewport(1440, 900);
+  await go(`${APP}/login`, 800);
+  const b64 = await evaluate(`(async () => {
+    const c = document.createElement('canvas'); c.width = 1280; c.height = 720; const x = c.getContext('2d');
+    const paint = (t) => { x.fillStyle = '#24344d'; x.fillRect(0, 0, 1280, 720); x.fillStyle = '#f16a45'; x.fillRect(80 + t * 8, 260, 300, 200); x.fillStyle = '#fff'; x.font = '48px sans-serif'; x.fillText('Synthetic test frame', 80, 120); };
+    paint(0);
+    const png = c.toDataURL('image/png').split(',')[1];
+    const rec = new MediaRecorder(c.captureStream(20), { mimeType: 'video/webm;codecs=vp8' });
+    const parts = []; rec.ondataavailable = (e) => parts.push(e.data); rec.start();
+    for (let i = 0; i < 60; i++) { paint(i); await new Promise((r) => setTimeout(r, 50)); }
+    await new Promise((r) => { rec.onstop = r; rec.stop(); });
+    const buf = new Uint8Array(await new Blob(parts).arrayBuffer());
+    let s = ''; for (const b of buf) s += String.fromCharCode(b);
+    return { png, webm: btoa(s) };
+  })()`);
+  media.png = Buffer.from(b64.png, "base64");
+  media.webm = Buffer.from(b64.webm, "base64");
+  R.generated = { pngBytes: media.png.length, webmBytes: media.webm.length };
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }, { urlPattern: "https://media.gpstracktech.com/*", requestStage: "Request" }] });
+
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(JSON.stringify({ accessToken: jwt(), tokenType: "Bearer", accessExpiresAt: Date.now() + 3600_000, refreshToken: "synthetic", refreshExpiresAt: null }))})`);
+  await go(`${APP}/drive-vision/alerts?kind=incidents&alarm=501`, 2800);
+  const start = targets;
+  step = "viewer tests";
+  const drawerText = `[...document.querySelectorAll('[role=dialog]')].find(d => d.innerText.includes('Evidence') && d.dataset.testid !== 'evidence-viewer')`;
+  const scroller = `${drawerText}.querySelector('.overflow-y-auto')`;
+  R.rows = await evaluate(`[...document.querySelectorAll('#inc-evidence + ul li')].map(l => l.innerText.replace(/\\s*\\n\\s*/g, ' | '))`);
+  await evaluate(`${scroller}.scrollTop = 120`);
+  const url0 = await evaluate(`location.href`);
+  await shot("01-drawer-1440x900");
+
+  // Image.
+  await mouseClick(openBtn(0), 900);
+  R.scrollAfterOpen = await evaluate(`${scroller}.scrollTop`);
+  await evaluate(`${scroller}.scrollTop = 120`);
+  const img = q("evidence-image");
+  R.image = await evaluate(`(() => { const i = ${img}; const m = ${q("evidence-media")}.getBoundingClientRect(), r = i.getBoundingClientRect(); return { src: i.getAttribute('src'), natural: [i.naturalWidth, i.naturalHeight], shown: [Math.round(r.width), Math.round(r.height)], aspectKept: Math.abs(r.width / r.height - i.naturalWidth / i.naturalHeight) < 0.02, fits: r.width <= m.width + 1 && r.height <= m.height + 1, opacity: getComputedStyle(i).opacity }; })()`);
+  R.imageUrlExact = R.image.src === `${M}/ok.png${SIGN}`;
+  R.drawerBehind = await evaluate(`!!${drawerText}`);
+  await shot("02-image-popup-1440x900");
+  await mouseClick(`document.querySelector('[aria-label="Zoom in"]')`, 300);
+  R.zoom = await evaluate(`${img}.style.width`);
+  await mouseClick(`document.querySelector('[aria-label="Fit to screen"]')`, 300);
+  R.zoomReset = await evaluate(`${img}.style.width === ''`);
+  // Clicking the media doesn't close it.
+  await mouseClick(img, 300);
+  R.mediaClickKeepsOpen = await viewerOpen();
+  // Fullscreen.
+  await mouseClick(q("evidence-fullscreen"), 700);
+  R.fullscreenImage = await evaluate(`({ element: document.fullscreenElement?.dataset.testid ?? null, label: ${q("evidence-fullscreen")}.innerText.trim() })`);
+  await key("Escape");
+  R.escapeInFullscreenKeepsPopup = await viewerOpen();
+  await mouseClick(q("evidence-fullscreen"), 700);
+  R.fullscreenExit = await evaluate(`({ element: document.fullscreenElement?.dataset.testid ?? null, label: ${q("evidence-fullscreen")}.innerText.trim(), popupOpen: !!${q("evidence-viewer")} })`);
+  // Download, for real, to disk.
+  step = "image download";
+  R.imageDownload = await download();
+  await sleep(1500);
+  step = "after image download";
+  await shot("03-image-downloaded-1440x900");
+  // Escape closes the popup only, and focus returns.
+  await key("Escape");
+  R.afterEscape = { popupOpen: await viewerOpen(), drawerOpen: await evaluate(`!!${drawerText}`), scrollTop: await evaluate(`${scroller}.scrollTop`), url: (await evaluate(`location.href`)) === url0, focusIsOpen: await evaluate(`document.activeElement === ${openBtn(0)}`) };
+
+  // Background click closes; a blocked background.
+  await mouseClick(openBtn(0), 700);
+  R.backgroundBlocked = await evaluate(`(() => { const el = document.elementFromPoint(40, 40); return !!el?.closest('[data-slot=dialog-overlay]') || getComputedStyle(el).pointerEvents === 'none' || !el?.closest('nav'); })()`);
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x: 12, y: 12, button: "left", buttons: 1, clickCount: 1, pointerType: "mouse" });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: 12, y: 12, button: "left", buttons: 0, clickCount: 1, pointerType: "mouse" });
+  await sleep(500);
+  R.outsideClick = { popupOpen: await viewerOpen(), drawerOpen: await evaluate(`!!${drawerText}`) };
+
+  // Video: switching from the image.
+  await mouseClick(openBtn(1), 1500);
+  const vid = q("evidence-video");
+  R.video = await evaluate(`(() => { const v = ${vid}; return { src: v.getAttribute('src'), controls: v.controls, autoplay: v.autoplay, paused: v.paused, state: v.dataset.state, duration: v.duration, size: [v.videoWidth, v.videoHeight], stage: getComputedStyle(${q("evidence-media")}).backgroundColor }; })()`);
+  R.videoUrlExact = R.video.src === `${M}/ok.webm${SIGN}`;
+  await evaluate(`${vid}.play()`); await sleep(1100);
+  R.playing = await evaluate(`({ state: ${vid}.dataset.state, time: ${vid}.currentTime > 0, paused: ${vid}.paused })`);
+  await shot("04-video-playing-1440x900");
+  await evaluate(`document.querySelector('[aria-label="Playback speed"]').value`);
+  await evaluate(`(() => { const s = document.querySelector('[aria-label="Playback speed"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, '1.5'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`); await sleep(200);
+  R.speed = await evaluate(`${vid}.playbackRate`);
+  await evaluate(`${vid}.pause()`); await sleep(300);
+  R.paused = await evaluate(`${vid}.dataset.state`);
+  await mouseClick(q("evidence-fullscreen"), 700);
+  R.fullscreenVideo = await evaluate(`document.fullscreenElement?.dataset.testid ?? null`);
+  // Closing from fullscreen leaves fullscreen and releases the video.
+  await evaluate(`window.__v = ${vid}; ${vid}.play()`); await sleep(300);
+  await evaluate(`${closeBtn}.click()`);
+  await sleep(700);
+  R.fullscreenCalls = await evaluate(`window.__fsCalls`);
+  R.closedFromFullscreen = await evaluate(`({ fullscreen: !!document.fullscreenElement, popupOpen: !!${q("evidence-viewer")}, paused: window.__v.paused, src: window.__v.getAttribute('src'), readyState: window.__v.readyState })`);
+  await mouseClick(openBtn(1), 1300);
+  step = "video download";
+  R.videoDownload = await download();
+  await sleep(1500);
+  step = "after video download";
+  await close();
+  await sleep(400);
+
+  // Failure states.
+  await mouseClick(openBtn(2), 1000);
+  R.noCors = { shown: await evaluate(`${img}?.naturalWidth > 0`), download: await download() };
+  await shot("05-download-blocked-1440x900");
+  await close();
+  R.notFound = await onError(3); await shot("06-image-not-found-1440x900"); await close();
+  R.expired = await onError(4); await shot("07-video-expired-1440x900"); await close();
+  R.hevc = await onError(5); await shot("08-video-unsupported-1440x900"); await close();
+  R.corrupt = await onError(6); await close();
+  R.hiddenStatus = await onError(7); await close();
+  // The revised rule: a URL decides Open, the status stays a label.
+  await mouseClick(openBtn(8), 1100);
+  R.pendingOpens = await evaluate(`({ shown: ${img}?.naturalWidth > 0, status: ${q("evidence-status")}?.innerText })`);
+  await shot("09-pending-image-open-1440x900");
+  await close();
+  await mouseClick(openBtn(9), 1100);
+  R.failedOpens = await evaluate(`({ shown: ${img}?.naturalWidth > 0, status: ${q("evidence-status")}?.innerText })`);
+  await close();
+  R.networkFailure = await onError(10);
+  flakyDown = false;
+  await mouseClick(`[...document.querySelectorAll('[data-testid=evidence-error] button')].find(b => b.textContent.includes('Try again'))`, 1100);
+  R.afterRetry = await evaluate(`({ shown: ${img}?.naturalWidth > 0, error: !!${q("evidence-error")} })`);
+  await close();
+  R.pending404 = await onError(11); await shot("10-pending-not-found-1440x900"); await close();
+  R.statusesUnchanged = await evaluate(`[...document.querySelectorAll('#inc-evidence + ul li')].map(l => l.innerText.split('\\n')[0])`);
+  R.disabledOpen = await evaluate(`[...document.querySelectorAll('[data-testid=evidence-open-disabled]')].map(b => b.disabled)`);
+  R.unavailable = await evaluate(`[...document.querySelectorAll('[data-testid=evidence-unavailable]')].map(e => e.innerText)`);
+  R.tabsOpened = targets - start;
+  R.newPages = newPages;
+  R.downloadsBegun = downloads;
+  R.downloadProgress = progress;
+  R.sameUrl = (await evaluate(`location.href`)) === url0;
+
+  // The other drawer: alarm rows, imageUrl and videoUrl.
+  await go(`${APP}/drive-vision/alerts?kind=ai&source=history&alarm=777`, 2800);
+  R.alarmOpen = await evaluate(`[...document.querySelectorAll('[data-testid=evidence-open]')].map(b => b.innerText.trim())`);
+  await mouseClick(openBtn(1), 1200);
+  R.alarmVideo = await evaluate(`${vid}?.getAttribute('src') === ${JSON.stringify(`${M}/ok.webm${SIGN}`)}`);
+  await key("Escape");
+  R.alarmAfterEscape = await evaluate(`({ popup: !!${q("evidence-viewer")}, drawer: document.querySelectorAll('[role=dialog]').length })`);
+
+  // Layouts.
+  R.layout = {};
+  await go(`${APP}/drive-vision/alerts?kind=incidents&alarm=501`, 2600);
+  for (const [w, h] of [[1440, 900], [768, 1024], [375, 812], [320, 568]]) {
+    await viewport(w, h); await sleep(400);
+    for (const [n, name] of [[0, "image"], [1, "video"]]) {
+      await mouseClick(openBtn(n), 1200);
+      R.layout[`${name}-${w}x${h}`] = await evaluate(`(() => { const d = ${q("evidence-viewer")}.getBoundingClientRect(); const t = document.querySelector('[role=toolbar]').getBoundingClientRect(); return { dialog: [Math.round(d.width), Math.round(d.height)], fits: d.left >= 0 && d.right <= innerWidth + 0.5 && d.top >= 0 && d.bottom <= innerHeight + 0.5, toolbarVisible: t.bottom <= innerHeight + 0.5, overflow: document.documentElement.scrollWidth > innerWidth }; })()`);
+      if (w !== 1440) await shot(`layout-${name}-${w}x${h}`);
+      await key("Escape");
+    }
+  }
+  R.signedUrlsSeen = [...new Set(mediaRequests)].filter((x) => x.includes("Signature=ab%2Bcd%3D")).length;
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ note: "MOCKED: real generated media served from a made-up host. No real vendor media was used.", results: R, downloads: fs.readdirSync(DOWNLOADS).map((f) => [f, fs.statSync(path.join(DOWNLOADS, f)).size]) }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch(async (e) => { console.error(e); await shot("failure").catch(() => {}); fs.writeFileSync(path.join(OUT, "results.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

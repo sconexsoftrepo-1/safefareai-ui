@@ -37,9 +37,9 @@ import { DailyTrendPanel, OperationsSnapshot } from "./operations-panels";
 import { CURRENT_REPORT_MS, EXPIRING_DAYS, LOW_BATTERY_PCT, deviceReminders, deviceStats, groupCards, mergeAlarms } from "./live-dashboard-model";
 
 const QUICK_LINKS = [
-  { label: "Live Monitoring", hint: "Map & vehicle status", href: "/drive-vision/monitoring", icon: Radar, tone: "bg-sky" },
-  { label: "Vehicles", hint: "Devices & groups", href: "/drive-vision/vehicles", icon: Truck, tone: "bg-mint" },
-  { label: "Historical Video", hint: "Camera playback", href: "/drive-vision/video", icon: Cctv, tone: "bg-lavender" },
+  { label: "Live Monitoring", hint: "Map & vehicle status", href: "/drive-vision/monitoring", icon: Radar, tone: "bg-powder" },
+  { label: "Vehicles", hint: "Devices & groups", href: "/drive-vision/vehicles", icon: Truck, tone: "bg-powder" },
+  { label: "Historical Video", hint: "Camera playback", href: "/drive-vision/video", icon: Cctv, tone: "bg-powder" },
   { label: "Trips", hint: "Routes & playback", href: "/drive-vision/trips", icon: Route, tone: "bg-peach" },
   { label: "Alerts", hint: "Events to review", href: "/drive-vision/alerts", icon: Bell, tone: "bg-brand-soft" },
 ];
@@ -520,7 +520,7 @@ export function FleetOverview() {
               href={q.href}
               className="group flex items-center gap-3 rounded-[18px] border border-line/60 bg-surface p-3 shadow-card transition-[box-shadow,transform,border-color] duration-[180ms] ease-dv hover:-translate-y-0.5 hover:border-line-strong hover:shadow-hover focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none"
             >
-              <span className={cn("grid size-10 shrink-0 place-items-center rounded-full", q.tone)}>
+              <span className={cn("grid size-10 shrink-0 place-items-center rounded-control", q.tone)}>
                 <q.icon className="size-[18px] text-ink" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">

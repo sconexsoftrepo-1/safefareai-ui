@@ -29,7 +29,7 @@ const MODES: { mode: LoginMode; label: string; icon: typeof Users }[] = [
 
 // The card sits on a photo, so it keeps a fixed light palette in both themes.
 const INPUT_CLASS =
-  "h-12 short:h-10 rounded-xl border-[#e8e6ee] bg-[#f6f5f9] pl-11 text-[15px] text-slate-900 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-[#e8644a]/60 focus-visible:ring-[#e8644a]/15 dark:bg-[#f6f5f9]";
+  "h-12 short:h-10 rounded-xl border-[#e8e6ee] bg-[#f6f5f9] pl-11 text-[15px] text-slate-900 placeholder:text-slate-400 hover:border-slate-300 focus-visible:border-[#f16a45]/60 focus-visible:ring-[#f16a45]/15 dark:bg-[#f6f5f9]";
 
 function FieldIcon({ icon: Icon }: { icon: typeof Mail }) {
   return <Icon className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-slate-500" aria-hidden />;
@@ -41,7 +41,7 @@ function FloatBadge({ icon: Icon, className, style }: { icon: typeof Mail; class
     <span
       style={style}
       className={cn(
-        "absolute grid size-[76px] -translate-1/2 place-items-center rounded-full border-2 border-white bg-white/85 text-[#e8644a] shadow-[0_0_0_6px_rgba(232,100,74,0.12),0_12px_30px_-8px_rgba(232,100,74,0.55)] backdrop-blur-md short:size-14",
+        "absolute grid size-[76px] -translate-1/2 place-items-center rounded-full border-2 border-white bg-white/85 text-[#f16a45] shadow-[0_0_0_6px_rgba(232,100,74,0.12),0_12px_30px_-8px_rgba(232,100,74,0.55)] backdrop-blur-md short:size-14",
         className
       )}
     >
@@ -61,7 +61,7 @@ function GlowPin({ x, y }: { x: number; y: number }) {
       <ellipse cx="60" cy="122" rx="56" ry="13" fill="rgba(251,228,221,0.6)" stroke="#f6cfc3" strokeWidth="1.5" />
       <ellipse cx="60" cy="122" rx="36" ry="8" fill="rgba(240,138,107,0.35)" stroke="white" strokeWidth="2" />
       <ellipse cx="60" cy="122" rx="12" ry="3" fill="white" />
-      <path d="M60 118C60 118 26 82 26 52a34 34 0 1 1 68 0c0 30-34 66-34 66z" fill="#e8644a" stroke="#fbe4dd" strokeWidth="1.5" style={{ filter: "drop-shadow(0 6px 8px rgba(217,68,42,0.35))" }} />
+      <path d="M60 118C60 118 26 82 26 52a34 34 0 1 1 68 0c0 30-34 66-34 66z" fill="#f16a45" stroke="#fbe4dd" strokeWidth="1.5" style={{ filter: "drop-shadow(0 6px 8px rgba(217,68,42,0.35))" }} />
       <circle cx="60" cy="52" r="13" fill="white" />
     </svg>
   );
@@ -78,7 +78,7 @@ const NODES = [
 
 /** Location pin + connected telemetry bubbles between the truck and the card (wide screens only). */
 function HeroGraphics() {
-  const dash = { stroke: "#e8644a", strokeWidth: 2, strokeDasharray: "5 6", vectorEffect: "non-scaling-stroke" } as const;
+  const dash = { stroke: "#f16a45", strokeWidth: 2, strokeDasharray: "5 6", vectorEffect: "non-scaling-stroke" } as const;
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 hidden h-[29.25vw] max-h-[75%] xl:block" aria-hidden>
       <svg className="absolute inset-0 size-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -97,7 +97,7 @@ function HeroGraphics() {
 
 function SafeFareLogo() {
   return (
-    <span className="relative grid size-16 shrink-0 place-items-center rounded-full border-[5px] border-[#e8644a] bg-white/80 text-[#e8644a] lg:size-24 short:lg:size-18" aria-hidden>
+    <span className="relative grid size-16 shrink-0 place-items-center rounded-full border-[5px] border-[#f16a45] bg-white/80 text-[#f16a45] lg:size-24 short:lg:size-18" aria-hidden>
       <svg viewBox="0 0 48 48" className="size-9 lg:size-12 short:lg:size-10" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17 12a10 10 0 0 1 14 0M20.5 15.5a5 5 0 0 1 7 0" />
         <path d="M11 33v-6l3-7h20l3 7v6z" fill="currentColor" stroke="none" />
@@ -186,9 +186,9 @@ export function LoginScreen() {
       {/* Bottom band (reference): charcoal wave on the left with a coral line along its top; a thin coral curve on the right. */}
       <svg className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-24 w-full sm:h-32 short:h-24" viewBox="0 0 1440 160" preserveAspectRatio="none" aria-hidden>
         <path d="M0 30 C 300 20, 560 70, 820 160 L0 160Z" fill="#2b2a31" />
-        <path d="M0 30 C 300 20, 560 70, 820 160" fill="none" stroke="#e8644a" strokeWidth="5" />
+        <path d="M0 30 C 300 20, 560 70, 820 160" fill="none" stroke="#f16a45" strokeWidth="5" />
         <path d="M0 22 C 300 12, 580 62, 860 160" fill="none" stroke="#f08a6b" strokeOpacity="0.5" strokeWidth="2" />
-        <path d="M1440 70 C 1250 135, 1040 155, 900 160" fill="none" stroke="#e8644a" strokeWidth="5" />
+        <path d="M1440 70 C 1250 135, 1040 155, 900 160" fill="none" stroke="#f16a45" strokeWidth="5" />
         <path d="M1440 92 C 1300 140, 1150 156, 1040 160 L1440 160Z" fill="#f08a6b" fillOpacity="0.35" />
       </svg>
 
@@ -198,20 +198,20 @@ export function LoginScreen() {
           <div className="flex items-center gap-5">
             <SafeFareLogo />
             <div className="min-w-0">
-              <p className="text-5xl font-extrabold tracking-[-0.03em] text-[#1f1e26] italic xl:text-6xl short:text-4xl short:xl:text-5xl">
-                SafeFare <span className="text-[#e8644a]">AI</span>
+              <p className="text-5xl font-bold tracking-[-0.03em] text-[#24344d] italic xl:text-6xl short:text-4xl short:xl:text-5xl">
+                SafeFare <span className="text-[#f16a45]">AI</span>
               </p>
-              <p className="mt-1 text-xl font-semibold text-[#1f1e26] italic short:text-lg">Smarter Fleet. Safer Journey.</p>
-              <span className="mt-1.5 block h-1 w-64 max-w-full rounded-full bg-gradient-to-r from-[#e8644a] to-[#e8644a]/0" aria-hidden />
+              <p className="mt-1 text-xl font-semibold text-[#24344d] italic short:text-lg">Smarter Fleet. Safer Journey.</p>
+              <span className="mt-1.5 block h-1 w-64 max-w-full rounded-full bg-gradient-to-r from-[#f16a45] to-[#f16a45]/0" aria-hidden />
             </div>
           </div>
-          <h2 className="mt-12 text-3xl leading-tight font-bold text-[#1f1e26] xl:text-4xl short:mt-8 short:text-2xl short:xl:text-3xl">
+          <h2 className="mt-12 text-3xl leading-tight font-bold text-[#24344d] xl:text-4xl short:mt-8 short:text-2xl short:xl:text-3xl">
             Intelligent Fleet Management
             <br />
-            for a <span className="text-[#e8644a]">Safer Tomorrow</span>
+            for a <span className="text-[#f16a45]">Safer Tomorrow</span>
           </h2>
           <p className="mt-4 text-xl text-slate-600 short:mt-2 short:text-lg">
-            Track <span className="mx-2 text-[#e8644a]">•</span> Monitor <span className="mx-2 text-[#e8644a]">•</span> Protect
+            Track <span className="mx-2 text-[#f16a45]">•</span> Monitor <span className="mx-2 text-[#f16a45]">•</span> Protect
           </p>
         </section>
 
@@ -219,20 +219,20 @@ export function LoginScreen() {
         <div className="mx-auto w-full max-w-[460px] xl:max-w-[500px]">
           <div className="mb-10 flex items-center justify-center gap-3 lg:hidden">
             <SafeFareLogo />
-            <p className="text-3xl font-extrabold tracking-[-0.03em] text-white italic drop-shadow">
+            <p className="text-3xl font-bold tracking-[-0.03em] text-white italic drop-shadow">
               SafeFare <span className="text-[#f08a6b]">AI</span>
             </p>
           </div>
 
-          <div className="relative rounded-[28px] border border-white/80 bg-white/95 px-6 pt-14 pb-6 shadow-[0_30px_80px_-20px_rgba(31,30,38,0.35)] backdrop-blur-xl sm:px-9 short:px-7 short:pt-10 short:pb-4 shorter:pt-8">
+          <div className="relative rounded-[28px] border border-white/80 bg-white/95 px-6 pt-14 pb-6 shadow-[0_30px_80px_-20px_rgba(36,52,77,0.35)] backdrop-blur-xl sm:px-9 short:px-7 short:pt-10 short:pb-4 shorter:pt-8">
             <span className="absolute -top-9 left-1/2 grid size-[72px] -translate-x-1/2 place-items-center rounded-full bg-gradient-to-b from-[#f08a6b] to-[#d9442a] text-white shadow-[0_0_0_10px_rgba(232,100,74,0.14),0_12px_24px_-6px_rgba(217,68,42,0.55)] short:-top-7 short:size-14" aria-hidden>
               <Users className="size-8 short:size-6" />
             </span>
 
             <div className="flex items-center gap-4">
-              <span className="h-0.5 flex-1 bg-gradient-to-r from-transparent to-[#e8644a]/70" aria-hidden />
-              <h1 className="text-3xl font-bold tracking-[-0.02em] text-[#1f1e26] sm:text-4xl short:text-3xl shorter:text-2xl">Sign in</h1>
-              <span className="h-0.5 flex-1 bg-gradient-to-l from-transparent to-[#e8644a]/70" aria-hidden />
+              <span className="h-0.5 flex-1 bg-gradient-to-r from-transparent to-[#f16a45]/70" aria-hidden />
+              <h1 className="text-3xl font-bold tracking-[-0.02em] text-[#24344d] sm:text-4xl short:text-3xl shorter:text-2xl">Sign in</h1>
+              <span className="h-0.5 flex-1 bg-gradient-to-l from-transparent to-[#f16a45]/70" aria-hidden />
             </div>
             <p className="mt-2 text-center text-[15px] text-slate-600 short:mt-1 short:text-sm">Use your SafeFare fleet account.</p>
 
@@ -253,7 +253,7 @@ export function LoginScreen() {
               </div>
             ) : null}
 
-            <form className="mt-6 space-y-5 short:mt-4 short:space-y-3 shorter:mt-3 shorter:space-y-2.5 [&_label]:text-[15px] [&_label]:font-semibold [&_label]:text-[#1f1e26] short:[&_label]:text-sm" onSubmit={onSubmit} noValidate>
+            <form className="mt-6 space-y-5 short:mt-4 short:space-y-3 shorter:mt-3 shorter:space-y-2.5 [&_label]:text-[15px] [&_label]:font-semibold [&_label]:text-[#24344d] short:[&_label]:text-sm" onSubmit={onSubmit} noValidate>
               <div role="radiogroup" aria-label="Account type" className="grid grid-cols-2 gap-1 rounded-2xl bg-[#f0eff5] p-1">
                 {MODES.map((m) => (
                   <button
@@ -268,8 +268,8 @@ export function LoginScreen() {
                       setFormError(null);
                     }}
                     className={cn(
-                      "flex min-h-12 short:min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-[14px] font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-[#e8644a]/35 focus-visible:outline-none sm:text-[15px]",
-                      mode === m.mode ? "bg-[#1f1e26] text-white shadow-[0_8px_20px_-10px_rgba(31,30,38,0.7)]" : "text-slate-700 hover:text-slate-900"
+                      "flex min-h-12 short:min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-[14px] font-medium transition-colors focus-visible:ring-[3px] focus-visible:ring-[#f16a45]/35 focus-visible:outline-none sm:text-[15px]",
+                      mode === m.mode ? "bg-[#24344d] text-white shadow-[0_8px_20px_-10px_rgba(36,52,77,0.7)]" : "text-slate-700 hover:text-slate-900"
                     )}
                   >
                     <m.icon className="size-[18px]" aria-hidden />
@@ -332,7 +332,7 @@ export function LoginScreen() {
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-slate-500 hover:text-slate-900 focus-visible:ring-[3px] focus-visible:ring-[#e8644a]/35 focus-visible:outline-none"
+                    className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-full text-slate-500 hover:text-slate-900 focus-visible:ring-[3px] focus-visible:ring-[#f16a45]/35 focus-visible:outline-none"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                     aria-pressed={showPassword}
                   >
@@ -344,7 +344,7 @@ export function LoginScreen() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex h-13 short:h-11 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#f08a6b] to-[#d9442a] text-[17px] font-semibold text-white shadow-[0_14px_30px_-10px_rgba(217,68,42,0.6)] transition-[filter,transform] hover:brightness-105 active:translate-y-px focus-visible:ring-[3px] focus-visible:ring-[#e8644a]/40 focus-visible:outline-none disabled:opacity-60"
+                className="flex h-13 short:h-11 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#f08a6b] to-[#d9442a] text-[17px] font-semibold text-white shadow-[0_14px_30px_-10px_rgba(217,68,42,0.6)] transition-[filter,transform] hover:brightness-105 active:translate-y-px focus-visible:ring-[3px] focus-visible:ring-[#f16a45]/40 focus-visible:outline-none disabled:opacity-60"
               >
                 {submitting ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null}
                 {submitting ? "Signing in…" : "Sign in"}

@@ -158,7 +158,7 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
               <Button
                 key={a}
                 size="sm"
-                variant={a === "decline" || a === "swap" ? "outline" : "default"}
+                variant={primaryOnly && a !== "decline" && a !== "swap" ? "default" : "outline"}
                 className={TOUCH}
                 onClick={() => d.id !== undefined && setPending({ kind: "dispatch", dispatch: d, action: a })}
                 disabled={control(TRIP_OPERATIONS[a]).disabled}

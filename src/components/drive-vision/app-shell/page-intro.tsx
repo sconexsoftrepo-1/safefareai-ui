@@ -34,7 +34,7 @@ export function PageIntro() {
       transition={{ duration: 0.3, ease: EASE_OUT }}
       className={cn("min-w-0", compact ? "mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 pt-1" : "mb-4 pt-2")}
     >
-      <h1 className={cn("font-semibold tracking-[-0.025em] text-ink", compact ? "text-[22px] leading-8" : "text-[26px] leading-tight sm:text-[30px]")}>{meta.title}</h1>
+      <h1 className={cn("font-bold tracking-[-0.025em] text-ink", compact ? "text-[22px] leading-8" : "text-[26px] leading-tight sm:text-[30px]")}>{meta.title}</h1>
       <div className={cn("min-w-0 text-[13.5px] text-ink-muted", compact ? "truncate" : "mt-1")}>{meta.nested ? <Breadcrumbs /> : meta.subtitle}</div>
     </motion.div>
   );

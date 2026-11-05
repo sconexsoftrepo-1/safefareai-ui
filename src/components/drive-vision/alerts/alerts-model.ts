@@ -111,17 +111,6 @@ export function alarmPosition(a: Pick<AlarmDto, "lat" | "lon">) {
   return { lat, lon };
 }
 
-/** Only http(s) media links are rendered; anything else (javascript:, data:, relative) is dropped. */
-export function safeMediaUrl(url: string | undefined) {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:" ? u.href : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Alarm types offered in the filter, sorted by label. All types are listed on both tabs: the
  * spec doesn't say which `category` values are AI and which are routine.

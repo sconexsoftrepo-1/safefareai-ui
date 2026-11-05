@@ -25,7 +25,7 @@ import { StatusBadge } from "../shared/status-badge";
 import { FleetStatusCard, type HealthIssue } from "./fleet-status-card";
 import { DailyTrendPanel, OperationsSnapshot } from "./operations-panels";
 import { statusSegments, trendRows } from "./dashboard-api-model";
-import { serverCount, severityRows, sortTenants, summarizeTenants } from "./platform-dashboard-model";
+import { alertChip, serverCount, severityRows, sortTenants, summarizeTenants, topTenantsByFleetSize } from "./platform-dashboard-model";
 
 /**
  * Safe-Fare Admin platform dashboard (Phase 4). Shown only to `platform === true` + `tenant.all`
@@ -98,6 +98,7 @@ export function PlatformDashboard() {
 
   const summary = useMemo(() => summarizeTenants(tenantsQ.data), [tenantsQ.data]);
   const tenants = useMemo(() => sortTenants(tenantsQ.data?.items ?? []), [tenantsQ.data]);
+  const topTenants = useMemo(() => topTenantsByFleetSize(tenantsQ.data?.items ?? []), [tenantsQ.data]);
   const slices = useMemo(() => statusSegments(statusQ.data?.items), [statusQ.data]);
   const trend = useMemo(() => trendRows(trendsQ.data?.items), [trendsQ.data]);
   const overview = overviewQ.data?.data;
@@ -122,7 +123,7 @@ export function PlatformDashboard() {
     if (!summary) return { value: "—", note: "Loading…" };
     if (!summary.complete) return { value: "—", note: "Unavailable — tenant list incomplete" };
     if (value === null || value === undefined) return { value: "—", note: "Not reported for every tenant" };
-    return { value: formatNumber(value), note: "Sum of per-tenant counts (platform)" };
+    return { value: formatNumber(value), note: "Across all tenants" };
   };
   const users = tenantKpi(summary?.users);
   const drivers = tenantKpi(summary?.drivers);
@@ -188,12 +189,13 @@ export function PlatformDashboard() {
       <DataSourceNotice source={overviewQ.data?.source ?? null} className="mb-4" />
 
       {/* A. Platform overview */}
-      <section aria-label="Platform overview" className="grid grid-cols-1 gap-2.5 rounded-card border border-line/60 bg-surface p-2.5 shadow-card @sm:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-5">
-        <MetricCard index={1} tone="featured" label="Tenants" value={can.tenants && summary ? formatNumber(summary.tenants) : "—"} sublabel={tenantsNote} icon={Building2} className="min-h-[128px] @sm:col-span-2 @3xl:col-span-1" />
-        <MetricCard index={2} tone="muted" label="Users" value={users.value} sublabel={users.note} icon={UsersRound} accent="sky" className="min-h-[128px]" />
-        <MetricCard index={3} tone="muted" label="Drivers" value={drivers.value} sublabel={drivers.note} icon={UserRound} accent="mint" className="min-h-[128px]" />
-        <MetricCard index={4} tone="muted" label="Devices" value={devices.value} sublabel={devices.note} icon={Cpu} accent="lavender" className="min-h-[128px]" />
-        <MetricCard index={5} tone="muted" label="Device groups" value={groupsValue} sublabel={groupsNote} icon={Layers3} accent="peach" className="min-h-[128px]" />
+      <section aria-label="Platform overview" className="grid grid-cols-1 gap-3 @sm:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-6">
+<MetricCard index={1} tone="featured" label="Tenants" value={can.tenants && summary ? formatNumber(summary.tenants) : "—"} sublabel={tenantsNote} icon={Building2} className="min-h-[128px]" />
+        <MetricCard index={2} label="Devices" value={devices.value} sublabel={devices.note} icon={Cpu} accent="sky" className="min-h-[128px]" />
+        <MetricCard index={3} label="Drivers" value={drivers.value} sublabel={drivers.note} icon={UserRound} accent="sky" className="min-h-[128px]" />
+        <MetricCard index={4} label="Safety alerts" value={!can.safety ? "—" : dash(serverCount(safety?.total))} sublabel={!can.safety ? "Needs alarm.read" : safety ? `${dash(serverCount(safety.open))} open · ${rangeShort}` : "Loading…"} icon={ShieldAlert} accent="peach" className="min-h-[128px]" />
+        <MetricCard index={5} label="Users" value={users.value} sublabel={users.note} icon={UsersRound} accent="sky" className="min-h-[128px]" />
+        <MetricCard index={6} label="Device groups" value={groupsValue} sublabel={groupsNote} icon={Layers3} accent="sky" className="min-h-[128px]" />
       </section>
       {can.tenants && tenantsQ.error && !tenantsQ.data ? (
         <Panel className="mt-3">
@@ -207,9 +209,18 @@ export function PlatformDashboard() {
       ) : null}
 
       <div className="mt-4 grid grid-cols-1 gap-4 @4xl:grid-cols-12">
+        {/* Alarm and trip trend */}
+        <Panel aria-labelledby="pf-trend" className="@4xl:col-span-8">
+          <PanelHeader titleId="pf-trend" title="Fleet activity" description={`Trips, distance and alarms per day · ${where} · ${range.label.toLowerCase()}`} />
+          <StaleNotice query={trendsQ} />
+          <WidgetBody allowed={can.fleet} widget="dashboard.fleet" query={trendsQ} skeleton="chart">
+            {() => <DailyTrendPanel rows={trend} />}
+          </WidgetBody>
+        </Panel>
+
         {/* B. Device health */}
-        <Panel aria-labelledby="pf-health" className="flex flex-col @4xl:col-span-5">
-          <PanelHeader titleId="pf-health" title="Device health" description={`Vehicle status and device health · ${where} (server aggregates)`} />
+        <Panel aria-labelledby="pf-health" className="flex flex-col @4xl:col-span-4">
+          <PanelHeader titleId="pf-health" title="Fleet status" description={`Vehicle status and device health · ${where} (server aggregates)`} />
           <StaleNotice query={statusQ} />
           <WidgetBody allowed={can.fleet} widget="dashboard.fleet" query={overviewQ} skeleton="card">
             {() =>
@@ -219,6 +230,35 @@ export function PlatformDashboard() {
                 <UnavailableState title="No status breakdown" reason="The server returned no vehicle status counts." className="py-8" />
               )
             }
+          </WidgetBody>
+        </Panel>
+
+        {/* E. Recent activity */}
+        <Panel aria-labelledby="pf-recent" className="flex flex-col @4xl:col-span-7">
+          <PanelHeader titleId="pf-recent" title="Recent open events" description={`Latest open alerts · ${where} (from the safety summary)`} />
+          <WidgetBody allowed={can.safety} widget="dashboard.safety" query={safetyQ}>
+            {() => <RecentEvents rows={safety?.latestOpen ?? []} now={now} />}
+          </WidgetBody>
+        </Panel>
+
+        {/* Top tenants */}
+        <Panel aria-labelledby="pf-top" className="flex flex-col @4xl:col-span-5">
+          <PanelHeader titleId="pf-top" title="Top tenants by fleet size" description="Devices reported per tenant (always platform-wide)" />
+          <WidgetBody allowed={can.tenants} widget="platform.tenants" query={tenantsQ} empty={() => topTenants.length === 0} emptyTitle="No tenant device counts returned">
+            {() => (
+              <ol className="space-y-3 px-5 pt-3 pb-5">
+                {topTenants.map((t, i) => (
+                  <li key={t.id} className="text-[13px]">
+                    <span className="mb-1.5 flex items-baseline gap-2">
+                      <span className="w-4 shrink-0 text-xs text-ink-muted tabular">{i + 1}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-ink">{t.name}</span>
+                      <span className="font-semibold text-ink tabular">{formatNumber(t.devices)}</span>
+                    </span>
+                    <ProgressMeter tone="powder" value={t.devices} max={topTenants[0].devices} label={`${t.name}: ${t.devices} devices`} />
+                  </li>
+                ))}
+              </ol>
+            )}
           </WidgetBody>
         </Panel>
 
@@ -282,23 +322,6 @@ export function PlatformDashboard() {
           </WidgetBody>
         </Panel>
 
-        {/* E. Recent activity */}
-        <Panel aria-labelledby="pf-recent" className="flex flex-col @4xl:col-span-7">
-          <PanelHeader titleId="pf-recent" title="Recent open events" description={`Latest open alerts · ${where} (from the safety summary)`} />
-          <WidgetBody allowed={can.safety} widget="dashboard.safety" query={safetyQ}>
-            {() => <RecentEvents rows={safety?.latestOpen ?? []} now={now} />}
-          </WidgetBody>
-        </Panel>
-
-        {/* Alarm and trip trend */}
-        <Panel aria-labelledby="pf-trend" className="@4xl:col-span-12">
-          <PanelHeader titleId="pf-trend" title="Daily trend" description={`Trips, distance and alarms per day · ${where} · ${range.label.toLowerCase()}`} />
-          <StaleNotice query={trendsQ} />
-          <WidgetBody allowed={can.fleet} widget="dashboard.fleet" query={trendsQ} skeleton="chart">
-            {() => <DailyTrendPanel rows={trend} />}
-          </WidgetBody>
-        </Panel>
-
         {/* Tenants */}
         <Panel aria-labelledby="pf-tenants" className="@4xl:col-span-12">
           <PanelHeader titleId="pf-tenants" title="Tenants" description="Per-tenant counts reported by the server (always platform-wide)" />
@@ -314,10 +337,10 @@ export function PlatformDashboard() {
             <Link
               key={q.href}
               href={q.href}
-              className="group flex min-h-11 items-center gap-3 rounded-[18px] border border-line/60 bg-surface p-3 shadow-card transition-[box-shadow,border-color] duration-[180ms] ease-dv hover:border-line-strong hover:shadow-hover focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none"
+              className="group flex min-h-11 items-center gap-3 rounded-inner border border-line bg-surface p-3 shadow-card transition-[box-shadow,border-color] duration-[180ms] ease-dv hover:border-line-strong hover:shadow-hover focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none"
             >
-              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-surface-muted">
-                <q.icon className="size-[18px] text-ink" aria-hidden />
+              <span className="grid size-10 shrink-0 place-items-center rounded-control bg-powder">
+                <q.icon className="size-[18px] text-info" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold">{q.label}</span>
@@ -339,7 +362,7 @@ function RecentEvents({ rows, now }: { rows: AlertRow[]; now: Date }) {
     <ul className="px-3 pt-2 pb-3">
       {rows.slice(0, 8).map((a, i) => (
         <li key={a.id ?? `row-${i}`} className="flex items-center gap-3 rounded-xl px-2 py-2.5">
-          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-peach text-serious" aria-hidden>
+          <span className={cn("grid size-9 shrink-0 place-items-center rounded-control", alertChip(a.severity))} aria-hidden>
             <Siren className="size-4" />
           </span>
           <span className="min-w-0 flex-1">

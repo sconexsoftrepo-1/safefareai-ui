@@ -1,0 +1,24 @@
+{
+  "_source": "The GET /api/v1/alerts/900 response as supplied in the written brief of 2026-11-05. Only the fields the brief shows are here. Both URLs were real vendor files when checked that day.",
+  "data": {
+    "alert": {
+      "id": 900,
+      "vendorAlarmId": "2117834455192178688",
+      "mediaStatus": "PENDING"
+    },
+    "evidence": [
+      {
+        "id": 1047,
+        "mediaType": "IMAGE",
+        "url": "https://y.gpstracktech.com/workoss/adas/2026-11/20261104/61/8/97936/00_64_6404_0_2117834455192178688.jpg",
+        "status": "PENDING"
+      },
+      {
+        "id": 1046,
+        "mediaType": "VIDEO",
+        "url": "https://y.gpstracktech.com/workoss/adas/2026-11/20261104/61/8/97936/02_64_6404_1_2117834455192178688.mp4",
+        "status": "PENDING"
+      }
+    ]
+  }
+}

@@ -12,7 +12,7 @@ export function LiveActivityList({ alarms, now, limit = 6 }: { alarms: LiveAlarm
     <ul className="px-3 pt-2 pb-3">
       {alarms.slice(0, limit).map((a) => (
         <li key={`${a.kind}-${a.id}`} className="flex items-center gap-3 rounded-xl px-2 py-2.5">
-          <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", a.kind === "ai" ? "bg-lavender text-ai-ink" : "bg-peach text-serious")} aria-hidden>
+          <span className={cn("grid size-9 shrink-0 place-items-center rounded-control", a.kind === "ai" ? "bg-lavender text-ai-ink" : "bg-peach text-serious")} aria-hidden>
             {a.kind === "ai" ? <BrainCircuit className="size-4" /> : <Siren className="size-4" />}
           </span>
           <span className="min-w-0 flex-1">

@@ -27,6 +27,30 @@ export interface SecurityHeaderEnv {
   NEXT_PUBLIC_API_BASE_URL?: string;
   NEXT_PUBLIC_MAPTILER_KEY?: string;
   NEXT_PUBLIC_MAP_STYLE_URL?: string;
+  /** Comma-separated extra hosts allowed to serve alert evidence (e.g. a storage host the backend starts using). */
+  NEXT_PUBLIC_EVIDENCE_MEDIA_HOSTS?: string;
+}
+
+/** The GPS vendor's domain, the one media source the app knows of. Subdomains count. */
+export const GPS_VENDOR_DOMAIN = "gpstracktech.com";
+
+/** Hosts allowed to serve alert evidence: the vendor, the BFF, and any configured extras. */
+export function evidenceMediaHosts(env: SecurityHeaderEnv): string[] {
+  const hosts = new Set([GPS_VENDOR_DOMAIN]);
+  const api = originOf(env.NEXT_PUBLIC_API_BASE_URL);
+  if (api) hosts.add(new URL(api).hostname.toLowerCase());
+  for (const raw of (env.NEXT_PUBLIC_EVIDENCE_MEDIA_HOSTS ?? "").split(",")) {
+    const host = raw.trim().toLowerCase();
+    if (/^[a-z0-9.-]+$/.test(host)) hosts.add(host);
+  }
+  return [...hosts];
+}
+
+/** The same hosts as CSP sources. Report-only, like the rest of that policy. */
+function evidenceSources(env: SecurityHeaderEnv): string[] {
+  const api = originOf(env.NEXT_PUBLIC_API_BASE_URL);
+  const apiHost = api ? new URL(api).hostname.toLowerCase() : null;
+  return evidenceMediaHosts(env).flatMap((h) => (h === apiHost ? [] : [`https://${h}`, `https://*.${h}`]));
 }
 
 /** `scheme://host[:port]` of an absolute http(s) URL, or null. */
@@ -73,13 +97,15 @@ export function enforcedCsp(): string {
 export function reportOnlyCsp(env: SecurityHeaderEnv): string {
   const dev = env.NODE_ENV === "development";
   const connect = connectOrigins(env);
+  const media = evidenceSources(env);
   return join([
     ["default-src", "'self'"],
     ["script-src", "'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],
     ["style-src", "'self'", "'unsafe-inline'"],
-    ["img-src", "'self'", "data:", "blob:", ...connect],
+    ["img-src", "'self'", "data:", "blob:", ...connect, ...media],
+    ["media-src", "'self'", "blob:", ...connect, ...media],
     ["font-src", "'self'", "data:"],
-    ["connect-src", "'self'", ...connect, ...(dev ? ["ws:", "wss:"] : [])],
+    ["connect-src", "'self'", ...connect, ...media, ...(dev ? ["ws:", "wss:"] : [])],
     ["worker-src", "'self'", "blob:"],
     ["child-src", "'self'", "blob:"],
     // Live Monitoring's camera popup embeds the GPS vendor's player (components/drive-vision/monitoring/gps-video.ts).

@@ -27,7 +27,7 @@ export function Panel({
   return (
     <Comp
       className={cn(
-        "rounded-card border border-line/60 shadow-card transition-[box-shadow,border-color,transform] duration-200 ease-dv",
+        "rounded-card border border-line shadow-card transition-[box-shadow,border-color,transform] duration-200 ease-dv",
         interactive ? "hover:-translate-y-0.5 hover:border-line-strong hover:shadow-hover" : "hover:shadow-hover",
         toneClass[tone],
         className
@@ -43,11 +43,10 @@ export function InsetPanel({ className, ...props }: React.HTMLAttributes<HTMLDiv
 }
 
 /**
- * Featured coral card (reference: "Total Earnings" / rewards hero). Use for at most one
- * element per view — it carries the brand accent as a soft wash, not a saturated fill.
+ * Featured card. A plain white card: its content carries the coral accent. Use for at most one element per view.
  */
 export function FeaturedCard({ className, as: Comp = "div", ...props }: React.HTMLAttributes<HTMLElement> & { as?: "div" | "section" | "article" }) {
-  return <Comp className={cn("relative overflow-hidden rounded-card border border-brand-line/80 bg-brand-wash text-ink shadow-brand-soft", className)} {...props} />;
+  return <Comp className={cn("relative overflow-hidden rounded-card border border-line bg-surface text-ink shadow-card", className)} {...props} />;
 }
 
 /**
@@ -64,11 +63,11 @@ export function ProgressMeter({
   value: number;
   max?: number;
   label: string;
-  tone?: "brand" | "ink" | "light" | "success" | "warning" | "danger";
+  tone?: "brand" | "powder" | "ink" | "light" | "success" | "warning" | "danger";
   className?: string;
 }) {
   const pct = Math.max(0, Math.min(100, (value / (max || 1)) * 100));
-  const fill = { brand: "bg-brand", ink: "bg-ink", light: "bg-white", success: "bg-success", warning: "bg-warning", danger: "bg-danger" }[tone];
+  const fill = { brand: "bg-brand", powder: "bg-powder-strong", ink: "bg-ink", light: "bg-white", success: "bg-success", warning: "bg-warning", danger: "bg-danger" }[tone];
   return (
     <div
       role="meter"

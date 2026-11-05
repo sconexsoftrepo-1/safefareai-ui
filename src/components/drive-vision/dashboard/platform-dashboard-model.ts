@@ -74,3 +74,26 @@ export function severityRows(map: Record<string, number> | undefined): { key: st
     .sort((a, b) => Number(b[0]) - Number(a[0]) || a[0].localeCompare(b[0]))
     .map(([key, value]) => ({ key, value }));
 }
+
+export interface TenantSize {
+  id: string;
+  name: string;
+  devices: number;
+}
+
+/** Largest tenants by the server's device count. Tenants without a count are left out, never shown as 0. */
+export function topTenantsByFleetSize(items: readonly TenantDto[], limit = 5): TenantSize[] {
+  return items
+    .filter((t) => count(t.devices))
+    .map((t, i) => ({ id: String(t.id ?? `tenant-${i}`), name: t.name ?? t.code ?? "Unnamed tenant", devices: t.devices as number }))
+    .sort((a, b) => b.devices - a.devices || a.name.localeCompare(b.name))
+    .slice(0, limit);
+}
+
+/** Chip colours for an alert, from the app's severity scale (1 Severe, 2 Moderate, 3 General, 4 Notice). Unknown levels stay neutral. */
+export function alertChip(severity: number | undefined): string {
+  if (severity === 1) return "bg-danger-soft text-danger";
+  if (severity === 2) return "bg-warning-soft text-warning";
+  if (severity === 3 || severity === 4) return "bg-powder text-info";
+  return "bg-surface-sunken text-ink-muted";
+}
