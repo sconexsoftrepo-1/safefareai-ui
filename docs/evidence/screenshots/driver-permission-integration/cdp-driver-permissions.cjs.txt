@@ -1,0 +1,175 @@
+// Driver screens (headless Edge via CDP, production build). EVERY */api/v1/* request is answered locally with SYNTHETIC data:
+// nothing reaches the backend, no credentials are used, and no real trip, shift, leave or checklist changes. The identity is
+// tests/fixtures/driver-me-permissions.json, built from the written brief, not a captured response.
+const fs = require("fs");
+const path = require("path");
+const ROOT = "C:/Sconex-Projects/Drive Vision";
+const OUT = `${ROOT}/docs/evidence/screenshots/driver-permission-integration`;
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const BASE = `${APP}/drive-vision/my-work`;
+const SECTIONS = [["work", ""], ["shifts", "/shifts"], ["leave", "/leave"], ["checklist", "/checklist"], ["safety", "/safety"], ["profile", "/profile"]];
+const VIEWPORTS = [[1366, 768], [768, 1024], [390, 844]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const FIXTURE = JSON.parse(fs.readFileSync(`${ROOT}/tests/fixtures/driver-me-permissions.json`, "utf8"));
+delete FIXTURE._source;
+
+let ws, seq = 0;
+const pendingCalls = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pendingCalls.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+const trip = (id, title, extra = {}) => ({ id, title, status: "ASSIGNED", scheduledStart: "2026-11-06T09:00:00Z", ...extra });
+const baseWorld = () => ({
+  permissions: clone(FIXTURE),
+  meError: null,
+  shift: null,
+  trips: [trip(1, "Ready trip"), trip(2, "Started trip", { startedAt: "2026-11-05T08:00:00Z", respondedAt: "2026-11-05T07:00:00Z" }), trip(3, "Completed trip", { completedAt: "2026-11-05T07:30:00Z" }), trip(4, "Swap pending", { pendingSwapRequestId: 9 })],
+  leave: [
+    { id: 11, leaveType: "ANNUAL", startDate: "2026-11-10", endDate: "2026-11-11", status: "PENDING" },
+    { id: 12, leaveType: "SICK", startDate: "2026-10-01", endDate: "2026-10-02", status: "APPROVED", decidedAt: "2026-09-30T10:00:00Z" },
+    { id: 13, leaveType: "CASUAL", startDate: "2026-09-01", endDate: "2026-09-02", status: "CANCELLED" },
+    { id: 14, leaveType: "ANNUAL", startDate: "2026-08-01", endDate: "2026-08-02", status: "REJECTED", decidedAt: "2026-07-30T10:00:00Z" },
+  ],
+  template: [{ key: "brakes", label: "Brakes", category: "Safety", critical: true }, { key: "lights", label: "Lights", category: "Safety", critical: false }],
+});
+let world = baseWorld();
+const writes = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+
+async function onPaused({ requestId, request }) {
+  const p = new URL(request.url).pathname.replace(/^.*\/api\/v1/, "");
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let status = 200, res = ok([], 0);
+  if (request.method !== "GET") {
+    writes.push(`${request.method} ${p}`);
+    const m = p.match(/^\/driver\/leave-requests\/(\d+)\/cancel$/);
+    if (m) world.leave = world.leave.map((l) => (l.id === Number(m[1]) ? { ...l, status: "CANCELLED" } : l));
+    if (p === "/driver/shifts/start") world.shift = { id: 5, open: true, startedAt: new Date().toISOString() };
+    if (p === "/driver/shifts/end") world.shift = null;
+    if (/\/accept$/.test(p)) world.trips = world.trips.map((t) => (`/driver/dispatches/${t.id}/accept` === p ? { ...t, respondedAt: new Date().toISOString() } : t));
+    res = ok({ status: "OK", allPassed: true });
+  } else if (p === "/me") res = ok({ id: world.permissions.userId, displayName: "Synthetic driver", email: "synthetic@example.invalid", tenantName: "Synthetic tenant" });
+  else if (p === "/me/permissions") res = ok(world.permissions);
+  else if (p === "/driver/me") {
+    if (world.meError) { status = 403; res = { code: 403, msg: "Not linked to a driver profile", data: null, extend: { errorCode: "FORBIDDEN", fieldErrors: [], requestId: "mock" } }; }
+    else res = ok({ id: 1, name: "Synthetic driver", email: "synthetic@example.invalid", phone: "+1 555 0100", status: "ACTIVE" });
+  } else if (p === "/driver/assignment") res = ok({ currentVehicle: { deviceId: 7, deviceName: "Synthetic bus" }, nextTrip: world.trips[0], today: world.trips, currentShift: world.shift ?? undefined });
+  else if (p === "/driver/dispatches") res = ok(world.trips, world.trips.length);
+  else if (p === "/driver/shifts/current") res = ok(world.shift);
+  else if (p === "/driver/working-hours") res = ok({ summary: { totalHours: 8, shiftCount: 1, averageSeconds: 28800, longestSeconds: 28800 }, shifts: [] });
+  else if (p === "/driver/leave-requests") res = ok(world.leave, world.leave.length);
+  else if (p === "/driver/checklist-template") res = ok(world.template, world.template.length);
+  else if (p === "/driver/safety-score") res = ok({ score: { score: 90, grade: "A", alarmCount: 1, severeCount: 0, penaltyPoints: 2, tripCount: 4, distanceKm: 100 }, byType: [] });
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: false }); }
+async function go(url, ms = 1800) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function mouseClick(expr) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) return false;
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(350);
+  return true;
+}
+const LABELS = ["Accept", "Decline", "Start trip", "Complete trip", "Request swap", "Start shift", "End shift", "Request leave", "Cancel request", "Start checklist", "Edit contact details"];
+const CONTROLS = `(() => { const labels = ${JSON.stringify(LABELS)}; return [...document.querySelectorAll('button')].filter(b => b.offsetParent !== null && labels.includes(b.textContent.trim())).map(b => ({ label: b.textContent.trim(), disabled: b.disabled })); })()`;
+const summary = async () => { const list = await evaluate(CONTROLS); const out = {}; for (const c of list) { const k = c.label; out[k] ??= { enabled: 0, disabled: 0 }; out[k][c.disabled ? "disabled" : "enabled"]++; } return out; };
+const reasons = () => evaluate(`[...new Set([...document.querySelectorAll('main p.text-xs.text-ink-muted, [data-testid=control-reason]')].map(p => p.innerText.trim()).filter(t => /allow|couldn't|Loading|returned no|in progress|already|completed|cancelled|declined|started|pending/i.test(t)))]`);
+const button = (t, n = 0) => `[...document.querySelectorAll('button')].filter(b => b.offsetParent !== null && b.textContent.trim() === ${JSON.stringify(t)})[${n}]`;
+const dialogButton = (t) => `[...document.querySelectorAll('[role=alertdialog] button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(t)}))`;
+const dialogOpen = () => evaluate(`!!document.querySelector('[role=alertdialog],[role=dialog]')`);
+const denyAll = (keep = () => false) => { for (const s of world.permissions.screens) for (const o of s.operations) if (!keep(o)) o.allowed = false; };
+const isRead = (o) => o.operation === "READ";
+async function signIn() {
+  await go(`${APP}/login`, 900);
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(JSON.stringify({ accessToken: jwt(), tokenType: "Bearer", accessExpiresAt: Date.now() + 3600_000, refreshToken: "synthetic", refreshExpiresAt: null }))})`);
+}
+async function sweep(name, opts = {}) {
+  const out = {};
+  await signIn();
+  for (const [section, suffix] of SECTIONS) {
+    await go(`${BASE}${suffix}`);
+    out[section] = { controls: await summary(), reasons: await reasons(), denied: await evaluate(`document.body.innerText.includes("You can't view this section")`) };
+    if (opts.shot) await shot(`${name}-${section}-1366x768`);
+  }
+  return out;
+}
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pendingCalls.has(msg.id)) { const p = pendingCalls.get(msg.id); pendingCalls.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+  };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await viewport(1366, 768);
+
+  // 1. Everything allowed, with My Safety readOnly: true.
+  R.allowed = await sweep("allowed", { shot: true });
+
+  // 2. Layout at every viewport.
+  R.layout = {};
+  await signIn();
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h);
+    for (const [section, suffix] of SECTIONS) {
+      await go(`${BASE}${suffix}`, 1500);
+      const overflow = await evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
+      R.layout[`${section}-${w}x${h}`] = { pageOverflow: overflow, controls: await summary() };
+      if (w !== 1366) await shot(`allowed-${section}-${w}x${h}`);
+    }
+  }
+  await viewport(1366, 768);
+
+  // 3. Write operations, in the mock only.
+  writes.length = 0;
+  await go(BASE); await mouseClick(button("Accept")); R.acceptDialog = await dialogOpen(); await mouseClick(dialogButton("Accept")); await sleep(900);
+  await go(`${BASE}/shifts`); await mouseClick(button("Start shift")); await mouseClick(dialogButton("Start shift")); await sleep(900);
+  R.afterShiftStart = await summary();
+  await mouseClick(button("End shift")); await mouseClick(dialogButton("End shift")); await sleep(900);
+  await go(`${BASE}/leave`); await mouseClick(button("Cancel request")); R.cancelDialog = await dialogOpen(); await shot("leave-cancel-confirm-1366x768"); await mouseClick(dialogButton("Cancel request")); await sleep(900);
+  R.afterCancel = { controls: await summary() };
+  await mouseClick(button("Request leave")); R.leavePanel = await dialogOpen(); await shot("leave-request-panel-1366x768");
+  await go(`${BASE}/checklist`); await mouseClick(button("Start checklist")); R.checklistPanel = await dialogOpen(); await shot("checklist-panel-1366x768");
+  await go(`${BASE}/profile`); await mouseClick(button("Edit contact details")); R.contactPanel = await dialogOpen();
+  R.writes = [...writes];
+
+  // 4. Writes denied, reads allowed.
+  world = baseWorld(); denyAll(isRead);
+  R.writesDenied = await sweep("writes-denied", { shot: true });
+
+  // 5. Operations missing: the shape of a tenant without granular operations.
+  world = baseWorld(); for (const s of world.permissions.screens) s.operations = [];
+  R.operationsMissing = await sweep("operations-missing");
+
+  // 6. Reads denied too.
+  world = baseWorld(); denyAll();
+  R.readsDenied = await sweep("reads-denied");
+  await shot("reads-denied-profile-1366x768");
+
+  // 7. Business states.
+  world = baseWorld(); world.template = [];
+  await signIn(); await go(`${BASE}/checklist`);
+  R.emptyTemplate = { controls: await summary(), reasons: await reasons() };
+  await shot("state-empty-template-1366x768");
+  world = baseWorld(); world.meError = true;
+  await signIn(); await go(`${BASE}/leave`);
+  R.noProfile = { controls: await summary(), reasons: await reasons() };
+  await shot("state-no-driver-profile-1366x768");
+
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ note: "MOCKED: every /api/v1 response is synthetic, from the written brief. Nothing reached the backend.", results: R }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch(async (e) => { console.error(e); await shot("failure").catch(() => {}); fs.writeFileSync(path.join(OUT, "results.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

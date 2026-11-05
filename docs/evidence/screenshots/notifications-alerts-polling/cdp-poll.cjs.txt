@@ -1,0 +1,438 @@
+// Notifications and alerts polling (headless Edge via CDP). EVERY */api/v1/* request is answered locally with SYNTHETIC
+// data shaped like docs/contracts/polling-apis.txt: nothing reaches the BFF or the vendor, no credentials are used and
+// no real writes happen. This proves the frontend against the documented contract, not the live backend.
+const fs = require("fs");
+const path = require("path");
+const OUT = "C:/Sconex-Projects/Drive Vision/docs/evidence/screenshots/notifications-alerts-polling";
+fs.mkdirSync(OUT, { recursive: true });
+const PORT = process.env.APP_PORT || "3113";
+const APP = `http://${process.env.APP_HOST || "127.0.0.1"}:${PORT}`;
+const CDP = "http://127.0.0.1:9343";
+const ALERTS = `${APP}/drive-vision/alerts`;
+const MODE = process.env.MODE || "full";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 400)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const newSession = () => JSON.stringify({ accessToken: jwt(), tokenType: "Bearer", accessExpiresAt: Date.now() + 3600_000, refreshToken: "synthetic", refreshExpiresAt: null });
+
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 1, tenantId: 1, roleId: 1, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+  noAlarm: { userId: 3, platform: false, homeTenantId: 1, tenantId: 1, roleId: 3, roleCode: "OPERATOR", permissions: ["device.read"], screens: [] },
+};
+let identity = IDS.tenantAdmin;
+
+// SYNTHETIC notifications and alerts.
+const aiN = (id, alarmId, name, read = false) => ({ id, type: "AI_EVENT", severity: 3, title: `AP29Z0001:${name}`, body: `AP29Z0001 (13600000003) ${name} at 2026-11-04 09:50:54`, refType: "ALARM", refId: String(alarmId), createdAt: "2026-11-04T04:20:57Z", readAt: read ? "2026-11-04T05:00:00Z" : null, read, details: { kind: "AI", alarmId, deviceId: 1215, deviceName: "AP29Z0001", terminalNo: "13600000003", alarmTypeId: 208, alarmName: name, alarmTime: "2026-11-04T04:20:54Z", vendorAlarmTime: "2026-11-04 09:50:54" } });
+const alarmN = (id, alarmId) => ({ id, type: "ALARM", severity: 2, title: "AP29Z0001:Storage Failure", body: "AP29Z0001 (13600000003) Storage Failure at 2026-11-04 08:24:27", refType: "ALARM", refId: String(alarmId), createdAt: "2026-11-04T02:54:31Z", readAt: null, read: false, details: { kind: "ROUTINE", alarmId, deviceId: 1215, deviceName: "AP29Z0001", terminalNo: "13600000003", alarmTypeId: 33, alarmName: "Storage Failure", alarmTime: "2026-11-04T02:54:27Z", vendorAlarmTime: "2026-11-04 08:24:27" } });
+const assigned = (id) => ({ id, type: "ALARM", severity: null, title: "Alert assigned", body: "Alert #840 was assigned to you", refType: "ALARM", refId: "840", createdAt: "2026-11-04T05:10:00Z", readAt: null, read: false, details: null });
+const dispatch = (id) => ({ id, type: "DISPATCH", severity: 4, title: "Dispatch updated", body: "A dispatch changed", refType: "DISPATCH", refId: "9", createdAt: "2026-11-04T05:20:00Z", readAt: null, read: false, details: null });
+
+let notes = [];
+const resetNotes = () => { notes = [aiN(912, 837, "Pedestrian Collision"), aiN(913, 838, "Lane Departure"), alarmN(905, 829), assigned(950), dispatch(960)]; };
+resetNotes();
+const alert = (id, kind, name, status, severity, minsAgo) => ({ id, vendorAlarmId: `V${id}`, alarmTime: new Date(Date.now() - minsAgo * 60000).toISOString(), endedAt: null, deviceId: 1215, deviceName: "AP29Z0001", terminalNo: "13600000003", alarmTypeId: 208, alarmName: name, kind, severity, speedKmh: 42, lat: 17.4239, lon: 78.4483, address: null, durationSeconds: 3, mediaStatus: "PENDING", handlingStatus: status, handlingOutcome: null, handledBy: null, handledAt: null, driverId: null, driverName: null, assigneeUserId: null, assigneeName: null });
+let alerts = [
+  alert(837, "AI", "Pedestrian Collision", "NEW", 3, 2), alert(838, "AI", "Lane Departure", "ACKNOWLEDGED", 2, 5), ...Array.from({ length: 23 }, (_, i) => alert(1000 + i, "AI", `AI event ${i + 1}`, "NEW", 1 + (i % 4), 10 + i)),
+  alert(829, "ROUTINE", "Storage Failure", "NEW", 3, 30), alert(830, "ROUTINE", "Low Voltage", "IN_PROGRESS", 1, 40),
+];
+
+let netFail = null; // "network" | 503
+let alertsStatus = null;
+let delayMs = 0;
+let tokenExpired = false; // 401 until a refresh
+let refreshAllowed = true;
+let refreshCalls = 0;
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+const envelopeError = (status, errorCode, msg) => ({ code: status, msg, data: null, total: null, extend: { errorCode, fieldErrors: [], requestId: `mock-${errorCode}` } });
+const pollBody = () => {
+  const un = notes.filter((n) => !n.read);
+  const tab = (type, key) => ({ type, unread: un.filter((n) => n.type === type).length, items: un.filter((n) => n.type === type) });
+  return identity.platform ? { unreadTotal: 0, aiEvents: { type: "AI_EVENT", unread: 0, items: [] }, alarm: { type: "ALARM", unread: 0, items: [] } } : { unreadTotal: un.length, aiEvents: tab("AI_EVENT"), alarm: tab("ALARM") };
+};
+
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const headers = Object.fromEntries(Object.entries(request.headers).map(([k, v]) => [k.toLowerCase(), v]));
+  const th = headers["x-tenant-id"] ?? null;
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const entry = { t: Date.now(), method: request.method, path: p, query: u.search, tenant: th, hasBody: !!request.postData, bearer: /^Bearer /.test(headers.authorization ?? ""), start: Date.now(), end: null };
+  captured.push(entry);
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, total: total ?? null, extend: null });
+  let status = 200, res = ok(null);
+  const q = u.searchParams;
+  if (p === "/auth/refresh") {
+    refreshCalls++;
+    if (refreshAllowed) { tokenExpired = false; res = ok({ accessToken: jwt(), tokenType: "Bearer", expiresIn: 3600, refreshToken: "synthetic-2", refreshExpiresIn: 86400 }); }
+    else { status = 401; res = envelopeError(401, "INVALID_TOKEN", "Refresh token expired"); }
+    entry.end = Date.now();
+    return send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") }).catch(() => {});
+  }
+  if (tokenExpired && !/^\/auth\//.test(p)) {
+    entry.end = Date.now();
+    return send("Fetch.fulfillRequest", { requestId, responseCode: 401, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(envelopeError(401, "UNAUTHENTICATED", "Token expired"))).toString("base64") }).catch(() => {});
+  }
+  const n = p.match(/^\/notifications\/(\d+)\/(read|unread)$/);
+  const det = p.match(/^\/alerts\/(\d+)$/);
+  if (delayMs && /^\/(notifications\/poll|alerts$)/.test(p)) await sleep(delayMs);
+  if (p === "/me") res = ok({ id: 1, displayName: "Synthetic user", email: "synthetic@example.invalid", ...(identity.platform ? {} : { tenantName: "Ganesh Travels (synthetic)", tenantCode: "Ganesh" }) });
+  else if (p === "/me/permissions") res = ok(identity);
+  else if (p === "/auth/logout") res = ok(null);
+  else if (netFail && /^\/(notifications\/poll|alerts$)/.test(p)) {
+    entry.end = Date.now();
+    if (netFail === "network") return send("Fetch.failRequest", { requestId, errorReason: "ConnectionRefused" });
+    status = 503; res = envelopeError(503, "UPSTREAM_UNAVAILABLE", "Service unavailable");
+  } else if (p === "/notifications/poll") res = ok(pollBody());
+  else if (p === "/notifications") {
+    let list = identity.platform ? [] : notes;
+    if (q.get("type")) list = list.filter((x) => x.type === q.get("type"));
+    if (q.get("unreadOnly") === "true") list = list.filter((x) => !x.read);
+    res = ok(list, list.length);
+  } else if (n) {
+    const row = notes.find((x) => x.id === Number(n[1]));
+    if (!row) { status = 404; res = envelopeError(404, "NOT_FOUND", "Notification not found"); }
+    else { row.read = n[2] === "read"; row.readAt = row.read ? new Date().toISOString() : null; res = ok(row); }
+  } else if (p === "/notifications/read-all") {
+    const t = q.get("type"); let updated = 0;
+    for (const x of notes) if (!x.read && (!t || x.type === t)) { x.read = true; updated++; }
+    res = ok({ updated });
+  } else if (p === "/alerts" && request.method === "GET") {
+    if (alertsStatus) { status = alertsStatus[0]; res = envelopeError(...alertsStatus); }
+    else {
+      let list = alerts;
+      if (q.get("kind")) list = list.filter((a) => a.kind === q.get("kind"));
+      if (q.get("openOnly") === "true") list = list.filter((a) => ["NEW", "ACKNOWLEDGED", "IN_PROGRESS"].includes(a.handlingStatus));
+      if (q.get("keyword")) list = list.filter((a) => a.alarmName.toLowerCase().includes(q.get("keyword").toLowerCase()));
+      const size = Number(q.get("pageSize") ?? 20), page = Number(q.get("pageNumber") ?? 1);
+      res = ok(list.slice((page - 1) * size, page * size), list.length);
+    }
+  } else if (det) {
+    const a = alerts.find((x) => x.id === Number(det[1]));
+    if (!a) { status = 404; res = envelopeError(404, "NOT_FOUND", "Alert not found"); }
+    else res = ok({ alert: { ...a, assigneeName: "Control Room" }, actions: [{ id: 15, actionType: "ASSIGN", actorUserId: 2, actorName: "Fleet Admin", assigneeUserId: 7, assigneeName: "Control Room", note: "Please check", automatic: false, createdAt: "2026-11-04T04:25:00Z", stepNo: null }], evidence: [{ id: 44, mediaType: "IMAGE", channel: null, url: "https://media.safefare-mock.net/image.jpg", status: "PENDING", contentType: null, sizeBytes: null, durationMs: null, storedAt: null, createdAt: "2026-11-04T04:20:57Z" }] });
+  } else if (/^\/alarms\//.test(p)) {
+    res = { ...ok([{ id: 837, vendorAlarmId: "V837", deviceId: 1215, terminalNo: "13600000003", deviceName: "AP29Z0001", alarmTypeId: 208, alarmName: "Vendor history row", alarmTime: "2026-11-04T04:20:54Z", vendorAlarmTime: "2026-11-04 09:50:54", severity: 3, speedKmh: 42, lat: 17.42, lon: 78.44, handlingStatus: "NEW" }], 1), extend: { source: "VENDOR", stale: false, fallbackReason: null, syncedAt: null, persisted: true, message: null } };
+  } else if (p === "/platform/tenants") res = ok([{ id: 1, code: "Ganesh", name: "Ganesh Travels (synthetic)", status: "ACTIVE" }], 1);
+  else if (p === "/platform/switch-tenant") res = ok({ tenantId: 1, code: "Ganesh", name: "Ganesh Travels (synthetic)", header: "X-Tenant-Id" });
+  else if (p === "/reference/alarm-types") res = ok([{ id: 208, label: "Pedestrian Collision", code: "PC" }], 1);
+  else if (p === "/devices") res = ok([{ id: 1215, name: "AP29Z0001", terminalNo: "13600000003" }], 1);
+  else res = ok([], 0);
+  entry.end = Date.now();
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") }).catch(() => {});
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); }
+async function go(url, ms = 2400) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function waitFor(expr, ms = 7000) { const end = Date.now() + ms; while (Date.now() < end) { if (await evaluate(`!!(${expr})`)) return true; await sleep(100); } console.error("waitFor timeout", expr); return false; }
+const q = (s) => `document.querySelector(${JSON.stringify(s)})`;
+async function mouseClick(expr) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) { console.error("no element", expr); return false; }
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(250);
+  return true;
+}
+const btn = (t) => `[...document.querySelectorAll('button,[role=radio]')].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)}))`;
+const tabBtn = (t) => `document.querySelector('[data-tab="${t}"]')`;
+const since = (i) => captured.slice(i);
+const polls = (l) => l.filter((c) => c.path === "/notifications/poll");
+const alertReqs = (l) => l.filter((c) => c.path === "/alerts");
+const vendor = (l) => l.filter((c) => /^\/alarms\//.test(c.path));
+const gaps = (l) => l.slice(1).map((c, i) => +((c.t - l[i].t) / 1000).toFixed(1));
+const rows = () => evaluate(`[...document.querySelectorAll('main table tbody tr')].map(r => r.innerText.replace(/\\s*\\n\\s*/g, ' | ').replace(/\\t/g, ' | '))`);
+const badge = () => evaluate(`${q("[data-testid=notification-badge]")}?.innerText ?? null`);
+const panelText = () => evaluate(`document.querySelector('[role=tabpanel]')?.innerText.replace(/\\s*\\n\\s*/g, ' | ') ?? null`);
+const tabsText = () => evaluate(`[...document.querySelectorAll('[role=tablist] [role=tab]')].map(t => t.innerText.replace(/\\s+/g, ' ').trim())`);
+const overflow = () => evaluate(`document.documentElement.scrollWidth > document.documentElement.clientWidth`);
+const openBell = async () => { await mouseClick(q("[data-testid=notification-bell]")); await waitFor(`document.querySelector('[role=tablist]')`); await sleep(300); };
+const closeBell = async () => { await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(300); };
+
+const R = {};
+async function connect() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+  };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await viewport(1366, 768);
+  await go(`${APP}/login`, 1500);
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+}
+
+// Dev build: React Strict Mode double-mounts effects. Counts loops over a fixed window.
+async function strictMode() {
+  await go(ALERTS, 9000);
+  const mark = captured.length;
+  await sleep(21000);
+  const l = since(mark);
+  const aiQ = alertReqs(l).filter((c) => /pageSize=20/.test(c.query));
+  R.page = { h1: await evaluate("document.querySelector(\"h1\")?.innerText ?? null"), rows: await evaluate("document.querySelectorAll(\"main table tbody tr\").length"), nextData: await evaluate("typeof window.next") };
+  R.strictMode = { over: "21 s", notificationPolls: polls(l).length, aiListPolls: aiQ.length, routineCountPolls: alertReqs(l).filter((c) => /pageSize=1\b/.test(c.query)).length, notificationGaps: gaps(polls(l)), aiGaps: gaps(aiQ) };
+}
+
+async function main() {
+  await connect();
+  if (MODE === "strict") { await strictMode(); fs.writeFileSync(path.join(OUT, "results-strict-mode.json"), JSON.stringify({ note: "MOCKED, next dev (React Strict Mode on)", results: R }, null, 2)); console.log(JSON.stringify(R)); process.exit(0); }
+
+  // 1) Tenant user: the bell and AI list poll every 5 seconds.
+  await go(ALERTS, 2600);
+  await waitFor(`document.querySelector('main table tbody tr')`);
+  R.firstRequests = since(0).filter((c) => /^\/(alerts|notifications|alarms)/.test(c.path)).map((c) => `${c.method} ${c.path}${c.query}`).slice(0, 6);
+  let mark = captured.length;
+  await sleep(16000);
+  let l = since(mark);
+  const aiL = alertReqs(l).filter((c) => /kind=AI/.test(c.query));
+  R.timing = { notificationPolls: polls(l).length, notificationGaps: gaps(polls(l)), aiPolls: aiL.length, aiGaps: gaps(aiL), allBearer: l.every((c) => c.bearer), tenantHeaders: l.filter((c) => c.tenant).length, vendorCalls: vendor(l).length, sampleAi: aiL[0] ? `${aiL[0].path}${aiL[0].query}` : null };
+  R.aiRows = (await rows()).slice(0, 2);
+  R.badge = await badge();
+  await shot("alerts-ai-1366x768");
+
+  // 2) Live update with no reload: a new notification and alert appear.
+  notes.unshift(aiN(914, 839, "Harsh Braking"));
+  alerts.unshift(alert(839, "AI", "Harsh Braking", "NEW", 1, 0));
+  await sleep(5600);
+  R.liveUpdate = { badge: await badge(), firstRow: (await rows())[0], pageReloaded: false };
+
+  // 3) No flicker or lost state: the table stays across polls.
+  await evaluate(`window.__marker = document.querySelector('main table'); window.__seen = 0; new MutationObserver(() => { if (document.querySelector('main table') !== window.__marker) window.__seen++; }).observe(document.querySelector('main'), { childList: true, subtree: true });`);
+  await sleep(11000);
+  R.noFlicker = { tableReplaced: await evaluate(`window.__seen`), sameNode: await evaluate(`window.__marker === document.querySelector('main table')`) };
+
+  // 4) Routine tab, pagination and filters kept across polls.
+  await mouseClick(btn("Routine alarms")); await sleep(900);
+  mark = captured.length;
+  await sleep(5600);
+  l = since(mark);
+  R.routine = { requests: [...new Set(alertReqs(l).map((c) => c.query))], rows: await rows() };
+  await shot("alerts-routine-1366x768");
+  await mouseClick(btn("AI events")); await sleep(900);
+  await mouseClick(`[...document.querySelectorAll('main button')].find(b => /next/i.test(b.getAttribute('aria-label') || b.textContent))`); await sleep(900);
+  mark = captured.length;
+  await sleep(5800);
+  l = since(mark);
+  R.pagination = { url: await evaluate(`location.search`), requests: [...new Set(alertReqs(l).filter((c) => /kind=AI/.test(c.query)).map((c) => c.query))], rows: (await rows()).length };
+  await mouseClick(`[...document.querySelectorAll('main button')].find(b => /prev/i.test(b.getAttribute('aria-label') || b.textContent))`); await sleep(900);
+  await evaluate(`document.querySelector('[aria-label="Search alerts"], input[placeholder="Keyword"]').focus()`);
+  await send("Input.insertText", { text: "lane" }); await sleep(900);
+  mark = captured.length;
+  await sleep(5600);
+  l = since(mark);
+  R.filter = { immediateAndPolled: [...new Set(alertReqs(l).filter((c) => /kind=AI/.test(c.query)).map((c) => c.query))], rows: await rows(), inputKept: await evaluate(`document.querySelector('input[placeholder="Keyword"]').value`) };
+  await evaluate(`(() => { const i = document.querySelector('input[placeholder="Keyword"]'); i.select(); })()`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 });
+  await sleep(900);
+
+  // 5) Alert detail: one read, no polling of it.
+  await mouseClick(`document.querySelector('main table tbody tr')`); await sleep(900);
+  mark = captured.length;
+  await sleep(11000);
+  l = since(mark);
+  R.detail = { url: await evaluate(`location.search`), repeatedDetailCalls: l.filter((c) => /^\/alerts\/\d+$/.test(c.path)).length, text: await evaluate(`document.querySelector('[role=dialog]')?.innerText.replace(/\\s*\\n\\s*/g, ' | ').slice(0, 420) ?? null`) };
+  await shot("alert-detail-1366x768");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(700);
+
+  // 6) Bell: tabs, details null, read, unread, read-all, See more.
+  await openBell();
+  R.bell = { tabs: await tabsText(), aiPanel: await panelText() };
+  await shot("bell-ai-1366x768");
+  await mouseClick(tabBtn("Alarm")); await sleep(300);
+  R.bell.alarmPanel = await panelText();
+  await shot("bell-alarm-1366x768");
+  await mouseClick(tabBtn("All")); await sleep(600);
+  R.bell.allPanel = await panelText();
+  await mouseClick(tabBtn("AI Events")); await sleep(300);
+  mark = captured.length;
+  await mouseClick(`document.querySelector('[data-notification="913"] [aria-label="Mark as read"]')`); await sleep(500);
+  l = since(mark);
+  R.markRead = { requests: l.filter((c) => /^\/notifications/.test(c.path)).map((c) => `${c.method} ${c.path}${c.query} body=${c.hasBody}`).slice(0, 3), badge: await badge(), gone: await evaluate(`!document.querySelector('[data-notification="913"]')`) };
+  await mouseClick(q("[data-testid=notification-see-more]")); await sleep(700);
+  mark = captured.length;
+  R.seeMore = { text: await panelText() };
+  await mouseClick(`document.querySelector('[data-notification="913"] [aria-label="Mark as unread"]')`); await sleep(600);
+  l = since(mark);
+  R.markUnread = { requests: l.filter((c) => /^\/notifications/.test(c.path) && c.method === "POST").map((c) => `${c.method} ${c.path} body=${c.hasBody}`), badge: await badge() };
+  await mouseClick(tabBtn("AI Events")); await sleep(300);
+  mark = captured.length;
+  await mouseClick(q("[data-testid=notification-read-all]")); await sleep(500);
+  l = since(mark);
+  R.readAll = { requests: l.filter((c) => /^\/notifications/.test(c.path)).map((c) => `${c.method} ${c.path}${c.query} body=${c.hasBody}`).slice(0, 2), repolledWithin: polls(l)[0] ? polls(l)[0].t - l[0].t : null, tabs: await tabsText(), badge: await badge() };
+  await mouseClick(tabBtn("Alarm")); await sleep(300);
+  mark = captured.length;
+  await mouseClick(`document.querySelector('[data-notification="905"] button')`); await sleep(1100);
+  l = since(mark);
+  R.clickOpens = { requests: l.filter((c) => c.method === "POST" || /^\/alerts\/\d+$/.test(c.path)).map((c) => `${c.method} ${c.path}`), url: await evaluate(`location.pathname + location.search`), detailOpen: await evaluate(`!!document.querySelector('[role=dialog]')`) };
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); await sleep(600);
+
+  // 7) Failures: data stays with a quiet note; recovery; 403 stops the loop quietly.
+  await go(ALERTS, 2600);
+  await waitFor(`document.querySelector('main table tbody tr')`);
+  const beforeRows = (await rows()).length;
+  const beforeBadge = await badge();
+  for (const [name, mode] of [["network", "network"], ["http503", 503]]) {
+    netFail = mode;
+    await sleep(5800);
+    R[`failure_${name}`] = { rowsKept: (await rows()).length === beforeRows, badgeKept: (await badge()) === beforeBadge, staleNote: await evaluate(`${q("[data-testid=alerts-stale]")}?.innerText ?? null`) };
+  }
+  await shot("stale-data-1366x768");
+  netFail = null;
+  await sleep(5800);
+  R.recovered = { staleNote: await evaluate(`${q("[data-testid=alerts-stale]")}?.innerText ?? null`), rows: (await rows()).length };
+
+  // 8) Slow server: no overlap.
+  delayMs = 7000;
+  await go(ALERTS, 500);
+  await sleep(1500);
+  const slowMark = captured.length;
+  await sleep(24000);
+  delayMs = 0;
+  const slow = polls(since(slowMark));
+  R.overlap = { pollsIn24s: slow.length, gaps: gaps(slow), minGap: Math.min(...gaps(slow)) };
+
+  // 9) Hidden tab pauses; visible polls at once.
+  await go(ALERTS, 2600);
+  await send("Emulation.setFocusEmulationEnabled", { enabled: false }).catch(() => {});
+  await evaluate(`Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis ?? 'visible' }); window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange'));`);
+  mark = captured.length;
+  await sleep(1500);
+  const settled = captured.length;
+  await sleep(11000);
+  R.hidden = { requestsWhileHidden: since(settled).filter((c) => /^\/(notifications|alerts)/.test(c.path)).length };
+  mark = captured.length;
+  await evaluate(`window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange'));`);
+  await sleep(400);
+  R.visible = { requestsWithin400ms: since(mark).filter((c) => /^\/(notifications|alerts)/.test(c.path)).map((c) => c.path) };
+  await evaluate(`delete document.visibilityState`);
+
+  // 10) History: vendor APIs once on open, on Refresh, and never on a timer. Back to Live stops them.
+  await go(ALERTS, 2600);
+  await mouseClick(btn("History")); await sleep(1200);
+  R.historyOpen = { calls: vendor(captured.slice(-40)).map((c) => `${c.path}`), rows: await rows() };
+  mark = captured.length;
+  await sleep(11000);
+  l = since(mark);
+  R.historyIdle = { vendorCalls: vendor(l).length, alertsCalls: alertReqs(l).length, notificationPolls: polls(l).length };
+  await shot("alerts-history-1366x768");
+  mark = captured.length;
+  await mouseClick(btn("Refresh")); await sleep(900);
+  R.historyRefresh = { vendorCalls: vendor(since(mark)).length };
+  await mouseClick(btn("Live")); await sleep(600);
+  mark = captured.length;
+  await sleep(11000);
+  R.liveAgain = { vendorCalls: vendor(since(mark)).length, alertCalls: alertReqs(since(mark)).length };
+
+  // 11) Leaving Alerts stops alerts polling; the bell continues; one loop after navigating back and forth.
+  await mouseClick(`[...document.querySelectorAll('a[href]')].find(a => a.offsetParent !== null && a.getAttribute('href').endsWith('/drive-vision/settings'))`); await sleep(1500);
+  mark = captured.length;
+  await sleep(11000);
+  R.leftAlerts = { url: await evaluate(`location.pathname`), alertCalls: alertReqs(since(mark)).length, notificationPolls: polls(since(mark)).length };
+  for (const end of ["/drive-vision/alerts", "/drive-vision/settings", "/drive-vision/alerts"]) { await mouseClick(`[...document.querySelectorAll('a[href]')].find(a => a.offsetParent !== null && a.getAttribute('href').endsWith(${JSON.stringify(end)}))`); await sleep(900); }
+  mark = captured.length;
+  await sleep(16000);
+  R.afterNavigation = { notificationPolls: polls(since(mark)).length, notificationGaps: gaps(polls(since(mark))) };
+
+  // 12) Logout stops everything.
+  await mouseClick(`[...document.querySelectorAll('[aria-label="Open profile menu"]')].find(b => b.offsetParent !== null)`); await waitFor(`document.querySelector('[role=menuitem]')`); await sleep(250);
+  await mouseClick(`[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.trim() === 'Sign out')`); await sleep(1500);
+  mark = captured.length;
+  await sleep(11000);
+  R.logout = { url: await evaluate(`location.pathname`), requestsAfter: since(mark).length };
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+
+  // 13) User without alarm.read: bell polls, alerts never; no 403 shown.
+  identity = IDS.noAlarm;
+  mark = captured.length;
+  await go(ALERTS, 8000);
+  l = since(mark);
+  R.noAlarmRead = { alertCalls: alertReqs(l).length, vendorCalls: vendor(l).length, notificationPolls: polls(l).length, page: await evaluate(`document.querySelector('main')?.innerText.slice(0, 90).replace(/\\s*\\n\\s*/g, ' | ')`) };
+  identity = IDS.tenantAdmin;
+
+  // 14) Safe-Fare Admin: all-tenant alerts with no header, empty bell, History asks for a tenant.
+  identity = IDS.sfa;
+  mark = captured.length;
+  await go(ALERTS, 3200);
+  await sleep(5000);
+  l = since(mark);
+  R.safeFareAdmin = { alertHeaders: [...new Set(alertReqs(l).map((c) => c.tenant))], notificationHeaders: [...new Set(polls(l).map((c) => c.tenant))], polls: polls(l).length, badge: await badge(), rows: (await rows()).length };
+  await openBell();
+  R.safeFareAdmin.bell = await panelText();
+  await shot("bell-safe-fare-admin-1366x768");
+  await closeBell();
+  await mouseClick(btn("History")); await sleep(1000);
+  R.safeFareAdmin.history = { vendorCalls: vendor(since(mark)).length, message: await evaluate(`document.querySelector('main').innerText.includes('Select a tenant')`) };
+  identity = IDS.tenantAdmin;
+
+  // 14b) A browser in another time zone.
+  await send("Emulation.setTimezoneOverride", { timezoneId: "America/New_York" });
+  const fixed = alert(777, "AI", "Timezone check", "NEW", 2, 0);
+  fixed.alarmTime = "2026-11-04T04:20:54Z";
+  alerts.push(fixed);
+  await go(ALERTS, 2600);
+  await evaluate(`document.querySelector('input[placeholder="Keyword"]').focus()`);
+  await send("Input.insertText", { text: "Timezone" }); await sleep(1000);
+  R.timeZone = { zone: await evaluate(`Intl.DateTimeFormat().resolvedOptions().timeZone`), utc: fixed.alarmTime, row: (await rows())[0] };
+  await send("Emulation.setTimezoneOverride", { timezoneId: "" }).catch(() => {});
+  alerts = alerts.filter((a) => a.id !== 777);
+
+  // 14c) The access token expires: the client refreshes and polling carries on. Then the refresh is refused.
+  await go(ALERTS, 2600);
+  mark = captured.length;
+  tokenExpired = true;
+  await sleep(6500);
+  l = since(mark);
+  R.tokenRefresh = { refreshCalls, pollsAfter: polls(l).length, stillOnAlerts: await evaluate(`location.pathname`), rows: (await rows()).length };
+  refreshCalls = 0;
+  refreshAllowed = false;
+  tokenExpired = true;
+  await sleep(7500);
+  R.refreshRefused = { refreshCalls, url: await evaluate(`location.pathname`), sessionKept: await evaluate(`!!sessionStorage.getItem('safefare:session:v1')`) };
+  mark = captured.length;
+  await sleep(11000);
+  R.refreshRefused.requestsAfter = since(mark).length;
+  tokenExpired = false;
+  refreshAllowed = true;
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+
+  // 15) 403 from the server: the loop stops rather than repeating it.
+  await go(ALERTS, 500);
+  alertsStatus = [403, "FORBIDDEN", "The role does not have alarm.read"];
+  await go(ALERTS, 2600);
+  mark = captured.length;
+  await sleep(11000);
+  R.server403 = { alertCallsAfter: alertReqs(since(mark)).length };
+  alertsStatus = null;
+
+  // 16) Responsive.
+  resetNotes();
+  R.layout = {};
+  for (const [w, h, name] of [[1366, 768, "desktop"], [768, 1024, "tablet"], [390, 844, "mobile"]]) {
+    await viewport(w, h);
+    await go(`${ALERTS}?kind=routine`, 2800);
+    await waitFor(`document.querySelector('main table tbody tr')`);
+    const cols = await evaluate(`[...document.querySelectorAll('main table thead th')].filter(t => t.offsetParent !== null).map(t => t.innerText.trim())`);
+    await shot(`alerts-routine-${w}x${h}`);
+    await openBell();
+    const bellBox = await evaluate(`(() => { const r = document.querySelector('[role=tablist]').closest('[data-slot=popover-content], [data-radix-popper-content-wrapper]').getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), vw: innerWidth }; })()`);
+    await shot(`bell-${w}x${h}`);
+    await closeBell();
+    R.layout[name] = { overflow: await overflow(), columns: cols, tableScrolls: await evaluate(`(() => { const t = document.querySelector('main table').parentElement; return t.scrollWidth > t.clientWidth; })()`), bell: bellBox };
+  }
+
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ note: "MOCKED: every /api/v1 response is synthetic; neither the live backend nor the vendor was called", results: R }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch((e) => { console.error(e); fs.writeFileSync(path.join(OUT, "results.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

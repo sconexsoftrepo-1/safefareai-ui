@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Info, KeyRound, Loader2, Lock, LockOpen, Pencil, Plus, RefreshCw, ShieldCheck, UserRoundCheck, UserRoundX } from "lucide-react";
+import { KeyRound, Loader2, Lock, LockOpen, Pencil, Plus, RefreshCw, ShieldCheck, UserRoundCheck, UserRoundX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -279,10 +279,6 @@ function RolesPanel({ rolesQ }: { rolesQ: ReturnType<typeof useApiQuery<{ items:
   const describe = useMemo(() => new Map((permsQ.data?.items ?? []).map((p) => [p.code, p.description])), [permsQ.data]);
   return (
     <div className="space-y-3">
-      <p className="flex items-start gap-1.5 px-1 text-xs text-ink-muted">
-        <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-        <span>Read-only for now. Changing a role&apos;s permissions affects every user with that role, so it stays off until the role model for Fleet Owner and Driver is agreed with the backend team.</span>
-      </p>
       <Panel>
         {rolesQ.error ? (
           <ApiErrorState error={rolesQ.error} onRetry={rolesQ.refetch} />
@@ -567,7 +563,6 @@ function UserFormPanel({ mode, userId, roles, onClose, onSaved }: { mode: "creat
               {failure}
             </p>
           ) : null}
-          <p className="text-xs text-ink-muted">Only roles the server marks as assignable are offered. The server decides whether you may create or change this account.</p>
         </form>
       )}
     </SlideOverPanel>

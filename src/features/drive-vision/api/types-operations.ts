@@ -303,6 +303,285 @@ export interface EndAssignmentRequest {
   at?: string;
 }
 
+// ── Vehicle registry (/vehicles; off-spec, docs/contracts/vehicle-api.txt) ──
+
+/** The device fitted in a vehicle (null on the vehicle when none is fitted). */
+export interface VehicleDeviceRef {
+  id?: number;
+  name?: string | null;
+  terminalNo?: string | null;
+}
+
+export type VehicleStatus = "ACTIVE" | "INACTIVE";
+
+/** A registered vehicle. Optional fields that aren't set come back as null. */
+export interface VehicleDto {
+  id?: number;
+  vehicleNumber?: string;
+  vehicleType?: string | null;
+  make?: string | null;
+  model?: string | null;
+  yearOfManufacture?: number | null;
+  chassisNumber?: string | null;
+  engineNumber?: string | null;
+  color?: string | null;
+  status?: VehicleStatus | string;
+  remarks?: string | null;
+  deviceAssigned?: boolean;
+  device?: VehicleDeviceRef | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** A row of GET /vehicles or GET /vehicles/available: VehicleDto plus the tenant columns. */
+export type VehicleRow = VehicleDto & TenantColumns;
+
+/** POST /vehicles and PUT /vehicles/{id} (PUT replaces every field: an omitted optional field is cleared). */
+export interface VehicleRequest {
+  /** Required, 1–20; stored trimmed and upper-case; unique in the organisation. */
+  vehicleNumber: string;
+  vehicleType?: string;
+  make?: string;
+  model?: string;
+  /** 1900–2100 and not later than next year. */
+  yearOfManufacture?: number;
+  chassisNumber?: string;
+  engineNumber?: string;
+  color?: string;
+  /** Default ACTIVE (also when omitted on PUT). */
+  status?: VehicleStatus;
+  remarks?: string;
+}
+
+export interface VehicleListQuery {
+  keyword?: string;
+  status?: VehicleStatus;
+  vehicleType?: string;
+  /** true = a device is fitted, false = none. */
+  assigned?: boolean;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+export interface AvailableVehicleQuery {
+  keyword?: string;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+// ── Sensors & passenger counts (off-spec, docs/contracts/passenger-counting-api.txt) ──
+
+export interface SensorTypeDto {
+  sensorSubId?: number;
+  sensorName?: string;
+  description?: string;
+}
+
+/** One reading of POST /sensors/readings. */
+export interface SensorReadingInput {
+  sensorId: string;
+  sensorSubId: number;
+  deviceId: number;
+  /** ISO-8601 with Z or an offset. */
+  timestamp: string;
+  sensorData: string;
+  activeStatus?: boolean;
+}
+
+export interface SensorIngestResult {
+  received?: number;
+  created?: number;
+  duplicates?: number;
+  stopVisitsUpdated?: number;
+  alertsSent?: number;
+  passengerAlerts?: number;
+  results?: { sensorId?: string; deviceId?: number; timestamp?: string; status?: "CREATED" | "DUPLICATE" | string }[];
+}
+
+export interface SensorReadingDto extends TenantColumns {
+  sensorId?: string;
+  sensorSubId?: number;
+  sensorName?: string;
+  deviceId?: number;
+  timestamp?: string;
+  sensorData?: string;
+  /** IR: the "count" value; null if not numeric. */
+  numericValue?: number | null;
+  activeStatus?: boolean;
+}
+
+/** Window of the per-bus reads (ISO-8601 UTC; both optional, default last 24 h). */
+export interface SensorWindowQuery {
+  fromUtc?: string;
+  toUtc?: string;
+}
+
+export interface SensorReadingsQuery extends SensorWindowQuery {
+  sensorSubId?: number;
+  pageNumber?: number;
+  pageSize?: number;
+}
+
+export type ComparisonStatus = "MATCH" | "MISMATCH" | "OVER_CAPACITY" | "OVER_CAPACITY_MISMATCH" | "NO_BMS" | "NO_SENSOR_COUNT";
+export type CapacitySource = "VEHICLE" | "DEFAULT";
+
+interface BusWindow {
+  deviceId?: number;
+  deviceName?: string | null;
+  terminalNo?: string | null;
+  fromUtc?: string;
+  toUtc?: string;
+}
+
+/** Counts are null when unknown — never 0. */
+export interface StopVisitDto {
+  stopId?: number;
+  deviceId?: number;
+  stopName?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  stopVisitTime?: string;
+  countOfPeople?: number | null;
+  tripStartStopId?: number | null;
+  bmsStopSequence?: number | null;
+  bmsBoarded?: number | null;
+  bmsAlighted?: number | null;
+  actualCount?: number | null;
+  sensorBoarded?: number | null;
+  sensorAlighted?: number | null;
+  sensorCount?: number | null;
+  difference?: number | null;
+  busCapacity?: number;
+  actualOverCapacity?: boolean;
+  sensorOverCapacity?: boolean;
+  actualOverCapacityBy?: number;
+  sensorOverCapacityBy?: number;
+  comparisonStatus?: ComparisonStatus | string;
+  notes?: string[];
+}
+
+export interface BusStopsDto extends BusWindow {
+  countSemantics?: string;
+  latestOnboard?: { count?: number; readingTime?: string; sensorId?: string } | null;
+  busCapacity?: number;
+  capacitySource?: CapacitySource | string;
+  visitCount?: number;
+  truncated?: boolean;
+  stops?: StopVisitDto[];
+}
+
+export interface BmsRowDto {
+  bmsId?: number;
+  tenantId?: number;
+  deviceId?: number;
+  stopId?: number;
+  stopSequence?: number | null;
+  stopName?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  stopVisitTime?: string;
+  passengersBoarded?: number | null;
+  passengersAlighted?: number | null;
+  passengerCount?: number | null;
+}
+
+export interface BusBmsDto extends BusWindow {
+  rowCount?: number;
+  truncated?: boolean;
+  rows?: BmsRowDto[];
+}
+
+export interface ComparisonStopDto {
+  stopId?: number;
+  stopName?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  stopVisitTime?: string;
+  tripStartStopId?: number | null;
+  bms?: { bmsId?: number; stopSequence?: number | null; boarded?: number | null; alighted?: number | null; passengerCount?: number | null; recordedAt?: string; rows?: number; actualCount?: number | null } | null;
+  sensor?: { boarded?: number | null; alighted?: number | null; readings?: number; sensorCount?: number | null; count?: number | null } | null;
+  difference?: { count?: number | null; boarded?: number | null; alighted?: number | null } | null;
+  status?: ComparisonStatus | string;
+  comparisonStatus?: ComparisonStatus | string;
+  capacity?: { busCapacity?: number; capacitySource?: string; actualOverCapacity?: boolean; sensorOverCapacity?: boolean; actualOverCapacityBy?: number; sensorOverCapacityBy?: number } | null;
+  notes?: string[];
+}
+
+export interface ComparisonSummaryDto {
+  visits?: number;
+  visitsWithBms?: number;
+  compared?: number;
+  exactMatches?: number;
+  mismatches?: number;
+  overCapacityStops?: number;
+  missingBmsStops?: number;
+  missingSensorStops?: number;
+  matchRatePct?: number | null;
+  meanAbsoluteError?: number | null;
+  maxAbsoluteError?: number | null;
+  bmsTotalBoarded?: number | null;
+  sensorTotalBoarded?: number | null;
+  bmsTotalAlighted?: number | null;
+  sensorTotalAlighted?: number | null;
+}
+
+export interface StopComparisonDto extends BusWindow {
+  busCapacity?: number;
+  capacitySource?: CapacitySource | string;
+  summary?: ComparisonSummaryDto;
+  truncated?: boolean;
+  stops?: ComparisonStopDto[];
+}
+
+export interface PassengerSummaryDto extends BusWindow {
+  busCapacity?: number;
+  capacitySource?: CapacitySource | string;
+  latestActualCount?: number | null;
+  latestActualAt?: string | null;
+  latestSensorCount?: number | null;
+  latestSensorAt?: string | null;
+  latestDifference?: number | null;
+  latestComparedAt?: string | null;
+  actualOverCapacity?: boolean;
+  sensorOverCapacity?: boolean;
+  actualOverCapacityBy?: number;
+  sensorOverCapacityBy?: number;
+  totalStops?: number;
+  comparedStops?: number;
+  matchedStops?: number;
+  mismatchedStops?: number;
+  overCapacityStops?: number;
+  missingBmsStops?: number;
+  missingSensorStops?: number;
+  matchRatePct?: number | null;
+  maximumActualPassengerCount?: number | null;
+  maximumSensorPassengerCount?: number | null;
+  lastUpdatedAt?: string | null;
+  truncated?: boolean;
+}
+
+export type AlcoholDetectionStatus = "DETECTED" | "NOT_DETECTED" | "INVALID_READING" | "NO_READING";
+
+/** GET /devices/{id}/sensors/alcohol: the latest active alcohol reading (docs/contracts/alcohol-detection-api.txt). */
+export interface AlcoholDetectionDto {
+  deviceId?: number;
+  sensorId?: string | null;
+  sensorName?: string | null;
+  sensorData?: string | null;
+  /** null for INVALID_READING and NO_READING — never "not detected". */
+  alcoholDetected?: boolean | null;
+  detectionStatus?: AlcoholDetectionStatus | string;
+  timestamp?: string | null;
+}
+
+export interface RecalculateResultDto {
+  deviceId?: number;
+  fromUtc?: string;
+  toUtc?: string;
+  stopVisitsUpdated?: number;
+  passengerAlerts?: number;
+}
+
 // ── Safety ───────────────────────────────────────────────────────────────────
 
 /** `ScoreDto`. The scoring formula is the backend's; the UI only displays it. */
@@ -389,7 +668,7 @@ export interface AlertRow {
   alarmTypeId?: number;
   alarmName?: string;
   kind?: string;
-  /** Integer scale undocumented. */
+  /** 1 severe, 2 moderate, 3 general, 4 notice (docs/contracts/polling-apis.txt). */
   severity?: number;
   speedKmh?: number;
   lat?: number;
@@ -397,7 +676,7 @@ export interface AlertRow {
   address?: string;
   durationSeconds?: number;
   mediaStatus?: string;
-  /** Values undocumented. */
+  /** NEW, ACKNOWLEDGED, IN_PROGRESS, RESOLVED, DISMISSED. */
   handlingStatus?: string;
   handlingOutcome?: string;
   handledBy?: number;
@@ -496,6 +775,34 @@ export interface NotificationDto {
   createdAt?: string;
   readAt?: string;
   read?: boolean;
+  /** Alarm notifications only; "Alert assigned" and other types have none. */
+  details?: NotificationDetails | null;
+}
+
+export interface NotificationDetails {
+  kind?: string;
+  alarmId?: number;
+  deviceId?: number;
+  deviceName?: string;
+  terminalNo?: string;
+  alarmTypeId?: number;
+  alarmName?: string;
+  alarmTime?: string;
+  /** The vendor's local clock as text, with no time zone: "2026-11-04 09:50:54". */
+  vendorAlarmTime?: string;
+}
+
+export interface NotificationTabDto {
+  type?: string;
+  unread?: number;
+  items?: NotificationDto[];
+}
+
+/** GET /notifications/poll (docs/contracts/polling-apis.txt; not in api-docs-v10.json). */
+export interface NotificationPollDto {
+  unreadTotal?: number;
+  aiEvents?: NotificationTabDto;
+  alarm?: NotificationTabDto;
 }
 
 export interface NotificationListQuery {

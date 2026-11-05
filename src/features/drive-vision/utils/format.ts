@@ -20,6 +20,16 @@ export const formatShortDate = (v: string | Date) => shortDateFmt.format(toDate(
 export const formatTime = (v: string | Date) => timeFmt.format(toDate(v));
 export const formatTimeWithSeconds = (v: string | Date) => timeSecFmt.format(toDate(v));
 export const formatDateTime = (v: string | Date) => `${shortDateFmt.format(toDate(v))}, ${timeFmt.format(toDate(v))}`;
+
+/**
+ * In the user's own locale and time zone, unlike everything above. For live alert data, which renders only after
+ * sign-in, on the client, so there is no server string to match. "—" for a value that isn't a date.
+ */
+const localFmt = new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+export const formatLocalDateTime = (v: string | Date) => {
+  const date = toDate(v);
+  return Number.isNaN(date.getTime()) ? "—" : localFmt.format(date);
+};
 export const formatWeekday = (v: string | Date) => weekdayFmt.format(toDate(v));
 export const formatNumber = (n: number) => numberFmt.format(n);
 /** YYYY-MM-DD in fleet time — stable day bucketing key. */

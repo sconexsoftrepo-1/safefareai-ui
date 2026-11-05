@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronRight } from "lucide-react";
-import { NAV_GROUPS, findNavItem } from "../navigation/nav-config";
+import { useAccess } from "@/features/drive-vision/access/use-access";
+import { findNavGroup, findNavItem, navItemFor } from "../navigation/nav-config";
 
 export function Breadcrumbs() {
   const pathname = usePathname();
-  const item = findNavItem(pathname);
-  const group = NAV_GROUPS.find((g) => g.items.some((i) => i.href === item?.href));
+  const { platform } = useAccess();
+  const found = findNavItem(pathname);
+  const item = found && navItemFor(found, platform);
+  const group = findNavGroup(pathname, platform);
 
   const crumbs: { label: string; href?: string }[] = [];
   if (group && group.label !== "Overview") crumbs.push({ label: group.label });

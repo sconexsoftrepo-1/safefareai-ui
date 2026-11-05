@@ -33,7 +33,9 @@ test("staff sidebars never contain the driver app; tenant ADMIN keeps the full f
     assert.ok(items.some((i) => i.screen === "settings"), `${key} has Settings`);
   }
   const admin = nav.navGroupsFor(access(IDENTITIES.tenantAdmin));
+  // A tenant ADMIN has no Platform group: the Permission Catalogue route is Role Permissions under Administration.
   same(admin.map((g) => g.label), ["Overview", "Monitor", "Fleet", "Safety", "Manage", "Administration"]);
+  same(admin.at(-1).items.map((i) => i.screen), ["users", "settings", "permissions"]);
 });
 
 test("no usable server screens (empty, unmapped, malformed) → all sections from the static list", () => {

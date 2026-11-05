@@ -1,0 +1,202 @@
+{
+  "note": "MOCKED: every /api/v1 response is synthetic; the live backend was not called",
+  "results": {
+    "nonEditableView": {
+      "module": {
+        "checked": false,
+        "disabled": true
+      },
+      "view": {
+        "checked": false,
+        "disabled": true
+      },
+      "add": {
+        "checked": false,
+        "disabled": false
+      },
+      "edit": {
+        "checked": false,
+        "disabled": false
+      },
+      "delete": {
+        "checked": false,
+        "disabled": true
+      },
+      "actionEditable": {
+        "checked": false,
+        "disabled": false
+      },
+      "actionReadOnly": {
+        "checked": false,
+        "disabled": true
+      }
+    },
+    "myWork": {
+      "view": {
+        "checked": false,
+        "disabled": false
+      },
+      "module": {
+        "checked": false,
+        "disabled": false
+      },
+      "add": {
+        "checked": false,
+        "disabled": false
+      },
+      "edit": {
+        "checked": false,
+        "disabled": false
+      },
+      "delete": {
+        "checked": false,
+        "disabled": false
+      },
+      "actionBoxes": 0
+    },
+    "moduleOnly": {
+      "view": {
+        "checked": false,
+        "disabled": false
+      },
+      "add": {
+        "checked": false,
+        "disabled": false
+      }
+    },
+    "counts": {
+      "coded": 41,
+      "pending": 31,
+      "tickedPending": 0
+    },
+    "afterEditableClicks": {
+      "add": {
+        "checked": true,
+        "disabled": false
+      },
+      "export": {
+        "checked": true,
+        "disabled": false
+      },
+      "view": {
+        "checked": false,
+        "disabled": true
+      }
+    },
+    "readOnlyClicksIgnored": {
+      "view": {
+        "checked": false,
+        "disabled": true
+      },
+      "delete": {
+        "checked": false,
+        "disabled": true
+      }
+    },
+    "pending": {
+      "add": {
+        "checked": true,
+        "disabled": false
+      },
+      "delete": {
+        "checked": true,
+        "disabled": false
+      },
+      "edit": {
+        "checked": false,
+        "disabled": false
+      },
+      "note": "Won't be saved: My Work, My Work: Add; My Work, My Work: Delete. These cells have no permission code, so saving them requires backend mapping. Everything else saves normally.",
+      "title": "The server sends no permission code for this cell, so saving it requires backend mapping."
+    },
+    "review": "Save permissions for OPERATOR? | This changes the role in one tenant only. Users of this role get the change at their next login or token refresh; anyone signed in keeps their current permissions until then. | Tenant | Ganesh Travels (synthetic) | Role | OPERATOR | +2 added · −0 removed · 5 unchanged | Added | report.create, report.export | Unchanged (5) | Kept unchanged, not in the grid: own.data.read | Won't be saved: My Work, My Work: Add; My Work, My Work: Delete. These cells have no permission code, so saving them requires backend mapping. Everything else saves normally. | Cancel | Save",
+    "save": {
+      "requests": [
+        "GET",
+        "PUT",
+        "GET"
+      ],
+      "body": {
+        "permissionCodes": [
+          "alarm.handle",
+          "alarm.read",
+          "device.read",
+          "group.read",
+          "report.create",
+          "report.export",
+          "video.live"
+        ]
+      },
+      "noInvented": true,
+      "toast": [
+        "Permissions saved for OPERATOR | 2 added · 0 removed. Users of this role get the change at their next login or token refresh."
+      ],
+      "pendingKept": {
+        "checked": true,
+        "disabled": false
+      }
+    },
+    "reset": {
+      "pendingCleared": {
+        "checked": false,
+        "disabled": false
+      },
+      "note": false,
+      "saveDisabled": true
+    },
+    "pendingOnly": {
+      "saveDisabled": true,
+      "bodyDirty": false
+    },
+    "roleSwitch": {
+      "dialog": null,
+      "pendingGone": {
+        "checked": false,
+        "disabled": false
+      }
+    },
+    "admin": {
+      "add": {
+        "checked": false,
+        "disabled": true
+      },
+      "allDisabled": true,
+      "ticked": 0
+    },
+    "layout": {
+      "1366x768": {
+        "overflow": false,
+        "size": [
+          20,
+          20
+        ],
+        "border": "rgb(111, 108, 123)",
+        "fill": "rgb(255, 255, 255)",
+        "style": "solid",
+        "opacity": "1"
+      },
+      "768x1024": {
+        "overflow": false,
+        "size": [
+          20,
+          20
+        ],
+        "border": "rgb(111, 108, 123)",
+        "fill": "rgb(255, 255, 255)",
+        "style": "solid",
+        "opacity": "1"
+      },
+      "390x844": {
+        "overflow": false,
+        "size": [
+          20,
+          20
+        ],
+        "border": "rgb(111, 108, 123)",
+        "fill": "rgb(255, 255, 255)",
+        "style": "solid",
+        "opacity": "1"
+      }
+    }
+  }
+}

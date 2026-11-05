@@ -129,7 +129,7 @@ test("3.5/T5 My Work needs a DRIVER login with own.data.read AND driver.app; not
 test("3.5/T5 driver: no fleet screens or actions unless explicitly granted; Settings always hidden; all six sections in nav", () => {
   const a = access(IDENTITIES.driver);
   assert.deepEqual([...a.screens], ["myWork"]);
-  assert.deepEqual([...a.actions].sort(), ["account.password", "driver.selfService", "notifications.markRead"]);
+  assert.deepEqual([...a.actions].sort(), ["account.password", "notifications.markRead"]);
   const groups = nav.navGroupsFor(a);
   const hrefs = groups.flatMap((g) => g.items.map((i) => i.href));
   assert.deepEqual(hrefs, p.DRIVER_SECTIONS.map((s) => s.href));

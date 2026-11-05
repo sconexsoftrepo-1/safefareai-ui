@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const { createRealm } = require("./helpers/load-ts.cjs");
 const contract = require("./helpers/v10-contract.cjs");
-const { SPEC, ALL_CODES, IDENTITIES, DRIVER_SCREENS } = require("./helpers/identities.cjs");
+const { SPEC, ALL_CODES, OFF_SPEC_CODES, IDENTITIES, DRIVER_SCREENS } = require("./helpers/identities.cjs");
 
 const realm = createRealm({ process: { env: {} } });
 const p = realm.require("features/drive-vision/access/access-policy");
@@ -65,18 +65,23 @@ test("tenantWrite is set exactly for the tenant-scoped writes (not /me, /notific
   for (const [key, def] of Object.entries(p.ACTIONS)) {
     const selfScoped = def.requires.operations.every((k) => /^\w+ \/api\/v1\/(me|notifications|driver)(\/|$)/.test(k));
     // Phase 7: actions on platform-only screens (global roles, permission catalogue) have no tenant either.
-    const platformAction = def.screen !== null && p.SCREENS[def.screen].platformOnly === true;
+    const platformAction = def.platformOnly === true || (def.screen !== null && p.SCREENS[def.screen].platformOnly === true);
     assert.equal(def.tenantWrite, !selfScoped && !platformAction, key);
   }
 });
 
-test("every code the registries use exists in V10, except the documented observed driver.app", () => {
+test("every code the registries use exists in V10, except the documented observed driver.app and the off-spec vehicle / sensor codes", () => {
   const used = new Set();
   const add = (req) => [...(req.anyOf ?? []), ...(req.allOf ?? [])].forEach((c) => used.add(c));
   Object.values(p.SCREENS).forEach((d) => add(d.requires));
   Object.values(p.FEATURES).forEach(add);
   Object.values(p.ACTIONS).forEach((d) => add(d.requires));
-  same([...used].filter((c) => !ALL_CODES.includes(c)), ["driver.app"]);
+  same([...used].filter((c) => !ALL_CODES.includes(c)).sort(), ["driver.app", ...OFF_SPEC_CODES].sort());
+  // Codes outside V10 appear only on requirements whose every operation is off-spec (sourced contract).
+  const offSpecOnly = (req) => req.offSpec && req.operations.every((o) => req.offSpec.operations.includes(o));
+  for (const req of [...Object.values(p.SCREENS).map((d) => d.requires), ...Object.values(p.ACTIONS).map((d) => d.requires)]) {
+    if ([...(req.anyOf ?? []), ...(req.allOf ?? [])].some((c) => OFF_SPEC_CODES.includes(c))) assert.ok(offSpecOnly(req), req.operations.join(", "));
+  }
   assert.ok(p.SCREENS.myWork.requires.observed.codes.includes("driver.app"));
 });
 
@@ -100,7 +105,7 @@ test("Safe-Fare Admin: platform=true recognised, every fleet screen and feature,
   assert.equal(a.platform, true);
   assert.equal(p.canAccessPlatform(a), true);
   // Phase 4: the platform dashboard in addition to every tenant screen.
-  same(list(a.screens), [...FLEET, "permissions", "platform", "roles", "settings", "tenants"].sort());
+  same(list(a.screens), [...FLEET, "platform", "roles", "settings", "tenants"].sort());
   same(list(a.features), ["assistant", "recordSearch"]);
   assert.equal(a.screens.has("myWork"), false);
 });
@@ -222,7 +227,7 @@ test("Driver (live fixture): My Work only, self-service actions, no fleet screen
   assert.equal(a.kind, "driver");
   same(list(a.screens), ["myWork"]);
   same(list(a.features), []);
-  same(list(a.actions), ["account.password", "driver.selfService", "notifications.markRead"]);
+  same(list(a.actions), ["account.password", "notifications.markRead"]);
   for (const s of p.ALL_SCREENS.filter((x) => x !== "myWork")) assert.equal(p.decideRoute("authenticated", a, p.SCREEN_ROUTES[s]).kind, "forbidden", s);
 });
 

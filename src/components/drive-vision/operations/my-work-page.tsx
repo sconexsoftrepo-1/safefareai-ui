@@ -22,8 +22,8 @@ import { toast } from "../shared/toast-provider";
 import { PHONE_PATTERN, type Errors } from "../settings/settings-model";
 import { EMPTY_LEAVE_FORM, leaveRequestBody, validateLeaveForm, windowAround, type LeaveField, type LeaveForm } from "./operations-model";
 import { LeaveFields } from "./workforce-page";
-import { TRIP_ACTIONS, countByStatus, groupByCategory, humanize, tripActionAvailability, withheldTripReason, type TripAction } from "./my-work-model";
-import { canPerform } from "@/features/drive-vision/access/access-policy";
+import { SECTION_READ, TRIP_ACTIONS, TRIP_OPERATIONS, countByStatus, driverControl, groupByCategory, humanize, leaveCancelBlock, tripActionAvailability, withheldTripReason, type DriverControl, type TripAction } from "./my-work-model";
+import { canDriver, canPerform, type DriverOperation } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { PasswordPanel } from "../settings/settings-page";
 import { CountBars, DriverIdentity, EventRow, FieldGrid, LeaveRow, SectionTitle, ServerStatus, ShiftRow, StatTile, TOUCH, TripSummary, elapsedSince, when } from "./my-work-ui";
@@ -57,9 +57,15 @@ const PAGE = "mx-auto w-full max-w-[1120px]";
  * whether actions are possible. The server identifies the driver from the session; nothing here
  * passes a driver id. Every state change is confirmed, sent once (the confirm button is busy
  * while it runs), and the affected data is re-read afterwards.
+ *
+ * A button is enabled when the server allows its operation (GET /me/permissions, see DRIVER_OPERATIONS), the record's
+ * state permits it, and nothing is in progress. A disabled button says why on the page, because a disabled button
+ * can't show a tooltip.
  */
 export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
-  const on = (...s: MyWorkSection[]) => s.includes(section);
+  const access = useAccess();
+  const canRead = canDriver(access, SECTION_READ[section]);
+  const on = (...s: MyWorkSection[]) => canRead && s.includes(section);
   const [version, setVersion] = useState(0);
   const refresh = () => setVersion((v) => v + 1);
   const [now] = useState(() => new Date());
@@ -67,7 +73,7 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
   const month = useMemo(() => windowAround(now, 30, 0), [now]);
   const upcoming = useMemo(() => windowAround(now, 1, 14), [now]);
 
-  const meQ = useApiQuery(`me:driver:${version}`, () => driverAppService.me());
+  const meQ = useApiQuery(canRead ? `me:driver:${version}` : null, () => driverAppService.me());
   // The assignment gives the vehicle used by shift start and checklist submission.
   const assignQ = useApiQuery(on("work", "shifts", "checklist") ? `me:assignment:${version}` : null, () => driverAppService.assignment());
   const shiftQ = useApiQuery(on("shifts") ? `me:shift:${version}` : null, () => driverAppService.currentShift());
@@ -86,14 +92,12 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
 
-  const access = useAccess();
-  const canSelfService = canPerform(access, "driver.selfService");
   const canChangePassword = canPerform(access, "account.password");
   const me = meQ.data;
+  const processing = pending !== null || contactOpen || leaveOpen || checklistOpen;
   // GET /driver/me failed (e.g. 403 "not linked to a driver profile"): requests would fail the same way, so actions are off.
-  // Without the self-service action grant (access policy) the same controls are off too.
-  const noProfile = (!!meQ.error && !me) || !canSelfService;
-  const noProfileTitle = !canSelfService ? "Unavailable: your account can't make changes here" : noProfile ? "Unavailable: your driver profile couldn't be loaded" : undefined;
+  const control = (operation: DriverOperation, state: string | null = null): DriverControl =>
+    driverControl({ allowed: canDriver(access, operation), missingData: meQ.error && !me ? "Your driver profile couldn't be loaded" : null, state, loading: me ? null : meQ.error ? null : "Loading your driver profile", processing });
   const overview = assignQ.data;
   const shift = shiftQ.data;
   const vehicleId = overview?.currentVehicle?.deviceId;
@@ -144,7 +148,8 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
     const availability = tripActionAvailability(d);
     const shown: readonly TripAction[] = primaryOnly ? TRIP_ACTIONS.filter((a) => a !== "decline" && a !== "swap") : TRIP_ACTIONS;
     const offered = shown.filter((a) => availability[a] === null);
-    const withheld = withheldTripReason(availability, shown);
+    const notes = [withheldTripReason(availability, shown), ...offered.map((a) => control(TRIP_OPERATIONS[a]).reason)].filter((r): r is string => r !== null);
+    const withheld = notes.length ? [...new Set(notes)].join(" ") : null;
     return (
       <div className="flex flex-col gap-1.5">
         {offered.length ? (
@@ -153,11 +158,10 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
               <Button
                 key={a}
                 size="sm"
-                variant={a === "decline" || a === "swap" ? "outline" : "default"}
+                variant={primaryOnly && a !== "decline" && a !== "swap" ? "default" : "outline"}
                 className={TOUCH}
                 onClick={() => d.id !== undefined && setPending({ kind: "dispatch", dispatch: d, action: a })}
-                disabled={noProfile}
-                title={noProfileTitle}
+                disabled={control(TRIP_OPERATIONS[a]).disabled}
               >
                 {DISPATCH_COPY[a].label}
               </Button>
@@ -175,6 +179,20 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
   const templateItems = useMemo(() => (templateQ.data?.items ?? []).filter((i): i is ChecklistItem & { key: string } => !!i.key), [templateQ.data]);
   const leaveItems = leaveQ.data?.items ?? [];
   const leaveCounts = countByStatus(leaveItems);
+  const startChecklist = control("checklist.submit", templateItems.length ? null : templateQ.error ? "The checklist couldn't be loaded" : templateQ.data ? "The server returned no checklist items" : "Loading the checklist");
+  const requestLeave = control("leave.create");
+  const shiftControl = control(shift ? "shift.end" : "shift.start");
+  const editContact = control("profile.update");
+
+  if (!canRead) {
+    return (
+      <div className={PAGE}>
+        <Panel>
+          <EmptyState icon={ShieldCheck} title="You can't view this section" description="Your role doesn't allow this section. Ask your administrator if you need it." className="py-10" />
+        </Panel>
+      </div>
+    );
+  }
 
   return (
     <div className={PAGE}>
@@ -280,14 +298,15 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
                 {shift?.deviceName ? <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] text-ink"><Truck className="size-3.5 text-ink-subtle" aria-hidden /> {shift.deviceName}</p> : null}
                 <div className="mt-auto pt-5">
                   {shift ? (
-                    <Button variant="outline" className={cn("w-full sm:w-auto", TOUCH)} onClick={() => setPending({ kind: "shift-end" })} disabled={noProfile} title={noProfileTitle}>
+                    <Button variant="outline" className={cn("w-full sm:w-auto", TOUCH)} onClick={() => setPending({ kind: "shift-end" })} disabled={shiftControl.disabled}>
                       <Square /> End shift
                     </Button>
                   ) : (
-                    <Button className={cn("w-full sm:w-auto", TOUCH)} onClick={() => setPending({ kind: "shift-start" })} disabled={noProfile} title={noProfileTitle}>
+                    <Button className={cn("w-full sm:w-auto", TOUCH)} onClick={() => setPending({ kind: "shift-start" })} disabled={shiftControl.disabled}>
                       <Play /> Start shift
                     </Button>
                   )}
+                  <ControlNote control={shiftControl} />
                 </div>
               </div>
             )}
@@ -343,9 +362,12 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             title="Leave requests"
             description={leaveQ.data ? `${formatNumber(leaveQ.data.total)} request${leaveQ.data.total === 1 ? "" : "s"}${leaveQ.data.total > leaveItems.length ? ` · showing the latest ${leaveItems.length}` : ""}` : undefined}
             action={
-              <Button className={TOUCH} onClick={() => setLeaveOpen(true)} disabled={noProfile} title={noProfileTitle}>
-                <Plus /> Request leave
-              </Button>
+              <div className="flex flex-col items-start gap-1 sm:items-end">
+                <Button className={TOUCH} onClick={() => setLeaveOpen(true)} disabled={requestLeave.disabled}>
+                  <Plus /> Request leave
+                </Button>
+                <ControlNote control={requestLeave} />
+              </div>
             }
           />
           {Object.keys(leaveCounts).length > 0 ? (
@@ -371,10 +393,13 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
                   key={l.id}
                   leave={l}
                   action={
-                    !l.decidedAt && l.id !== undefined ? (
-                      <Button size="sm" variant="outline" className={TOUCH} onClick={() => setPending({ kind: "leave-cancel", leave: l })} disabled={noProfile}>
-                        Cancel request
-                      </Button>
+                    leaveCancelBlock(l) === null ? (
+                      <div className="flex flex-col items-start gap-1 sm:items-end">
+                        <Button size="sm" variant="outline" className={TOUCH} onClick={() => setPending({ kind: "leave-cancel", leave: l })} disabled={control("leave.cancel").disabled}>
+                          Cancel request
+                        </Button>
+                        <ControlNote control={control("leave.cancel")} />
+                      </div>
                     ) : undefined
                   }
                 />
@@ -393,9 +418,12 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
               title="Pre-trip checklist"
               description={templateItems.length ? `${templateItems.length} items · ${templateItems.filter((i) => i.critical).length} critical` : "Items come from the server's checklist template"}
               action={
-                <Button className={TOUCH} onClick={() => setChecklistOpen(true)} disabled={noProfile || templateItems.length === 0} title={noProfileTitle}>
-                  <ClipboardCheck /> Start checklist
-                </Button>
+                <div className="flex flex-col items-start gap-1 sm:items-end">
+                  <Button className={TOUCH} onClick={() => setChecklistOpen(true)} disabled={startChecklist.disabled}>
+                    <ClipboardCheck /> Start checklist
+                  </Button>
+                  <ControlNote control={startChecklist} />
+                </div>
               }
             />
             <div className="px-5 pt-3 pb-5">
@@ -424,7 +452,7 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             <h2 id="mw-safety" className="mb-1 text-[16px] font-semibold text-ink">
               Safety score
             </h2>
-            <p className="mb-4 text-[12.5px] text-ink-muted">Last 30 days · computed by the server</p>
+            <p className="mb-4 text-[12.5px] text-ink-muted">Last 30 days</p>
             {scoreQ.error ? (
               <ApiErrorState error={scoreQ.error} onRetry={scoreQ.refetch} compact />
             ) : !scoreQ.data ? (
@@ -497,10 +525,13 @@ export function MyWorkPage({ section = "work" }: { section?: MyWorkSection }) {
             title="Profile"
             description="Your record as held by the server. You can edit your contact details."
             action={
-              me && canSelfService ? (
-                <Button variant="outline" className={TOUCH} onClick={() => setContactOpen(true)}>
-                  <Pencil /> Edit contact details
-                </Button>
+              me ? (
+                <div className="flex flex-col items-start gap-1 sm:items-end">
+                  <Button variant="outline" className={TOUCH} onClick={() => setContactOpen(true)} disabled={editContact.disabled}>
+                    <Pencil /> Edit contact details
+                  </Button>
+                  <ControlNote control={editContact} />
+                </div>
               ) : undefined
             }
           />
@@ -722,6 +753,15 @@ function ContactPanel({ open, current, onClose, onSaved }: { open: boolean; curr
       </form>
     </SlideOverPanel>
   );
+}
+
+/** Says why a control is disabled. A disabled button takes no pointer events, so a tooltip would never appear. */
+function ControlNote({ control }: { control: DriverControl }) {
+  return control.reason ? (
+    <p className="text-xs text-ink-muted" data-testid="control-reason" data-block={control.block ?? undefined}>
+      {control.reason}
+    </p>
+  ) : null;
 }
 
 function DriverLeavePanel({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {

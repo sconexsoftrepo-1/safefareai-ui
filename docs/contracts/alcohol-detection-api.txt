@@ -1,0 +1,21 @@
+SAFE-FARE FLEET BFF - ALCOHOL DETECTION API
+(Backend contract supplied 2026-11-03; alcohol-detection-controller. Not in docs/openapi/api-docs-v10.json;
+registered off-spec with the sensor operations. Shown on the Sensors screen.)
+
+Headers: Authorization: Bearer <token>; X-Tenant-Id (Safe-Fare Admin only).
+Permissions: sensor.read (result), sensor.ingest (readings). Alcohol sensor: sensorSubId 5, "Alcohol Sensor".
+Times: ISO-8601 with Z or an offset; stored and returned in UTC.
+
+1) GET /api/v1/devices/{deviceId}/sensors/alcohol   (sensor.read)
+   Query (optional): fromUtc (inclusive), toUtc (exclusive). Neither = latest active alcohol reading ever;
+   either bound may be sent alone; fromUtc must be before toUtc (400 INVALID_VALUE). Active readings only.
+   data: { deviceId, sensorId|null, sensorName|null, sensorData|null, alcoholDetected: bool|null,
+           detectionStatus: DETECTED | NOT_DETECTED | INVALID_READING | NO_READING, timestamp|null }
+   Mapping (exact match on trimmed sensorData): "1" DETECTED (true), "0" NOT_DETECTED (false),
+   anything else INVALID_READING (null), no active reading NO_READING (null; sensor fields null).
+   NO_READING and INVALID_READING never mean "not detected".
+   Errors: 400 INVALID_VALUE / VALIDATION_FAILED, 401 UNAUTHENTICATED, 403 FORBIDDEN, 404 NOT_FOUND.
+
+2) POST /api/v1/sensors/readings   (sensor.ingest) — existing ingestion API, sensorSubId 5,
+   sensorData "1" = detected, "0" = not detected. Same response as in passenger-counting-api.txt;
+   a repeated identical reading is "DUPLICATE"; same sensor + bus + time with a different value: 409 DUPLICATE.

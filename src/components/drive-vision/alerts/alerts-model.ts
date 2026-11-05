@@ -3,9 +3,8 @@ import type { DateRangeKey } from "@/features/drive-vision/types";
 import { resolveDateRange } from "@/features/drive-vision/utils/time";
 
 /**
- * URL state and pure derivations for the Alerts page: the raw alarm feeds (GET /alarms/ai,
- * /alarms/routine — time window, alarm types, devices) and the incident workflow (GET /alerts,
- * which adds open-only, status, severity and keyword filters and handling actions).
+ * URL state and pure derivations for the Alerts page. Every tab is live on GET /alerts (database, polled). The AI and
+ * Routine tabs also have a History view on the vendor-first GET /alarms/ai and /alarms/routine, which is never polled.
  */
 
 export type AlarmKind = "ai" | "routine";
@@ -22,7 +21,16 @@ export interface AlertsView {
   page: number;
   /** AlarmDto.id of the event open in the drawer. */
   alarmId: number | null;
+  /** The vendor-first history of the AI or Routine tab, instead of the live list. */
+  history: boolean;
 }
+
+/** GET /alerts `kind`, per tab. */
+export type AlertKindParam = "AI" | "ROUTINE";
+export const ALERT_KIND: Record<AlarmKind, AlertKindParam> = { ai: "AI", routine: "ROUTINE" };
+
+const SEVERITY_LABELS: Record<number, string> = { 1: "Severe", 2: "Moderate", 3: "General", 4: "Notice" };
+export const severityLabel = (severity: number) => SEVERITY_LABELS[severity] ?? `Level ${severity}`;
 
 const RANGES: readonly DateRangeKey[] = ["today", "7d", "30d"];
 const positiveInt = (v: string | null) => (v && /^\d{1,15}$/.test(v) && Number(v) > 0 ? Number(v) : null);
@@ -30,13 +38,15 @@ const positiveInt = (v: string | null) => (v && /^\d{1,15}$/.test(v) && Number(v
 /** Reads the view from search params. Unknown or legacy params (status, severity, mock ids) are ignored. */
 export function parseAlertsView(params: { get(name: string): string | null }): AlertsView {
   const range = params.get("range");
+  const kind = params.get("kind") === "routine" ? "routine" : params.get("kind") === "incidents" ? "incidents" : "ai";
   return {
-    kind: params.get("kind") === "routine" ? "routine" : params.get("kind") === "incidents" ? "incidents" : "ai",
+    kind,
     range: RANGES.includes(range as DateRangeKey) ? (range as DateRangeKey) : "7d",
     deviceId: positiveInt(params.get("device")),
     typeId: positiveInt(params.get("type")),
     page: positiveInt(params.get("page")) ?? 1,
     alarmId: positiveInt(params.get("alarm")),
+    history: kind !== "incidents" && params.get("source") === "history",
   };
 }
 
@@ -49,6 +59,7 @@ export function alertsSearch(view: AlertsView): string {
   if (view.typeId !== null) q.set("type", String(view.typeId));
   if (view.page > 1) q.set("page", String(view.page));
   if (view.alarmId !== null) q.set("alarm", String(view.alarmId));
+  if (view.history && view.kind !== "incidents") q.set("source", "history");
   const s = q.toString();
   return s ? `?${s}` : "";
 }
@@ -66,12 +77,15 @@ export function alarmQuery(view: AlertsView, now: Date): AlarmListQuery {
   };
 }
 
-/** The GET /alerts request for a view. `openOnly` and `keyword` are local to the Incidents tab. */
-export function incidentQuery(view: AlertsView, now: Date, opts: { openOnly: boolean; keyword: string }): AlertListQuery {
-  const r = resolveDateRange(view.range, now);
+/**
+ * The GET /alerts request for a view, built afresh for every poll. `to` is never sent: the server's default is now, and
+ * a fixed value would hide every alert newer than it. The default range sends no `from` either: it is the server's
+ * own default of the last 7 days.
+ */
+export function incidentQuery(view: AlertsView, now: Date, opts: { openOnly: boolean; keyword: string; kind?: AlertKindParam }): AlertListQuery {
   return {
-    from: r.from.toISOString(),
-    to: r.to.toISOString(),
+    kind: opts.kind,
+    from: view.range === "7d" ? undefined : resolveDateRange(view.range, now).from.toISOString(),
     alarmTypeIds: view.typeId !== null ? [view.typeId] : undefined,
     deviceIds: view.deviceId !== null ? [view.deviceId] : undefined,
     openOnly: opts.openOnly || undefined,
@@ -95,17 +109,6 @@ export function alarmPosition(a: Pick<AlarmDto, "lat" | "lon">) {
   if (typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) return null;
   return { lat, lon };
-}
-
-/** Only http(s) media links are rendered; anything else (javascript:, data:, relative) is dropped. */
-export function safeMediaUrl(url: string | undefined) {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" || u.protocol === "http:" ? u.href : null;
-  } catch {
-    return null;
-  }
 }
 
 /**

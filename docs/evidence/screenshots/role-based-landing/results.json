@@ -1,0 +1,236 @@
+{
+  "note": "MOCKED: synthetic accounts and responses through the real login form. Nothing reached the backend. No live account was used.",
+  "results": {
+    "runs": {
+      "1366x768": [
+        {
+          "account": "driver",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/my-work",
+          "navigations": [
+            "/drive-vision/my-work"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/my-work",
+          "otherPage": "/drive-vision/my-work/leave",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "admin",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/platform",
+          "navigations": [
+            "/drive-vision/platform"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/platform",
+          "otherPage": "/drive-vision/tenants",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "fleet",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/overview",
+          "navigations": [
+            "/drive-vision/overview"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/overview",
+          "otherPage": "/drive-vision/alerts",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "driver",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/my-work",
+          "navigations": [
+            "/drive-vision/my-work"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/my-work",
+          "otherPage": "/drive-vision/my-work/leave",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        }
+      ],
+      "768x1024": [
+        {
+          "account": "driver",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/my-work",
+          "navigations": [
+            "/drive-vision/my-work"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/my-work",
+          "otherPage": "/drive-vision/my-work/leave",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "admin",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/platform",
+          "navigations": [
+            "/drive-vision/platform"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/platform",
+          "otherPage": "/drive-vision/tenants",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "fleet",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/overview",
+          "navigations": [
+            "/drive-vision/overview"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/overview",
+          "otherPage": "/drive-vision/alerts",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "driver",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/my-work",
+          "navigations": [
+            "/drive-vision/my-work"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/my-work",
+          "otherPage": "/drive-vision/my-work/leave",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        }
+      ],
+      "390x844": [
+        {
+          "account": "driver",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/my-work",
+          "navigations": [
+            "/drive-vision/my-work"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/my-work",
+          "otherPage": "/drive-vision/my-work/leave",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "admin",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/platform",
+          "navigations": [
+            "/drive-vision/platform"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/platform",
+          "otherPage": "/drive-vision/tenants",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "fleet",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/overview",
+          "navigations": [
+            "/drive-vision/overview"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/overview",
+          "otherPage": "/drive-vision/alerts",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        },
+        {
+          "account": "driver",
+          "startedFrom": "/login",
+          "landed": "/drive-vision/my-work",
+          "navigations": [
+            "/drive-vision/my-work"
+          ],
+          "ok": true,
+          "afterRefresh": "/drive-vision/my-work",
+          "otherPage": "/drive-vision/my-work/leave",
+          "otherPageDenied": false,
+          "overflow": false,
+          "afterLogout": "/login"
+        }
+      ]
+    },
+    "entry": {
+      "admin": {
+        "root": "/drive-vision/platform",
+        "trail": [
+          "/drive-vision",
+          "/drive-vision",
+          "/drive-vision/platform"
+        ],
+        "index": "/drive-vision/platform"
+      },
+      "fleet": {
+        "root": "/drive-vision/overview",
+        "trail": [
+          "/drive-vision",
+          "/drive-vision",
+          "/drive-vision/overview"
+        ],
+        "index": "/drive-vision/overview"
+      },
+      "driver": {
+        "root": "/drive-vision/my-work",
+        "trail": [
+          "/drive-vision",
+          "/drive-vision",
+          "/drive-vision/my-work"
+        ],
+        "index": "/drive-vision/my-work"
+      }
+    },
+    "adminFleetOverview": {
+      "path": "/drive-vision/overview",
+      "denied": false
+    },
+    "back": "/drive-vision/overview",
+    "forward": "/drive-vision/tenants",
+    "adminDeniedDeepLink": {
+      "path": "/drive-vision/my-work",
+      "denied": true
+    },
+    "adminDeniedStable": "/drive-vision/my-work",
+    "loginAfterDeniedSignOut": "/login",
+    "staleLink": {
+      "landed": "/drive-vision/platform",
+      "trail": [
+        "/drive-vision/platform"
+      ]
+    },
+    "deepLinkLogin": {
+      "login": "/login?next=%2Fdrive-vision%2Falerts",
+      "landed": "/drive-vision/alerts"
+    },
+    "expired": {
+      "login": "/login?next=%2Fdrive-vision%2Fmy-work&reason=expired",
+      "landed": "/drive-vision/platform"
+    }
+  }
+}

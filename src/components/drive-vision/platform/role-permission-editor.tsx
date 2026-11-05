@@ -354,7 +354,6 @@ export function RolePermissionEditor({ role, onChanged }: { role: RoleDto; onCha
               {w}
             </p>
           ))}
-          <p className="text-ink-muted">Additions are sent first, then removals. The list is re-read from the server afterwards. Cancel returns to your selection unchanged.</p>
         </div>
       </ConfirmDialog>
     </div>

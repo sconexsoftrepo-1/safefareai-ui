@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, KeyRound, Loader2, MonitorSmartphone, SlidersHorizontal, UserRound } from "lucide-react";
+import { KeyRound, Loader2, MonitorSmartphone, SlidersHorizontal, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -312,13 +312,6 @@ function PreferencesPanel() {
           <ToggleRow id="pref-cluster" label="Cluster map markers" checked={view.mapClusterEnabled ?? false} onChange={(v) => set({ mapClusterEnabled: v })} />
           <ToggleRow id="pref-night" label="Night mode" description={view.nightModeFrom || view.nightModeTo ? `Server schedule: ${view.nightModeFrom ?? "?"} – ${view.nightModeTo ?? "?"}` : undefined} checked={view.nightModeEnabled ?? false} onChange={(v) => set({ nightModeEnabled: v })} />
         </div>
-        <p className="flex items-start gap-1.5 text-xs text-ink-muted">
-          <BellRing className="mt-px size-3.5 shrink-0" aria-hidden />
-          <span>
-            Saved on the server; only the reminder window is used by this app so far. Theme ({view.theme ?? "—"}), home modules, device info fields and track alarm types ({view.trackAlarmTypeIds?.length ?? 0}) are kept as stored — their allowed values aren&apos;t documented.
-            {view.updatedAt ? ` Last saved ${formatDateTime(view.updatedAt)}.` : ""}
-          </span>
-        </p>
         {missing.length > 0 ? (
           <p className="text-[13px] text-danger" role="alert">
             Can&apos;t save: the server&apos;s preferences are missing required fields ({missing.join(", ")}), and they can&apos;t be filled in without documented values.

@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { ExternalLink, FileVideo, ImageIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { FileVideo, ImageIcon, MapPinOff, Route as RouteIcon } from "lucide-react";
 import type { AlarmDto, AlarmTypeDto } from "@/features/drive-vision/api/types";
-import { formatDateTime, formatSeconds, formatTimeWithSeconds } from "@/features/drive-vision/utils/format";
+import { formatLocalDateTime, formatSeconds } from "@/features/drive-vision/utils/format";
 import { formatLatLon } from "@/features/drive-vision/utils/geo";
 import { DetailRow, SlideOverPanel } from "../shared/slide-over-panel";
 import { StatusBadge } from "../shared/status-badge";
@@ -12,7 +12,9 @@ import { EmptyState } from "../shared/feedback";
 import { UnavailableState } from "../shared/api-states";
 import { GeoMap } from "../map/geo-map";
 import { snappedBounds } from "../map/projection";
-import { alarmLabel, alarmPosition, deviceLabel, safeMediaUrl, type AlarmKind } from "./alerts-model";
+import { alarmLabel, alarmPosition, deviceLabel, severityLabel, type AlarmKind } from "./alerts-model";
+import { EvidenceViewer } from "./evidence-viewer";
+import { evidenceFromAlarm, type EvidenceItem } from "./evidence-model";
 
 /** Shown wherever the old demo offered acknowledge / assign / resolve / notes. */
 export const HANDLING_UNSUPPORTED =
@@ -41,7 +43,7 @@ export function EventDetailDrawer({
       onOpenChange={onOpenChange}
       width="lg"
       title={alarm ? alarmLabel(alarm, typeById) : ""}
-      description={alarm ? `${deviceLabel(alarm)}${alarm.alarmTime ? ` · ${formatDateTime(alarm.alarmTime)}` : ""}` : undefined}
+      description={alarm ? `${deviceLabel(alarm)}${alarm.alarmTime ? ` · ${formatLocalDateTime(alarm.alarmTime)}` : ""}` : undefined}
       headerExtra={
         alarm ? (
           <>
@@ -65,32 +67,36 @@ export function EventDetailDrawer({
 function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<number | undefined, AlarmTypeDto> }) {
   const pos = useMemo(() => alarmPosition(alarm), [alarm]);
   const bounds = useMemo(() => (pos ? snappedBounds([pos]) : null), [pos]);
-  const image = safeMediaUrl(alarm.imageUrl);
-  const video = safeMediaUrl(alarm.videoUrl);
+  const media = [evidenceFromAlarm(alarm, "image"), evidenceFromAlarm(alarm, "video")].filter((m): m is EvidenceItem => m !== null);
+  const [viewing, setViewing] = useState<EvidenceItem | null>(null);
   const type = typeById.get(alarm.alarmTypeId);
 
   return (
     <div className="space-y-6">
       <section aria-label="Evidence" className="flex flex-wrap items-center gap-2 rounded-2xl border border-line p-3 text-[13px]">
-        {image || video ? (
+        {media.length ? (
           <>
             <span className="text-ink-muted">Evidence from the vendor:</span>
-            {image ? (
-              <a href={image} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-info hover:underline">
-                <ImageIcon className="size-3.5" aria-hidden /> Image <ExternalLink className="size-3" aria-hidden />
-              </a>
-            ) : null}
-            {video ? (
-              <a href={video} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-info hover:underline">
-                <FileVideo className="size-3.5" aria-hidden /> Video <ExternalLink className="size-3" aria-hidden />
-              </a>
-            ) : null}
+            {media.map((m) => {
+              const Icon = m.kind === "image" ? ImageIcon : FileVideo;
+              const label = m.kind === "image" ? "Image" : "Video";
+              return m.state === "ready" ? (
+                <button key={m.key} type="button" onClick={() => setViewing(m)} className="inline-flex items-center gap-1 font-medium text-info hover:underline" data-testid="evidence-open">
+                  <Icon className="size-3.5" aria-hidden /> {label}
+                </button>
+              ) : (
+                <span key={m.key} className="inline-flex items-center gap-1 text-ink-muted" data-testid="evidence-unavailable">
+                  <Icon className="size-3.5" aria-hidden /> {label}: {m.note}
+                </span>
+              );
+            })}
           </>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-ink-muted">
             <ImageIcon className="size-3.5" aria-hidden /> No image or video attached to this alarm.
           </span>
         )}
+        <EvidenceViewer item={viewing} context={alarmLabel(alarm, typeById)} onClose={() => setViewing(null)} />
       </section>
 
       <div className="grid gap-5 md:grid-cols-2">
@@ -110,13 +116,13 @@ function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<n
             </DetailRow>
           ) : null}
           <DetailRow label="Alarm type">{type?.label ? `${type.label}${type.code ? ` (${type.code})` : ""}` : alarm.alarmTypeId !== undefined ? `#${alarm.alarmTypeId}` : "—"}</DetailRow>
-          <DetailRow label="Started">{alarm.alarmTime ? `${formatDateTime(alarm.alarmTime)} (${formatTimeWithSeconds(alarm.alarmTime)})` : "—"}</DetailRow>
-          {alarm.endedAt ? <DetailRow label="Ended">{formatDateTime(alarm.endedAt)}</DetailRow> : null}
+          <DetailRow label="Started">{alarm.alarmTime ? formatLocalDateTime(alarm.alarmTime) : "—"}</DetailRow>
+          {alarm.endedAt ? <DetailRow label="Ended">{formatLocalDateTime(alarm.endedAt)}</DetailRow> : null}
           {typeof alarm.durationSeconds === "number" ? <DetailRow label="Duration">{formatSeconds(alarm.durationSeconds)}</DetailRow> : null}
           <DetailRow label="Speed">{typeof alarm.speedKmh === "number" ? `${alarm.speedKmh} km/h` : "—"}</DetailRow>
           <DetailRow label="Coordinates">{pos ? <span className="text-xs tabular">{formatLatLon(pos)}</span> : "Not reported"}</DetailRow>
           <DetailRow label="Severity">
-            {typeof alarm.severity === "number" ? <span title="The API doesn't document the severity scale, so it's shown as the raw value.">{alarm.severity} (raw)</span> : "—"}
+            {typeof alarm.severity === "number" ? severityLabel(alarm.severity) : "—"}
           </DetailRow>
           <DetailRow label="Handling status">{alarm.handlingStatus ?? "—"}</DetailRow>
           {alarm.vendorAlarmTime ? <DetailRow label="Vendor time">{alarm.vendorAlarmTime}</DetailRow> : null}

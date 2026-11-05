@@ -1,0 +1,26 @@
+{
+  "note": "MOCKED, next dev (React Strict Mode on)",
+  "results": {
+    "page": {
+      "h1": "Alerts & Events",
+      "rows": 20,
+      "nextData": "object"
+    },
+    "strictMode": {
+      "over": "21 s",
+      "notificationPolls": 4,
+      "aiListPolls": 4,
+      "routineCountPolls": 4,
+      "notificationGaps": [
+        5,
+        5,
+        5
+      ],
+      "aiGaps": [
+        5,
+        5,
+        5
+      ]
+    }
+  }
+}

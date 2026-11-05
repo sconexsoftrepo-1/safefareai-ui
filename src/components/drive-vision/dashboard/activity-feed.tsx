@@ -58,7 +58,7 @@ export function ActivityFeed({ alarms, trips, commands, vehicles, drivers }: { a
           return (
             <li key={`${item.kind}-${item.id}`}>
               <button type="button" onClick={() => setOpen(item)} className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted focus-visible:outline-none">
-                <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", tone)} aria-hidden>
+                <span className={cn("grid size-9 shrink-0 place-items-center rounded-control", tone)} aria-hidden>
                   {icon}
                 </span>
                 <span className="min-w-0 flex-1">

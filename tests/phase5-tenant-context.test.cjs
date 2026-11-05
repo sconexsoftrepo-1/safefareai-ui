@@ -7,13 +7,13 @@ const fs = require("fs");
 const path = require("path");
 const { createRealm } = require("./helpers/load-ts.cjs");
 const { MemoryStorage, createLockManager } = require("./helpers/browser-fakes.cjs");
-const { ALL_CODES, TENANT_CODES, IDENTITIES } = require("./helpers/identities.cjs");
+const { ALL_CODES, TENANT_CODES, OFF_SPEC_CODES, IDENTITIES } = require("./helpers/identities.cjs");
 
 const same = (got, want) => assert.equal(JSON.stringify(got), JSON.stringify(want));
 const STORAGE_KEY = "safefare:session:v1";
 const synthetic = (extra) => ({ userId: 100, homeTenantId: 10, tenantId: 10, roleId: 50, roleCode: "ADMIN", platform: false, permissions: [], screens: [], ...extra });
-const SFA = synthetic({ platform: true, homeTenantId: null, tenantId: null, permissions: ALL_CODES });
-const TENANT_ADMIN = synthetic({ permissions: TENANT_CODES });
+const SFA = synthetic({ platform: true, homeTenantId: null, tenantId: null, permissions: [...ALL_CODES, ...OFF_SPEC_CODES] });
+const TENANT_ADMIN = synthetic({ permissions: [...TENANT_CODES, ...OFF_SPEC_CODES] });
 
 /** A realm running the real client, tenant context and tenant store against a stub fetch. */
 function openRealm(respond = () => [200, { code: 200, msg: "Success", data: null }]) {
@@ -279,7 +279,7 @@ test("P5 switch: ending the session clears the selection", () => {
 // ── Writes ──────────────────────────────────────────────────────────────────
 
 // Phase 5 classified 26 operations (5 / 19 / 2). The device-edit work added PUT /devices/{id} as class B.
-test("P5 writes: the tenant-scoped operations — 5 create (A), 20 record update (B: 19 + device edit), 2 record delete (C)", () => {
+test("P5 writes: the tenant-scoped operations — 8 create (A: 5 + vehicle + sensor reading + device registration), 23 record update (B: 19 + device edit + vehicle + stop recalculation + role menu permissions), 3 record delete (C: 2 + vehicle)", () => {
   const { policy } = openRealm();
   const byClass = {};
   for (const key of policy.ALL_ACTIONS) {
@@ -287,7 +287,7 @@ test("P5 writes: the tenant-scoped operations — 5 create (A), 20 record update
     assert.equal(def.tenantWrite, def.tenantClass !== undefined, `${key}: tenantWrite ⇔ tenantClass`);
     if (def.tenantClass) byClass[def.tenantClass] = (byClass[def.tenantClass] ?? 0) + def.requires.operations.length;
   }
-  assert.deepEqual({ ...byClass }, { CREATE_REQUIRES_SELECTED_TENANT: 5, EXISTING_RECORD_UPDATE: 20, EXISTING_RECORD_DELETE: 2 });
+  assert.deepEqual({ ...byClass }, { CREATE_REQUIRES_SELECTED_TENANT: 8, EXISTING_RECORD_UPDATE: 23, EXISTING_RECORD_DELETE: 3 });
   for (const key of policy.ALL_ACTIONS) {
     const def = policy.ACTIONS[key];
     if (def.tenantClass === "CREATE_REQUIRES_SELECTED_TENANT") for (const op of def.requires.operations) assert.match(op, /^POST /, `${key}: creates are POSTs`);
@@ -307,7 +307,7 @@ test("P5 writes: Safe-Fare Admin without a tenant — every tenant write blocked
     assert.equal(policy.needsTenantSelection(a, k), true, k);
   }
   for (const k of ["settings.manage", "account.password", "notifications.markRead"]) assert.equal(policy.canPerform(a, k), true, k);
-  same([...policy.tenantBlockedScreens(a)].sort(), ["alerts", "dispatch", "drivers", "geofences", "users", "vehicles", "video", "workforce"]);
+  same([...policy.tenantBlockedScreens(a)].sort(), ["alerts", "dispatch", "drivers", "geofences", "permissions", "sensors", "users", "vehicleRegistry", "vehicles", "video", "workforce"]);
 });
 
 test("P5 writes: with a selected tenant every permitted write is offered; nothing is tenant-blocked", () => {

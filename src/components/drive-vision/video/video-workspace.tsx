@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Clapperboard, Download, ExternalLink, Film, Info, RefreshCw, Scissors } from "lucide-react";
+import { Clapperboard, Download, ExternalLink, Film, RefreshCw, Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
@@ -224,10 +224,6 @@ export function VideoWorkspace() {
                 </ul>
               )}
             </Panel>
-            <p className="flex items-start gap-1.5 px-1 text-xs text-ink-muted">
-              <Info className="mt-px size-3.5 shrink-0" aria-hidden />
-              <span>Export status values are shown exactly as the server reports them; their meanings aren&apos;t documented.</span>
-            </p>
           </div>
         </div>
       )}

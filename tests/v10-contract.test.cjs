@@ -101,7 +101,39 @@ test("static analysis found the frontend's BFF call sites", () => {
  */
 const OFF_SPEC_CALLS = {
   "POST /platform/tenants": "Tenant creation — contract from the backend team 2026-11-02; tests/tenant-create.test.cjs",
+  // Vehicle registry — contract from the backend team 2026-11-03 (docs/contracts/vehicle-api.txt); tests/vehicle-registry.test.cjs.
+  "GET /vehicles": "Vehicle list (keyword, status, vehicleType, assigned, paging)",
+  "GET /vehicles/available": "Active vehicles with no device fitted",
+  "GET /vehicles/{}": "Vehicle details",
+  "POST /vehicles": "Register a vehicle",
+  "PUT /vehicles/{}": "Edit a vehicle (full replace)",
+  "DELETE /vehicles/{}": "Delete a vehicle",
+  // Sensors / passenger counts — contract from the backend team 2026-11-03 (docs/contracts/passenger-counting-api.txt); tests/sensors.test.cjs.
+  "GET /sensors/types": "Sensor catalog",
+  "POST /sensors/readings": "Send sensor readings",
+  "GET /devices/{}/sensors/readings": "Raw readings of a bus",
+  "GET /devices/{}/stops": "Stop-wise passenger counts",
+  "GET /devices/{}/bms": "Original BMS records",
+  "GET /devices/{}/stops/comparison": "Sensor vs BMS reconciliation",
+  "GET /devices/{}/passenger-summary": "Passenger / capacity summary",
+  "POST /devices/{}/stops/recalculate": "Rebuild stop visits and alerts",
+  // Alcohol detection — contract from the backend team 2026-11-03 (docs/contracts/alcohol-detection-api.txt); tests/sensors.test.cjs.
+  "GET /devices/{}/sensors/alcohol": "Latest alcohol detection result",
+  // Role menu permissions — contract from the backend team 2026-11-04 (docs/contracts/role-menu-permission-api.txt); tests/role-menu-permission.test.cjs.
+  "GET /roles/{}/menu-permissions": "A role's menu permission grid",
+  "PUT /roles/{}/menu-permissions": "Save a role's menu permission grid",
+  // Polling — contract from the backend team 2026-11-04 (docs/contracts/polling-apis.txt); tests/notifications-alerts-polling.test.cjs.
+  "GET /notifications/poll": "Unread counts and items per tab",
 };
+
+/** Query parameters outside V10, each from a backend-supplied contract. */
+const OFF_SPEC_QUERY = [
+  /GET \/api\/v1\/platform\/tenants \?status: query parameter sent by the frontend is not a V10 parameter/,
+  // docs/contracts/polling-apis.txt 3.3; tests/notifications-alerts-polling.test.cjs.
+  /POST \/api\/v1\/notifications\/read-all \?type: query parameter sent by the frontend is not a V10 parameter/,
+  // docs/contracts/polling-apis.txt 3.1 (`details` on a notification).
+  /\/api\/v1\/notifications[^ ]* data(\[\])?\.details: field read by the frontend is not in the V10 response schema/,
+];
 
 test("every call site matches a V10 operation (method + path), except the documented off-spec calls", () => {
   const off = RESULT.sites.filter((s) => !s.operation).map((s) => `${s.method} ${s.path}`);
@@ -110,7 +142,7 @@ test("every call site matches a V10 operation (method + path), except the docume
 });
 
 test("no call site contradicts V10: query parameters, required parameters, request bodies, response fields, value sets, auth", () => {
-  same(findings("error").filter((f) => !(/no V10 operation matches/.test(f.msg) && Object.keys(OFF_SPEC_CALLS).some((k) => f.key.startsWith(`${k} `)))).map((f) => `${f.key}: ${f.msg} (${f.site})`), []);
+  same(findings("error").filter((f) => !(/no V10 operation matches/.test(f.msg) && Object.keys(OFF_SPEC_CALLS).some((k) => f.key.startsWith(`${k} `)))).map((f) => `${f.key}: ${f.msg} (${f.site})`).filter((line) => !OFF_SPEC_QUERY.some((r) => r.test(line))), []);
 });
 
 test("warnings are exactly the documented ones", () => {
@@ -275,6 +307,7 @@ const CASES = [
   ["update permission", (s) => s.roles.updatePermission("report.export", { description: "Export", scope: "PLATFORM" }), { method: "PUT", path: "/api/v1/permissions/report.export", body: { description: "Export", scope: "PLATFORM" } }],
   ["delete permission", (s) => s.roles.deletePermission("report.export"), { method: "DELETE", path: "/api/v1/permissions/report.export" }],
   // device edit: full DeviceRequest, never confirmChargeableChange
+  ["create device", (s) => s.fleet.createDevice({ groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2 }), { method: "POST", path: "/api/v1/devices", body: { groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2 } }],
   ["update device", (s) => s.fleet.updateDevice(7, { groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2, remark: "x" }), { method: "PUT", path: "/api/v1/devices/7", body: { groupId: 2, name: "KA-01", terminalNo: "ABC12345678", modelName: "Synthetic-M1", protocol: 1, objectTypeId: 3, cameraCount: 2, remark: "x" } }],
   // Safe-Fare Admin: the login body carries no tenantCode property at all.
   ["login (Safe-Fare Admin)", (s) => s.auth.login({ login: "admin", password: "p" }), { method: "POST", path: "/api/v1/auth/login", body: { login: "admin", password: "p" }, auth: false }, { signedIn: false }],

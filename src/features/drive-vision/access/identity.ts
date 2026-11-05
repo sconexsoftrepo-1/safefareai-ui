@@ -97,6 +97,16 @@ export function readIdentity(raw: MyPermissionsDto | unknown): Identity | null {
 }
 
 /**
+ * Whether the server allows one operation of one screen: `screens[].operations[].allowed` from GET /me/permissions.
+ * False when the identity hasn't loaded or the screen or operation is missing. `readOnly` isn't consulted: it is a
+ * screen-level hint and doesn't replace the operation's own answer.
+ */
+export function isScreenOperationAllowed(identity: Identity | null | undefined, menuKey: string, permissionCode: string): boolean {
+  const operations = identity?.screens.find((s) => s.menuKey === menuKey)?.operations.filter((o) => o.permissionCode === permissionCode) ?? [];
+  return operations.length > 0 && operations.every((o) => o.allowed);
+}
+
+/**
  * How the UI describes the user. Derived, never a grant:
  * - `platform-admin` — Safe-Fare Admin: `platform === true` (whatever the role code).
  * - `tenant-admin`   — `platform === false` and role code exactly `ADMIN`.

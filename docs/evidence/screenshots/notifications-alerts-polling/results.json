@@ -1,0 +1,284 @@
+{
+  "note": "MOCKED: every /api/v1 response is synthetic; neither the live backend nor the vendor was called",
+  "results": {
+    "firstRequests": [
+      "GET /notifications/poll?limit=20",
+      "GET /alarms/ai?from=2026-10-28T18%3A30%3A00.000Z&to=2026-11-04T10%3A56%3A12.543Z&pageNumber=1&pageSize=100",
+      "GET /alarms/routine?from=2026-10-28T18%3A30%3A00.000Z&to=2026-11-04T10%3A56%3A12.543Z&pageNumber=1&pageSize=100",
+      "GET /notifications/poll?limit=20",
+      "GET /alerts?kind=AI&openOnly=true&pageNumber=1&pageSize=20",
+      "GET /alerts?kind=ROUTINE&openOnly=true&pageNumber=1&pageSize=1"
+    ],
+    "timing": {
+      "notificationPolls": 3,
+      "notificationGaps": [
+        5,
+        5
+      ],
+      "aiPolls": 3,
+      "aiGaps": [
+        5,
+        5
+      ],
+      "allBearer": true,
+      "tenantHeaders": 0,
+      "vendorCalls": 0,
+      "sampleAi": "/alerts?kind=AI&openOnly=true&pageNumber=1&pageSize=20"
+    },
+    "aiRows": [
+      "Pedestrian Collision | AI | AP29Z0001 | 13600000003 | 04 Nov 2026, 16:24:11 | 2 min ago | — | General | NEW",
+      "Lane Departure | AI | AP29Z0001 | 13600000003 | 04 Nov 2026, 16:21:11 | 5 min ago | — | Moderate | ACKNOWLEDGED"
+    ],
+    "badge": "5",
+    "liveUpdate": {
+      "badge": "6",
+      "firstRow": "Harsh Braking | AI | AP29Z0001 | 13600000003 | 04 Nov 2026, 16:26:31 | just now | — | Severe | NEW",
+      "pageReloaded": false
+    },
+    "noFlicker": {
+      "tableReplaced": 0,
+      "sameNode": true
+    },
+    "routine": {
+      "requests": [
+        "?kind=ROUTINE&openOnly=true&pageNumber=1&pageSize=20",
+        "?kind=AI&openOnly=true&pageNumber=1&pageSize=1"
+      ],
+      "rows": [
+        "Storage Failure | ROUTINE | AP29Z0001 | 13600000003 | 04 Nov 2026, 15:56:11 | 31 min ago | — | General | NEW",
+        "Low Voltage | ROUTINE | AP29Z0001 | 13600000003 | 04 Nov 2026, 15:46:11 | 41 min ago | — | Severe | IN_PROGRESS"
+      ]
+    },
+    "pagination": {
+      "url": "?page=2",
+      "requests": [
+        "?kind=AI&openOnly=true&pageNumber=2&pageSize=20"
+      ],
+      "rows": 6
+    },
+    "filter": {
+      "immediateAndPolled": [
+        "?kind=AI&openOnly=true&keyword=lane&pageNumber=1&pageSize=20"
+      ],
+      "rows": [
+        "Lane Departure | AI | AP29Z0001 | 13600000003 | 04 Nov 2026, 16:21:11 | 6 min ago | — | Moderate | ACKNOWLEDGED"
+      ],
+      "inputKept": "lane"
+    },
+    "detail": {
+      "url": "?alarm=839",
+      "repeatedDetailCalls": 0,
+      "text": "Harsh Braking | AP29Z0001 · 04 Nov 2026, 16:26:31 | Status | NEW | Severity | Severe | Kind | AI | Device | AP29Z0001 | Terminal | 13600000003 | Alarm time | 04 Nov 2026, 16:26:31 | Driver (server) | — | Assignee | Control Room | Speed | 42 km/h | Location | 17.42390, 78.44830 | Handled | — | Evidence | IMAGE · PENDING | Open | History | ASSIGN | Fleet Admin | → Control Room | 04 Nov 2026, 09:55:00 | Please check | C"
+    },
+    "bell": {
+      "tabs": [
+        "AI Events 3",
+        "Alarm 2",
+        "All"
+      ],
+      "aiPanel": "AP29Z0001:Harsh Braking | AP29Z0001 (13600000003) Harsh Braking at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Pedestrian Collision | AP29Z0001 (13600000003) Pedestrian Collision at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Lane Departure | AP29Z0001 (13600000003) Lane Departure at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread",
+      "alarmPanel": "AP29Z0001:Storage Failure | AP29Z0001 (13600000003) Storage Failure at 2026-11-04 08:24:27 | 2026-11-04 08:24:27 | Moderate | Unread | Alert assigned | Alert #840 was assigned to you | 04 Nov 2026, 10:40:00 | Unread",
+      "allPanel": "AP29Z0001:Harsh Braking | AP29Z0001 (13600000003) Harsh Braking at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Pedestrian Collision | AP29Z0001 (13600000003) Pedestrian Collision at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Lane Departure | AP29Z0001 (13600000003) Lane Departure at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Storage Failure | AP29Z0001 (13600000003) Storage Failure at 2026-11-04 08:24:27 | 2026-11-04 08:24:27 | Moderate | Unread | Alert assigned | Alert #840 was assigned to you | 04 Nov 2026, 10:40:00 | Unread | Dispatch updated | A dispatch changed | 04 Nov 2026, 10:50:00 | Notice | Unread"
+    },
+    "markRead": {
+      "requests": [
+        "POST /notifications/913/read body=false",
+        "GET /notifications/poll?limit=20 body=false"
+      ],
+      "badge": "5",
+      "gone": true
+    },
+    "seeMore": {
+      "text": "AP29Z0001:Harsh Braking | AP29Z0001 (13600000003) Harsh Braking at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Pedestrian Collision | AP29Z0001 (13600000003) Pedestrian Collision at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Unread | AP29Z0001:Lane Departure | AP29Z0001 (13600000003) Lane Departure at 2026-11-04 09:50:54 | 2026-11-04 09:50:54 | General | Read"
+    },
+    "markUnread": {
+      "requests": [
+        "POST /notifications/913/unread body=false"
+      ],
+      "badge": "6"
+    },
+    "readAll": {
+      "requests": [
+        "POST /notifications/read-all?type=AI_EVENT body=false",
+        "GET /notifications/poll?limit=20 body=false"
+      ],
+      "repolledWithin": 10,
+      "tabs": [
+        "AI Events",
+        "Alarm 2",
+        "All"
+      ],
+      "badge": "3"
+    },
+    "clickOpens": {
+      "requests": [
+        "POST /notifications/905/read",
+        "GET /alerts/829"
+      ],
+      "url": "/drive-vision/alerts?kind=incidents&alarm=829",
+      "detailOpen": true
+    },
+    "failure_network": {
+      "rowsKept": true,
+      "badgeKept": true,
+      "staleNote": "Couldn't refresh. Showing the last update from 04 Nov 2026, 16:27:35; trying again."
+    },
+    "failure_http503": {
+      "rowsKept": true,
+      "badgeKept": true,
+      "staleNote": "Couldn't refresh. Showing the last update from 04 Nov 2026, 16:27:35; trying again."
+    },
+    "recovered": {
+      "staleNote": null,
+      "rows": 20
+    },
+    "overlap": {
+      "pollsIn24s": 2,
+      "gaps": [
+        12
+      ],
+      "minGap": 12
+    },
+    "hidden": {
+      "requestsWhileHidden": 0
+    },
+    "visible": {
+      "requestsWithin400ms": [
+        "/notifications/poll",
+        "/alerts",
+        "/alerts"
+      ]
+    },
+    "historyOpen": {
+      "calls": [
+        "/alarms/ai",
+        "/alarms/routine"
+      ],
+      "rows": [
+        "Vendor history row | AI event | AP29Z0001 | 13600000003 | 04 Nov 2026, 09:50:54 | 7 h ago | — | 42 km/h | General | NEW"
+      ]
+    },
+    "historyIdle": {
+      "vendorCalls": 0,
+      "alertsCalls": 0,
+      "notificationPolls": 2
+    },
+    "historyRefresh": {
+      "vendorCalls": 2
+    },
+    "liveAgain": {
+      "vendorCalls": 0,
+      "alertCalls": 4
+    },
+    "leftAlerts": {
+      "url": "/drive-vision/settings",
+      "alertCalls": 0,
+      "notificationPolls": 3
+    },
+    "afterNavigation": {
+      "notificationPolls": 4,
+      "notificationGaps": [
+        5,
+        5,
+        5
+      ]
+    },
+    "logout": {
+      "url": "/login",
+      "requestsAfter": 0
+    },
+    "noAlarmRead": {
+      "alertCalls": 0,
+      "vendorCalls": 0,
+      "notificationPolls": 2,
+      "page": "You don't have access to this page | Your account's permissions don't include this page. | R"
+    },
+    "safeFareAdmin": {
+      "alertHeaders": [
+        null
+      ],
+      "notificationHeaders": [
+        null
+      ],
+      "polls": 2,
+      "badge": null,
+      "rows": 20,
+      "bell": "No notifications | You're all caught up.",
+      "history": {
+        "vendorCalls": 0,
+        "message": true
+      }
+    },
+    "timeZone": {
+      "zone": "America/New_York",
+      "utc": "2026-11-04T04:20:54Z",
+      "row": "Timezone check | AI | AP29Z0001 | 13600000003 | 03 Nov 2026, 23:20:54 | 7 h ago | — | Moderate | NEW"
+    },
+    "tokenRefresh": {
+      "refreshCalls": 1,
+      "pollsAfter": 2,
+      "stillOnAlerts": "/drive-vision/alerts",
+      "rows": 20
+    },
+    "refreshRefused": {
+      "refreshCalls": 1,
+      "url": "/login",
+      "sessionKept": false,
+      "requestsAfter": 0
+    },
+    "server403": {
+      "alertCallsAfter": 0
+    },
+    "layout": {
+      "desktop": {
+        "overflow": false,
+        "columns": [
+          "Alert",
+          "Device",
+          "Time",
+          "Assignee",
+          "Severity",
+          "Status"
+        ],
+        "tableScrolls": false,
+        "bell": {
+          "left": 696,
+          "right": 1096,
+          "vw": 1366
+        }
+      },
+      "tablet": {
+        "overflow": false,
+        "columns": [
+          "Alert",
+          "Device",
+          "Time",
+          "Severity",
+          "Status"
+        ],
+        "tableScrolls": false,
+        "bell": {
+          "left": 285,
+          "right": 685,
+          "vw": 768
+        }
+      },
+      "mobile": {
+        "overflow": false,
+        "columns": [
+          "Alert",
+          "Device",
+          "Time",
+          "Severity",
+          "Status"
+        ],
+        "tableScrolls": true,
+        "bell": {
+          "left": 16,
+          "right": 374,
+          "vw": 390
+        }
+      }
+    }
+  }
+}

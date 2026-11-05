@@ -1,5 +1,5 @@
 /** White floating pill that groups header controls (reference: search/bell/info pill, profile pill). */
-export const HEADER_PILL = "flex h-12 shrink-0 items-center rounded-full border border-line/60 bg-surface shadow-card";
+export const HEADER_PILL = "flex h-12 shrink-0 items-center rounded-inner border border-line bg-surface shadow-card";
 
 /** Round icon button inside a header pill. */
 export const HEADER_ICON =

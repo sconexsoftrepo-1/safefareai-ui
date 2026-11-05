@@ -79,7 +79,7 @@ export function DailyTrendPanel({ rows }: { rows: TrendRow[] }) {
         className="mb-2"
         items={[
           { label: "Trips", color: SERIES.s1, value: trips === null ? "—" : formatNumber(trips) },
-          { label: "Alarms", color: SERIES.s3, value: n(sumColumn(rows, "alarms")) },
+          { label: "Alarms", color: SERIES.s2, value: n(sumColumn(rows, "alarms")) },
           { label: "Distance", color: "transparent", value: distance === null ? "—" : formatKm(distance) },
         ]}
       />
@@ -91,21 +91,20 @@ export function DailyTrendPanel({ rows }: { rows: TrendRow[] }) {
             <YAxis allowDecimals={false} {...AXIS_PROPS} />
             <Tooltip content={<ChartTooltip />} cursor={{ fill: "var(--dv-surface-muted)" }} />
             <Bar dataKey="trips" name="Trips" fill={SERIES.s1} radius={[4, 4, 0, 0]} isAnimationActive={false} />
-            <Bar dataKey="alarms" name="Alarms" fill={SERIES.s3} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+            <Bar dataKey="alarms" name="Alarms" fill={SERIES.s2} radius={[4, 4, 0, 0]} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {rows.some((r) => r.trips === null || r.alarms === null) ? <p className="mt-1 text-[11px] text-ink-subtle">Bars for days without a value are drawn at zero; see the table for gaps.</p> : null}
       <details className="mt-2 text-xs">
         <summary className="cursor-pointer text-ink-muted hover:text-ink">Show as table</summary>
         <table className="mt-2 w-full text-left tabular">
-          <thead className="text-ink-subtle">
+          <thead className="dv-thead">
             <tr>
-              <th className="py-1 font-medium">Day</th>
-              <th className="py-1 text-right font-medium">Trips</th>
-              <th className="py-1 text-right font-medium">Distance</th>
-              <th className="py-1 text-right font-medium">Alarms</th>
-              <th className="py-1 text-right font-medium">Severe</th>
+              <th className="px-2 py-1.5">Day</th>
+              <th className="px-2 py-1.5 text-right">Trips</th>
+              <th className="px-2 py-1.5 text-right">Distance</th>
+              <th className="px-2 py-1.5 text-right">Alarms</th>
+              <th className="px-2 py-1.5 text-right">Severe</th>
             </tr>
           </thead>
           <tbody>

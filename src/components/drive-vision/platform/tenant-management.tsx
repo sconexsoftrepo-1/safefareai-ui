@@ -253,10 +253,10 @@ export function TenantManagement() {
             <div className="hidden overflow-x-auto @3xl:block">
               <table className="w-full text-left text-[13px]">
                 <caption className="sr-only">Tenants returned by GET /platform/tenants</caption>
-                <thead className="text-[11.5px] text-ink-muted">
+                <thead className="dv-thead text-[12px]">
                   <tr>
                     {["ID", "Tenant", "Status", "Timezone", "Users", "Devices", "Drivers", ""].map((h, i) => (
-                      <th key={h || i} scope="col" className={cn("px-4 py-2.5 font-medium", i >= 4 && i <= 6 && "text-right")}>
+                      <th key={h || i} scope="col" className={cn("px-4 py-3", i >= 4 && i <= 6 && "text-right")}>
                         {h || <span className="sr-only">Actions</span>}
                       </th>
                     ))}
@@ -318,12 +318,6 @@ export function TenantManagement() {
         )}
       </Panel>
 
-      <div className="mt-3 space-y-1.5 text-xs text-ink-muted">
-        <p>Selecting a tenant validates it with the server and applies it to tenant data and actions in this browser tab only. It doesn&apos;t change your sign-in. Only active tenants can be selected.</p>
-        <p data-testid="tenant-unsupported">
-          Editing, activating, deactivating or deleting tenants isn&apos;t available here: the API has no such tenant operations.
-        </p>
-      </div>
 
       {canCreate && creating ? (
         <TenantCreatePanel open tenants={items} catalogue={catalogue} onClose={() => setCreating(false)} onCreated={onCreated} onUncertain={listQ.refetch} />

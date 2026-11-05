@@ -8,17 +8,17 @@ const same = (got, want) => assert.equal(JSON.stringify(got), JSON.stringify(wan
 const params = (s) => new URLSearchParams(s);
 
 test("parseAlertsView defaults and ignores legacy or invalid params", () => {
-  same(m.parseAlertsView(params("")), { kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null });
+  same(m.parseAlertsView(params("")), { kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null, history: false });
   // Old sample-data deep links (?status, ?severity, mock ids) land on the default view.
-  same(m.parseAlertsView(params("status=open&severity=high&alarm=al-0042&vehicle=v-3")), { kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null });
-  same(m.parseAlertsView(params("kind=routine&range=30d&device=12&type=3&page=4&alarm=99")), { kind: "routine", range: "30d", deviceId: 12, typeId: 3, page: 4, alarmId: 99 });
-  same(m.parseAlertsView(params("kind=x&range=1y&device=-1&type=1.5&page=0")), { kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null });
+  same(m.parseAlertsView(params("status=open&severity=high&alarm=al-0042&vehicle=v-3")), { kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null, history: false });
+  same(m.parseAlertsView(params("kind=routine&range=30d&device=12&type=3&page=4&alarm=99")), { kind: "routine", range: "30d", deviceId: 12, typeId: 3, page: 4, alarmId: 99, history: false });
+  same(m.parseAlertsView(params("kind=x&range=1y&device=-1&type=1.5&page=0")), { kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null, history: false });
 });
 
 test("alertsSearch round-trips and omits defaults", () => {
-  const view = { kind: "routine", range: "today", deviceId: 7, typeId: 2, page: 3, alarmId: 5 };
+  const view = { kind: "routine", range: "today", deviceId: 7, typeId: 2, page: 3, alarmId: 5, history: false };
   same(m.parseAlertsView(params(m.alertsSearch(view).slice(1))), view);
-  assert.equal(m.alertsSearch({ kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null }), "");
+  assert.equal(m.alertsSearch({ kind: "ai", range: "7d", deviceId: null, typeId: null, page: 1, alarmId: null, history: false }), "");
 });
 
 test("alarmQuery sends only spec parameters, with a fixed window", () => {
@@ -28,7 +28,7 @@ test("alarmQuery sends only spec parameters, with a fixed window", () => {
   assert.equal(q.to, now.toISOString());
   assert.ok(new Date(q.from) < now);
   same([q.deviceIds, q.pageNumber, q.pageSize], [[12], 2, 20]);
-  same(m.alarmQuery({ kind: "ai", range: "7d", deviceId: null, typeId: 3, page: 1, alarmId: null }, now).alarmTypeIds, [3]);
+  same(m.alarmQuery({ kind: "ai", range: "7d", deviceId: null, typeId: 3, page: 1, alarmId: null, history: false }, now).alarmTypeIds, [3]);
 });
 
 test("labels fall back without inventing data", () => {
@@ -47,10 +47,3 @@ test("alarmPosition rejects missing, out-of-range and 0,0 coordinates", () => {
   assert.equal(m.alarmPosition({ lon: 3 }), null);
 });
 
-test("safeMediaUrl only allows absolute http(s) links", () => {
-  assert.equal(m.safeMediaUrl("https://cdn.example/a.jpg"), "https://cdn.example/a.jpg");
-  assert.equal(m.safeMediaUrl("javascript:alert(1)"), null);
-  assert.equal(m.safeMediaUrl("data:image/png;base64,AA"), null);
-  assert.equal(m.safeMediaUrl("/relative.jpg"), null);
-  assert.equal(m.safeMediaUrl(undefined), null);
-});

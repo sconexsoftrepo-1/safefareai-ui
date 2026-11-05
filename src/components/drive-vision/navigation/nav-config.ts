@@ -1,6 +1,8 @@
 import {
+  Activity,
   Bell,
   BriefcaseBusiness,
+  BusFront,
   CalendarCheck2,
   ClipboardList,
   FileChartColumn,
@@ -59,7 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Platform Overview", screen: "platform", href: SCREEN_ROUTES.platform, icon: Globe2, description: "All-tenant KPIs, device health and alerts", subtitle: "Tenants, devices, alerts and activity across the whole platform" },
       { label: "Tenants", screen: "tenants", href: SCREEN_ROUTES.tenants, icon: Building2, description: "Tenant list and tenant selection", subtitle: "All tenants on the platform — select one to work inside it" },
       { label: "Global Roles", screen: "roles", href: SCREEN_ROUTES.roles, icon: KeyRound, description: "Global roles and their permissions", subtitle: "Platform role definitions and role-permission assignments" },
-      { label: "Permission Catalogue", screen: "permissions", href: SCREEN_ROUTES.permissions, icon: BookKey, description: "Permission codes, descriptions and scope", subtitle: "The global permission catalogue" },
+      { label: "Permission Catalogue", screen: "permissions", href: SCREEN_ROUTES.permissions, icon: BookKey, description: "Role menu permissions and permission codes", subtitle: "Role menu permissions and the global permission catalogue" },
     ],
   },
   {
@@ -73,6 +75,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Historical Video", screen: "video", href: SCREEN_ROUTES.video, icon: Cctv, description: "Camera playback and clips", subtitle: "Recorded camera footage by vehicle, channel and time" },
       { label: "Trips & Tracking", screen: "trips", href: SCREEN_ROUTES.trips, icon: Route, description: "Trip history and route playback", subtitle: "Trip history with route playback, stops and events" },
       { label: "Reports", screen: "reports", href: SCREEN_ROUTES.reports, icon: FileChartColumn, description: "Mileage, driving, parking and media reports", subtitle: "Mileage, driving, parking and media reports by device and date" },
+      { label: "Vehicles", screen: "vehicleRegistry", href: SCREEN_ROUTES.vehicleRegistry, icon: BusFront, description: "Vehicle registry: numbers, make, model and fitted device", subtitle: "Registered vehicles and the tracking device fitted in each" },
+      { label: "Sensors", screen: "sensors", href: SCREEN_ROUTES.sensors, icon: Activity, description: "Passenger counts: IR sensor vs BMS by stop", subtitle: "Stop-wise passenger counts, sensor vs BMS reconciliation and bus capacity" },
     ],
   },
   {
@@ -108,8 +112,23 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-export function findNavGroup(pathname: string) {
+/**
+ * How tenant users see the Permission Catalogue route. A display change only: same screen, route and access check.
+ * The catalogue itself stays Safe-Fare Admin only, so for them the item is Role Permissions, under Administration.
+ */
+export const TENANT_NAV_GROUP = "Administration";
+const TENANT_ROLE_PERMISSIONS = { label: "Role Permissions", description: "Menu permissions of each role in your tenant", subtitle: "Which menus and actions each role can use in your tenant" };
+
+const isTenantRolePermissions = (item: NavItem | undefined, platform: boolean) => item?.screen === "permissions" && !platform;
+
+/** A nav item as this user sees it. */
+export function navItemFor(item: NavItem, platform: boolean): NavItem {
+  return isTenantRolePermissions(item, platform) ? { ...item, ...TENANT_ROLE_PERMISSIONS } : item;
+}
+
+export function findNavGroup(pathname: string, platform = true) {
   const item = findNavItem(pathname);
+  if (isTenantRolePermissions(item, platform)) return NAV_GROUPS.find((g) => g.label === TENANT_NAV_GROUP);
   return NAV_GROUPS.find((g) => g.items.some((i) => i.href === item?.href));
 }
 
@@ -144,9 +163,10 @@ const MY_WORK_SECTIONS: Record<string, { title: string; subtitle: string }> = {
 };
 
 /** Header title/subtitle for a route — derived from the path so it renders on the server (no flash). */
-export function getPageMeta(pathname: string, displayName: string, now: Date): PageMeta {
-  const item = findNavItem(pathname);
-  if (!item) return { title: "SafeFare AI", subtitle: "AI fleet intelligence", nested: false };
+export function getPageMeta(pathname: string, displayName: string, now: Date, platform = true): PageMeta {
+  const found = findNavItem(pathname);
+  if (!found) return { title: "SafeFare AI", subtitle: "AI fleet intelligence", nested: false };
+  const item = navItemFor(found, platform);
   const section = MY_WORK_SECTIONS[pathname.split(/[?#]/)[0].replace(/\/+$/, "")];
   if (section) return { ...section, nested: false, item };
   const nested = pathname !== item.href;

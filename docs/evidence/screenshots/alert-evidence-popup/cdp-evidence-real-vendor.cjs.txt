@@ -1,0 +1,104 @@
+// REAL VENDOR MEDIA check for alert 900 (headless Edge via CDP, production build). The API responses are mocked from the
+// supplied alert 900 response, but the image and video load from the real y.gpstracktech.com, with GET only and no credentials.
+// It records measurements only. No screenshot is taken: this is real fleet footage and may show real people.
+const fs = require("fs");
+const path = require("path");
+const ROOT = "C:/Sconex-Projects/Drive Vision";
+const OUT = `${ROOT}/docs/evidence/screenshots/alert-evidence-popup`;
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { IDENTITIES } = require(`${ROOT}/tests/helpers/identities.cjs`);
+const fixture = JSON.parse(fs.readFileSync(`${ROOT}/tests/fixtures/alert-900.json`, "utf8")).data;
+const ALERT = { ...fixture.alert, alarmName: "Alert 900", kind: "AI", alarmTime: "2026-11-04T04:20:54Z", deviceName: "Device", handlingStatus: "NEW" };
+
+let ws, seq = 0;
+const pending = new Map();
+const newPages = [];
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true, userGesture: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 300)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: "*" }, { name: "Access-Control-Allow-Headers", value: "*" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+
+async function onPaused({ requestId, request }) {
+  const p = new URL(request.url).pathname.replace(/^.*\/api\/v1/, "");
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let res = ok([], 0);
+  if (p === "/me") res = ok({ id: 2, displayName: "Synthetic admin", email: "admin@example.invalid" });
+  else if (p === "/me/permissions") res = ok({ ...IDENTITIES.tenantAdmin, userId: 2, tenantId: 1, homeTenantId: 1 });
+  else if (p === "/alerts") res = ok([ALERT], 1);
+  else if (p === "/alerts/900") res = ok({ alert: ALERT, actions: [], evidence: fixture.evidence });
+  await send("Fetch.fulfillRequest", { requestId, responseCode: 200, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+async function mouseClick(expr, wait = 500) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) throw new Error(`no element: ${expr}`);
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(wait);
+  return true;
+}
+const q = (t) => `document.querySelector('[data-testid=${t}]')`;
+const openBtn = (n) => `[...document.querySelectorAll('[data-testid=evidence-open]')][${n}]`;
+const waitFor = async (expr, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await evaluate(`!!(${expr})`)) return true; await sleep(150); } return false; };
+const downloadResult = () => evaluate(`(() => { const r = ${q("evidence-download-result")}; return r ? { status: r.dataset.status, text: r.innerText } : null; })()`);
+const errorInfo = () => evaluate(`(() => { const e = ${q("evidence-error")}; return e ? { problem: e.dataset.problem, text: e.innerText.replace(/\\s*\\n\\s*/g, ' | ') } : null; })()`);
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+    else if (msg.method === "Target.targetCreated" && msg.params.targetInfo.type === "page" && msg.params.targetInfo.openerId === page.id) newPages.push(msg.params.targetInfo.url);
+  };
+  await send("Page.enable"); await send("Runtime.enable");
+  await send("Target.setDiscoverTargets", { discover: true });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await send("Page.addScriptToEvaluateOnNewDocument", { source: "Object.defineProperty(window, 'showSaveFilePicker', { value: undefined });" });
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await send("Page.navigate", { url: `${APP}/login` }); await sleep(900);
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(JSON.stringify({ accessToken: jwt(), tokenType: "Bearer", accessExpiresAt: Date.now() + 3600_000, refreshToken: "synthetic", refreshExpiresAt: null }))})`);
+  await send("Page.navigate", { url: `${APP}/drive-vision/alerts?kind=incidents&alarm=900` }); await sleep(2800);
+  R.rows = await evaluate(`[...document.querySelectorAll('#inc-evidence + ul li')].map(l => l.innerText.replace(/\\s*\\n\\s*/g, ' | '))`);
+  const url0 = await evaluate(`location.href`);
+
+  // Real image.
+  await mouseClick(openBtn(0), 300);
+  const img = q("evidence-image");
+  R.imageLoaded = await waitFor(`${img}?.naturalWidth > 0 || ${q("evidence-error")}`);
+  R.image = await evaluate(`(() => { const i = ${img}; return i ? { natural: [i.naturalWidth, i.naturalHeight], srcExact: i.getAttribute('src') === ${JSON.stringify(fixture.evidence[0].url)}, status: ${q("evidence-status")}?.innerText } : null; })()`);
+  R.imageError = await errorInfo();
+  await mouseClick(q("evidence-download"), 300);
+  await waitFor(q("evidence-download-result"));
+  R.imageDownload = await downloadResult();
+  await evaluate(`document.querySelector('[aria-label="Close evidence"]').click()`); await sleep(500);
+
+  // Real video.
+  await mouseClick(openBtn(1), 300);
+  const vid = q("evidence-video");
+  R.videoReady = await waitFor(`${vid}?.readyState >= 1 || ${q("evidence-error")}`);
+  R.video = await evaluate(`(() => { const v = ${vid}; return v ? { size: [v.videoWidth, v.videoHeight], duration: v.duration, srcExact: v.getAttribute('src') === ${JSON.stringify(fixture.evidence[1].url)}, autoplay: v.autoplay, paused: v.paused, status: ${q("evidence-status")}?.innerText, canPlayH264: v.canPlayType('video/mp4; codecs="avc1.42E01E"'), canPlayH265: v.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') } : null; })()`);
+  R.videoError = await errorInfo();
+  if (await evaluate(`!!${vid}`)) {
+    await evaluate(`${vid}.play().then(() => 'ok', (e) => e.name)`); await sleep(2500);
+    R.playback = await evaluate(`(() => { const v = ${vid}; return v ? { state: v.dataset.state, advanced: v.currentTime > 0, currentTime: v.currentTime, error: v.error?.code ?? null } : null; })()`);
+    R.videoErrorAfterPlay = await errorInfo();
+    await evaluate(`${vid}?.pause()`);
+  }
+  await mouseClick(q("evidence-download"), 300);
+  await waitFor(q("evidence-download-result"));
+  R.videoDownload = await downloadResult();
+  await evaluate(`document.querySelector('[aria-label="Close evidence"]').click()`); await sleep(500);
+
+  R.drawerOpen = await evaluate(`document.querySelectorAll('[role=dialog]').length === 1`);
+  R.sameUrl = (await evaluate(`location.href`)) === url0;
+  R.tabsOpenedByApp = newPages.length;
+  fs.writeFileSync(path.join(OUT, "results-real-vendor.json"), JSON.stringify({ note: "REAL VENDOR MEDIA: alert 900's two files loaded from y.gpstracktech.com on 2026-11-05. API responses mocked from the supplied response. Measurements only; no screenshots, because this is real footage.", results: R }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch((e) => { console.error(e); fs.writeFileSync(path.join(OUT, "results-real-vendor.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

@@ -1,0 +1,2098 @@
+{
+  "note": "MOCKED: synthetic figures for screenshots only. Nothing reached the backend.",
+  "results": {
+    "label": "after",
+    "screens": {
+      "01-platform-overview": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 517,
+          "ui-monospace": 6
+        },
+        "h1": {
+          "text": "Platform Overview",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "02-fleet-overview": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 469
+        },
+        "h1": {
+          "text": "Good afternoon, Synthetic fleet",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "03-live-monitoring": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 78
+        },
+        "h1": {
+          "text": "Live Monitoring",
+          "size": "22px",
+          "weight": "700"
+        }
+      },
+      "04-vehicles-assets": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 178,
+          "ui-monospace": 6
+        },
+        "h1": {
+          "text": "Vehicles & Assets",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "05-global-roles": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 178,
+          "ui-monospace": 18
+        },
+        "h1": {
+          "text": "Global Roles",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "06-permission-catalogue": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 77
+        },
+        "h1": {
+          "text": "Permission Catalogue",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "07-driver-my-work": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 104
+        },
+        "h1": {
+          "text": "My Work",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "08-my-leave": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 81
+        },
+        "h1": {
+          "text": "My Leave",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "09-shift-checklist": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 76
+        },
+        "h1": {
+          "text": "Shift Checklist",
+          "size": "30px",
+          "weight": "700"
+        }
+      },
+      "10-my-profile": {
+        "overflow": false,
+        "overflowBy": 0,
+        "denied": false,
+        "crashed": false,
+        "families": {
+          "Plus Jakarta Sans": 118
+        },
+        "h1": {
+          "text": "My Profile",
+          "size": "30px",
+          "weight": "700"
+        }
+      }
+    },
+    "widths": {
+      "320x568": {
+        "01-platform-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 508,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Platform Overview",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "02-fleet-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 460
+          },
+          "h1": {
+            "text": "Good afternoon, Synthetic fleet",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "03-live-monitoring": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Live Monitoring",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "04-vehicles-assets": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Vehicles & Assets",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "05-global-roles": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Global Roles",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "06-permission-catalogue": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 77
+          },
+          "h1": {
+            "text": "Permission Catalogue",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "07-driver-my-work": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 104
+          },
+          "h1": {
+            "text": "My Work",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "08-my-leave": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Leave",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "09-shift-checklist": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Shift Checklist",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "10-my-profile": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 118
+          },
+          "h1": {
+            "text": "My Profile",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "alerts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 161
+          },
+          "h1": {
+            "text": "Alerts & Events",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "drivers": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 74
+          },
+          "h1": {
+            "text": "Drivers",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "dispatch": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Dispatch",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "workforce": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Workforce",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 156
+          },
+          "h1": {
+            "text": "Safety Analytics",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "reports": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Reports",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "trips": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 102
+          },
+          "h1": {
+            "text": "Trips & Tracking",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "video": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 54
+          },
+          "h1": {
+            "text": "Historical Video",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "users": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Users & Sub-Accounts",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "tenants": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 225,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Tenants",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "my-work/shifts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 73
+          },
+          "h1": {
+            "text": "My Shifts",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "my-work/safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Safety",
+            "size": "26px",
+            "weight": "700"
+          }
+        }
+      },
+      "375x812": {
+        "01-platform-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 508,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Platform Overview",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "02-fleet-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 460
+          },
+          "h1": {
+            "text": "Good afternoon, Synthetic fleet",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "03-live-monitoring": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Live Monitoring",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "04-vehicles-assets": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Vehicles & Assets",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "05-global-roles": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Global Roles",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "06-permission-catalogue": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 77
+          },
+          "h1": {
+            "text": "Permission Catalogue",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "07-driver-my-work": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 104
+          },
+          "h1": {
+            "text": "My Work",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "08-my-leave": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Leave",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "09-shift-checklist": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Shift Checklist",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "10-my-profile": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 118
+          },
+          "h1": {
+            "text": "My Profile",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "alerts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 161
+          },
+          "h1": {
+            "text": "Alerts & Events",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "drivers": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 74
+          },
+          "h1": {
+            "text": "Drivers",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "dispatch": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Dispatch",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "workforce": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Workforce",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 156
+          },
+          "h1": {
+            "text": "Safety Analytics",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "reports": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Reports",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "trips": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 102
+          },
+          "h1": {
+            "text": "Trips & Tracking",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "video": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 54
+          },
+          "h1": {
+            "text": "Historical Video",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "users": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Users & Sub-Accounts",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "tenants": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 225,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Tenants",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "my-work/shifts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 73
+          },
+          "h1": {
+            "text": "My Shifts",
+            "size": "26px",
+            "weight": "700"
+          }
+        },
+        "my-work/safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Safety",
+            "size": "26px",
+            "weight": "700"
+          }
+        }
+      },
+      "768x1024": {
+        "01-platform-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 517,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Platform Overview",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "02-fleet-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 469
+          },
+          "h1": {
+            "text": "Good afternoon, Synthetic fleet",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "03-live-monitoring": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Live Monitoring",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "04-vehicles-assets": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Vehicles & Assets",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "05-global-roles": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Global Roles",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "06-permission-catalogue": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 77
+          },
+          "h1": {
+            "text": "Permission Catalogue",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "07-driver-my-work": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 104
+          },
+          "h1": {
+            "text": "My Work",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "08-my-leave": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Leave",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "09-shift-checklist": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Shift Checklist",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "10-my-profile": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 118
+          },
+          "h1": {
+            "text": "My Profile",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "alerts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 161
+          },
+          "h1": {
+            "text": "Alerts & Events",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "drivers": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 74
+          },
+          "h1": {
+            "text": "Drivers",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "dispatch": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Dispatch",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "workforce": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Workforce",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 156
+          },
+          "h1": {
+            "text": "Safety Analytics",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "reports": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Reports",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "trips": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 102
+          },
+          "h1": {
+            "text": "Trips & Tracking",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "video": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 54
+          },
+          "h1": {
+            "text": "Historical Video",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "users": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Users & Sub-Accounts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "tenants": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 225,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Tenants",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/shifts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 73
+          },
+          "h1": {
+            "text": "My Shifts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Safety",
+            "size": "30px",
+            "weight": "700"
+          }
+        }
+      },
+      "1024x768": {
+        "01-platform-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 517,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Platform Overview",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "02-fleet-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 469
+          },
+          "h1": {
+            "text": "Good afternoon, Synthetic fleet",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "03-live-monitoring": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Live Monitoring",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "04-vehicles-assets": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Vehicles & Assets",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "05-global-roles": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Global Roles",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "06-permission-catalogue": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 77
+          },
+          "h1": {
+            "text": "Permission Catalogue",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "07-driver-my-work": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 104
+          },
+          "h1": {
+            "text": "My Work",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "08-my-leave": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Leave",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "09-shift-checklist": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Shift Checklist",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "10-my-profile": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 118
+          },
+          "h1": {
+            "text": "My Profile",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "alerts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 161
+          },
+          "h1": {
+            "text": "Alerts & Events",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "drivers": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 74
+          },
+          "h1": {
+            "text": "Drivers",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "dispatch": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Dispatch",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "workforce": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Workforce",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 156
+          },
+          "h1": {
+            "text": "Safety Analytics",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "reports": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Reports",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "trips": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 102
+          },
+          "h1": {
+            "text": "Trips & Tracking",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "video": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 54
+          },
+          "h1": {
+            "text": "Historical Video",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "users": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Users & Sub-Accounts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "tenants": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 225,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Tenants",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/shifts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 73
+          },
+          "h1": {
+            "text": "My Shifts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Safety",
+            "size": "30px",
+            "weight": "700"
+          }
+        }
+      },
+      "1440x900": {
+        "01-platform-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 517,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Platform Overview",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "02-fleet-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 469
+          },
+          "h1": {
+            "text": "Good afternoon, Synthetic fleet",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "03-live-monitoring": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Live Monitoring",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "04-vehicles-assets": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Vehicles & Assets",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "05-global-roles": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Global Roles",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "06-permission-catalogue": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 77
+          },
+          "h1": {
+            "text": "Permission Catalogue",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "07-driver-my-work": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 104
+          },
+          "h1": {
+            "text": "My Work",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "08-my-leave": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Leave",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "09-shift-checklist": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Shift Checklist",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "10-my-profile": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 118
+          },
+          "h1": {
+            "text": "My Profile",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "alerts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 161
+          },
+          "h1": {
+            "text": "Alerts & Events",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "drivers": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 74
+          },
+          "h1": {
+            "text": "Drivers",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "dispatch": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Dispatch",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "workforce": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Workforce",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 156
+          },
+          "h1": {
+            "text": "Safety Analytics",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "reports": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Reports",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "trips": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 102
+          },
+          "h1": {
+            "text": "Trips & Tracking",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "video": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 54
+          },
+          "h1": {
+            "text": "Historical Video",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "users": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Users & Sub-Accounts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "tenants": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 225,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Tenants",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/shifts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 73
+          },
+          "h1": {
+            "text": "My Shifts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Safety",
+            "size": "30px",
+            "weight": "700"
+          }
+        }
+      },
+      "1920x1080": {
+        "01-platform-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 517,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Platform Overview",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "02-fleet-overview": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 469
+          },
+          "h1": {
+            "text": "Good afternoon, Synthetic fleet",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "03-live-monitoring": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Live Monitoring",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "04-vehicles-assets": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 6
+          },
+          "h1": {
+            "text": "Vehicles & Assets",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "05-global-roles": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 178,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Global Roles",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "06-permission-catalogue": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 77
+          },
+          "h1": {
+            "text": "Permission Catalogue",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "07-driver-my-work": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 104
+          },
+          "h1": {
+            "text": "My Work",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "08-my-leave": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Leave",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "09-shift-checklist": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Shift Checklist",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "10-my-profile": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 118
+          },
+          "h1": {
+            "text": "My Profile",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "alerts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 161
+          },
+          "h1": {
+            "text": "Alerts & Events",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "drivers": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 74
+          },
+          "h1": {
+            "text": "Drivers",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "dispatch": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Dispatch",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "workforce": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Workforce",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 156
+          },
+          "h1": {
+            "text": "Safety Analytics",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "reports": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 78
+          },
+          "h1": {
+            "text": "Reports",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "trips": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 102
+          },
+          "h1": {
+            "text": "Trips & Tracking",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "video": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 54
+          },
+          "h1": {
+            "text": "Historical Video",
+            "size": "22px",
+            "weight": "700"
+          }
+        },
+        "users": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 76
+          },
+          "h1": {
+            "text": "Users & Sub-Accounts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "tenants": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 225,
+            "ui-monospace": 18
+          },
+          "h1": {
+            "text": "Tenants",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/shifts": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 73
+          },
+          "h1": {
+            "text": "My Shifts",
+            "size": "30px",
+            "weight": "700"
+          }
+        },
+        "my-work/safety": {
+          "overflow": false,
+          "overflowBy": 0,
+          "denied": false,
+          "crashed": false,
+          "families": {
+            "Plus Jakarta Sans": 81
+          },
+          "h1": {
+            "text": "My Safety",
+            "size": "30px",
+            "weight": "700"
+          }
+        }
+      }
+    },
+    "checkboxLight": {
+      "count": 55,
+      "size": [
+        20,
+        20
+      ],
+      "clickTarget": 36,
+      "fill": "rgb(186, 60, 26)",
+      "canvas": "rgb(247, 248, 252)",
+      "thead": "rgb(241, 244, 249)"
+    },
+    "checkboxOsDark": {
+      "count": 55,
+      "size": [
+        20,
+        20
+      ],
+      "clickTarget": 36,
+      "fill": "rgb(186, 60, 26)",
+      "canvas": "rgb(247, 248, 252)",
+      "thead": "rgb(241, 244, 249)"
+    },
+    "dialogLeave320": {
+      "width": 320,
+      "left": 0,
+      "right": 320,
+      "viewport": 320,
+      "fits": true,
+      "pageOverflow": false
+    },
+    "dialogCancel320": {
+      "width": 288,
+      "left": 16,
+      "right": 304,
+      "viewport": 320,
+      "fits": true,
+      "pageOverflow": false
+    },
+    "unmatched": [
+      "/alarms/ai",
+      "/alarms/routine",
+      "/dispatches",
+      "/driver/checklists",
+      "/driver/safety-events",
+      "/drivers",
+      "/drivers/availability",
+      "/me/preferences",
+      "/monitor/realtime",
+      "/notifications/poll",
+      "/reference/alarm-types",
+      "/reference/device-models",
+      "/reference/object-types",
+      "/reference/statuses",
+      "/reports/mileage",
+      "/safety/analytics",
+      "/safety/scores/drivers",
+      "/trips",
+      "/trips/summary",
+      "/users"
+    ],
+    "errors": []
+  }
+}

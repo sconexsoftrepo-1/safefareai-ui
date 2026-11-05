@@ -119,10 +119,10 @@ export function DataTable<T>({
       <div className="scrollbar-thin overflow-x-auto px-2.5">
         <table className="w-full border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">{caption}</caption>
-          <thead>
+          <thead className="dv-thead">
             <tr>
               {selectable ? (
-                <th scope="col" className="w-10 bg-surface-muted py-2.5 pr-1 pl-3.5 first:rounded-l-xl">
+                <th scope="col" className="w-10 py-2.5 pr-1 pl-3.5">
                   <Checkbox
                     aria-label="Select all rows on this page"
                     checked={allOnPageSelected ? true : someOnPageSelected ? "indeterminate" : false}
@@ -138,7 +138,7 @@ export function DataTable<T>({
                     scope="col"
                     aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
                     className={cn(
-                      "bg-surface-muted px-3 py-2.5 text-left text-[12px] font-medium whitespace-nowrap text-ink-muted first:rounded-l-xl first:pl-3.5 last:rounded-r-xl last:pr-3.5",
+                      "px-3 py-2.5 text-left text-[12px] whitespace-nowrap first:pl-3.5 last:pr-3.5",
                       col.align === "right" && "text-right",
                       col.hideBelow && hideClass[col.hideBelow],
                       col.className
@@ -184,7 +184,7 @@ export function DataTable<T>({
                   aria-selected={selectable ? selected : undefined}
                   className={cn(
                     "group transition-colors duration-150 outline-none",
-                    onRowClick && "cursor-pointer hover:bg-surface-muted/80 focus-visible:bg-surface-muted focus-visible:shadow-[inset_3px_0_0_var(--dv-brand)]",
+                    onRowClick && "cursor-pointer hover:bg-powder/40 focus-visible:bg-powder/40 focus-visible:shadow-[inset_3px_0_0_var(--dv-brand)]",
                     (selected || active) && "bg-brand-tint hover:bg-brand-tint"
                   )}
                 >

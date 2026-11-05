@@ -1,0 +1,613 @@
+// Role menu permissions (headless Edge via CDP). EVERY */api/v1/* request is answered locally with SYNTHETIC data
+// shaped like docs/contracts/role-menu-permission-api.txt: nothing reaches the BFF, no credentials are used and no
+// real writes happen. This proves the frontend against the documented contract, not the live backend.
+const fs = require("fs");
+const path = require("path");
+const OUT = "C:/Sconex-Projects/Drive Vision/docs/evidence/screenshots/role-menu-permission";
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const ROUTE = `${APP}/drive-vision/platform/permissions`;
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 400)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 1, tenantId: 1, roleId: 1, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+};
+let identity = IDS.sfa;
+
+// SYNTHETIC tenants and roles (role ids and codes as in the contract).
+const TENANTS = [
+  { id: 1, code: "Ganesh", name: "Ganesh Travels (synthetic)", status: "ACTIVE" },
+  { id: 2, code: "Beta", name: "Beta Fleet (synthetic)", status: "ACTIVE" },
+  { id: 3, code: "Closed", name: "Closed Co (synthetic)", status: "SUSPENDED" },
+];
+const ROLES = [
+  [1, "ADMIN", "Administrator: full access within the tenant", true],
+  [2, "FLEET OWNER", "Fleet manager", false],
+  [3, "OPERATOR", "Operations user", false],
+  [4, "DRIVER", "Driver", false],
+  [9, "DISPATCHER", "Dispatcher: plans dispatches and driver work", false],
+  [10, "VIEWER", "Viewer: read-only access", false],
+].map(([id, code, description, adm]) => ({ id, code, description, protectedRole: adm, fullAccess: adm }));
+
+// Per-tenant state: tenant 1 and tenant 2 start differently so a leak shows.
+const held = { 1: { 2: ["device.read"], 3: ["device.read", "alarm.read", "alarm.handle", "group.read", "video.live"], 4: [], 9: ["device.read"], 10: ["device.read", "alarm.read"] }, 2: { 2: ["alarm.read"], 3: ["sensor.read", "alarm.read"], 4: [], 9: [], 10: [] } };
+const notHeldByCaller = new Set();
+function grid(tenantId, roleId) {
+  const admin = roleId === 1;
+  const has = (c) => admin || held[tenantId][roleId].includes(c);
+  const cell = (c) => ({ permissionCode: c, granted: has(c), editable: !admin && !notHeldByCaller.has(c) });
+  const act = (label, c) => ({ label, ...cell(c) });
+  const res = (label, x = {}) => ({ label, view: null, add: null, edit: null, delete: null, actions: [], ...x });
+  return {
+    tenantId, roleId, roleCode: ROLES.find((r) => r.id === roleId).code, fullAccess: admin, editable: !admin,
+    menus: [
+      { menuId: 4, menuKey: "dashboard", title: "Fleet Overview", icon: "layout-dashboard", parentId: null, sortOrder: 10, access: cell("device.read"), resources: [res("Fleet overview", { view: cell("device.read") })] },
+      { menuId: 5, menuKey: "live_monitoring", title: "Live Monitoring", icon: "radar", parentId: null, sortOrder: 20, access: cell("device.read"), resources: [res("Live map", { view: cell("device.read"), actions: [act("Live video", "video.live")] })] },
+      { menuId: 6, menuKey: "historical_video", title: "Historical Video", icon: "cctv", parentId: null, sortOrder: 30, access: cell("video.playback"), resources: [res("Recordings", { view: cell("video.playback"), actions: [act("Live video", "video.live")] })] },
+      {
+        menuId: 7, menuKey: "vehicles_assets", title: "Vehicles & Assets", icon: "truck", parentId: null, sortOrder: 40, access: cell("device.read"),
+        resources: [
+          res("Vehicles", { view: cell("device.read"), add: cell("device.create"), edit: cell("device.update"), delete: cell("device.delete") }),
+          res("Device groups", { view: cell("group.read"), add: cell("group.create"), edit: cell("group.update"), delete: cell("group.delete") }),
+          res("Maintenance reminders", { view: cell("maintenance.read"), add: cell("maintenance.create"), edit: cell("maintenance.update") }),
+          res("Service renewals", { actions: [act("Service renewals", "renewal.manage")] }),
+        ],
+      },
+      { menuId: 66, menuKey: "sensors", title: "Sensors", icon: "cpu", parentId: null, sortOrder: 47, access: cell("sensor.read"), resources: [res("Sensors", { view: cell("sensor.read"), actions: [act("Send sensor readings", "sensor.ingest")] })] },
+      {
+        menuId: 9, menuKey: "alerts_events", title: "Alerts & Events", icon: "bell-ring", parentId: null, sortOrder: 60, access: cell("alarm.read"),
+        resources: [res("Alerts", { view: cell("alarm.read") }), res("Handle alerts", { actions: [act("Handle alerts", "alarm.handle")] }), res("Alarm rules", { view: cell("alarm.rule.read"), add: cell("alarm.rule.create"), edit: cell("alarm.rule.update"), delete: cell("alarm.rule.delete") })],
+      },
+      { menuId: 12, menuKey: "my_work", title: "My Work", icon: "briefcase", parentId: null, sortOrder: 90, access: { permissionCode: "driver.app", granted: admin ? false : has("driver.app"), editable: !admin }, resources: [] },
+    ],
+    otherPermissionCodes: ["own.data.read"],
+  };
+}
+
+let CATALOG = [{ code: "device.read", description: "View devices (synthetic)", scope: "TENANT" }, { code: "tenant.all", description: "All tenants (synthetic)", scope: "PLATFORM" }];
+let nextPutError = null;
+let getError = null; // [status, code, msg]
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+const envelopeError = (status, errorCode, msg) => ({ code: status, msg, data: null, total: null, extend: { errorCode, fieldErrors: [], requestId: `mock-${errorCode}` } });
+
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  const body = request.postData ? JSON.parse(request.postData) : null;
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body, auth: /^Bearer /.test(Object.entries(request.headers).find(([k]) => k.toLowerCase() === "authorization")?.[1] ?? "") });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let status = 200, res = ok(null);
+  const m = p.match(/^\/roles\/(\d+)\/menu-permissions$/);
+  const tenantId = identity.platform ? (th ? Number(th) : null) : identity.tenantId;
+  if (p === "/me") res = ok({ id: 1, displayName: "Synthetic user", email: "synthetic@example.invalid", ...(identity.platform ? {} : { tenantName: "Ganesh Travels (synthetic)", tenantCode: "Ganesh" }) });
+  else if (p === "/me/permissions") res = ok(identity);
+  else if (p === "/platform/tenants") res = ok(TENANTS, TENANTS.length);
+  else if (p === "/platform/switch-tenant") { const t = TENANTS.find((x) => x.id === body.tenantId); res = ok({ tenantId: t.id, code: t.code, name: t.name, header: "X-Tenant-Id" }); }
+  else if (p === "/roles" && request.method === "GET") res = ok(ROLES.map((r) => ({ ...r, tenantId })), ROLES.length);
+  else if (m) {
+    const roleId = Number(m[1]);
+    if (tenantId === null) { status = 400; res = envelopeError(400, "TENANT_REQUIRED", "Select a tenant (X-Tenant-Id header) for this operation"); }
+    else if (request.method === "GET" && getError) { status = getError[0]; res = envelopeError(...getError); }
+    else if (request.method === "GET") res = ok(grid(tenantId, roleId));
+    else if (nextPutError) { status = nextPutError[0]; res = envelopeError(...nextPutError); nextPutError = null; }
+    else { held[tenantId][roleId] = [...new Set(body.permissionCodes)]; res = ok(grid(tenantId, roleId)); }
+  } else if (p === "/permissions" && request.method === "GET") res = ok(CATALOG, CATALOG.length);
+  else if (p === "/permissions" && request.method === "POST") { CATALOG = [...CATALOG, { code: body.code, description: body.description, scope: body.scope }]; status = 201; res = { code: 201, msg: "Created", data: body }; }
+  else if (/^\/permissions\//.test(p) && request.method === "PUT") { const code = decodeURIComponent(p.split("/")[2]); CATALOG = CATALOG.map((c) => (c.code === code ? { code, ...body } : c)); res = ok({ code, ...body }); }
+  else if (/^\/permissions\//.test(p) && request.method === "DELETE") { const code = decodeURIComponent(p.split("/")[2]); CATALOG = CATALOG.filter((c) => c.code !== code); res = ok(null); }
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: false }); }
+async function go(url, ms = 2200) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function waitFor(expr, ms = 6000) { const end = Date.now() + ms; while (Date.now() < end) { if (await evaluate(`!!(${expr})`)) return true; await sleep(120); } console.error("waitFor timeout", expr); return false; }
+const q = (s) => `document.querySelector(${JSON.stringify(s)})`;
+async function mouseClick(expr) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) return false;
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(220);
+  return true;
+}
+async function pick(trigger, optionText) {
+  await mouseClick(q(`[data-testid=${trigger}]`));
+  await waitFor(`document.querySelector('[role=option]')`);
+  const options = await evaluate(`[...document.querySelectorAll('[role=option]')].map(o => o.innerText.replace(/\\s+/g, ' ').trim())`);
+  await mouseClick(`[...document.querySelectorAll('[role=option]')].find(o => o.innerText.includes(${JSON.stringify(optionText)}))`);
+  await sleep(700);
+  return options;
+}
+const button = (t) => `[...document.querySelectorAll('button')].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)}))`;
+const clickBox = (label) => mouseClick(`[...document.querySelectorAll('[role=checkbox]')].find(b => b.getAttribute('aria-label') === ${JSON.stringify(label)})`);
+const dialogButton = (t) => `[...document.querySelectorAll('[role=alertdialog] button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(t)}))`;
+const dialogText = () => evaluate(`document.querySelector('[role=alertdialog]')?.innerText.replace(/\\s*\\n\\s*/g, ' | ') ?? null`);
+const toasts = () => evaluate(`[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText.replace(/\\s*\\n\\s*/g, ' | '))`);
+const BOXES = `[...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')].map(b => ({ label: b.getAttribute('aria-label'), code: b.parentElement.dataset.code, checked: b.getAttribute('aria-checked') === 'true', disabled: b.disabled }))`;
+const boxes = () => evaluate(BOXES);
+const checkedBy = (list, code) => list.filter((b) => b.code === code).map((b) => b.checked);
+const state = (list, label) => { const b = list.find((x) => x.label === label); return b ? { checked: b.checked, disabled: b.disabled } : null; };
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth;
+  const sc = document.querySelector('[data-testid=matrix-scroll]');
+  const cb = document.querySelector('[data-testid=permission-matrix] [role=checkbox]')?.getBoundingClientRect();
+  return { pageOverflow: document.documentElement.scrollWidth > vw, matrixScrolls: sc ? sc.scrollWidth > sc.clientWidth : null, checkbox: cb ? [Math.round(cb.width), Math.round(cb.height)] : null };
+})()`;
+const since = (i) => captured.slice(i);
+const api = (list) => list.filter((c) => /^\/roles|^\/platform|^\/permissions/.test(c.path)).map((c) => `${c.method} ${c.path}${c.query} tenant=${c.tenant}`);
+
+// Real browser traversal, by history entry, so entry counts can be read back.
+const history = async () => { const h = await send("Page.getNavigationHistory"); return { index: h.currentIndex, count: h.entries.length, entries: h.entries }; };
+async function traverse(delta) { const h = await history(); await send("Page.navigateToHistoryEntry", { entryId: h.entries[h.index + delta].id }); await sleep(1000); }
+const path_ = () => evaluate(`location.pathname`);
+const profileButton = `[...document.querySelectorAll('[aria-label="Open profile menu"]')].find(b => b.offsetParent !== null)`;
+const menuItem = (t) => `[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.trim() === ${JSON.stringify(t)})`;
+const sessionHeld = () => evaluate(`!!sessionStorage.getItem('safefare:session:v1')`);
+const newSession = () => JSON.stringify({ accessToken: jwt(), tokenType: "Bearer", accessExpiresAt: Date.now() + 3600_000, refreshToken: "synthetic", refreshExpiresAt: null });
+const bodyInteractive = () => evaluate(`getComputedStyle(document.body).pointerEvents !== 'none'`);
+
+// Rendered colours of one box of each state, and contrast against the row it sits on.
+const BOX_STATES = `(() => {
+  const lum = (rgb) => { const [r, g, b] = rgb.map(v => v / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const [h, l] = [lum(a), lum(b)].sort((x, y) => y - x); return +((h + 0.05) / (l + 0.05)).toFixed(2); };
+  // Painted on a canvas, so rgb(), oklab() and alpha all resolve to the colour actually seen.
+  const paint = (layers) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, 1, 1); for (const l of layers) { x.fillStyle = l; x.fillRect(0, 0, 1, 1); } return [...x.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+  const backdropLayers = (el) => { const chain = []; for (let n = el.parentElement; n; n = n.parentElement) chain.unshift(getComputedStyle(n).backgroundColor); return chain; };
+  const all = [...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')];
+  const pick = (f) => all.find(f);
+  const states = {
+    checked: pick(b => !b.disabled && b.getAttribute('aria-checked') === 'true'),
+    unchecked: pick(b => !b.disabled && b.getAttribute('aria-checked') === 'false'),
+    disabledChecked: pick(b => b.disabled && b.getAttribute('aria-checked') === 'true'),
+    disabledUnchecked: pick(b => b.disabled && b.getAttribute('aria-checked') === 'false'),
+    moduleBox: pick(b => /module access/.test(b.getAttribute('aria-label')) && !b.disabled),
+  };
+  const out = {};
+  for (const [k, el] of Object.entries(states)) {
+    if (!el) { out[k] = null; continue; }
+    const s = getComputedStyle(el), r = el.getBoundingClientRect(), layers = backdropLayers(el), row = paint(layers), fill = paint([...layers, s.backgroundColor]), border = paint([...layers, s.backgroundColor, s.borderTopColor]);
+    const after = getComputedStyle(el, '::after');
+    out[k] = { size: [Math.round(r.width), Math.round(r.height)], fill: 'rgb(' + fill.join(',') + ')', border: 'rgb(' + border.join(',') + ')', borderStyle: s.borderTopStyle, borderWidth: s.borderTopWidth, opacity: s.opacity, hasMark: !!el.querySelector('svg'), markColor: el.querySelector('svg') ? getComputedStyle(el.querySelector('svg')).color : null, row: 'rgb(' + row.join(',') + ')', borderVsRow: ratio(border, row), fillVsRow: ratio(fill, row), markVsFill: el.querySelector('svg') ? ratio(paint([getComputedStyle(el.querySelector('svg')).color]), fill) : null, clickTarget: Math.round(parseFloat(after.width)) };
+  }
+  return out;
+})()`;
+const maxOf = (states) => Object.values(states).filter(Boolean);
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+    else if (msg.method === "Page.javascriptDialogOpening") { R.beforeUnloadDialog = msg.params.type; send("Page.handleJavaScriptDialog", { accept: false }).catch(() => {}); }
+  };
+  await send("Page.enable"); await send("Runtime.enable"); await send("Input.setIgnoreInputEvents", { ignore: false }).catch(() => {});
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await viewport(1366, 768);
+  await go(`${APP}/login`, 1200);
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+
+  // 1) Safe-Fare Admin, no tenant: message, tenant list only.
+  let mark = captured.length;
+  await go(ROUTE, 3000);
+  await waitFor(q("[data-testid=tenant-select]"));
+  await sleep(600);
+  R.noTenant = { requests: api(since(mark)), roleRequests: since(mark).filter((c) => /^\/roles/.test(c.path)).length, message: await evaluate(`document.querySelector('main').innerText.includes('Select a tenant')`), roleDisabled: await evaluate(`${q("[data-testid=role-select]")}.disabled`) };
+  await shot("no-tenant-1366x768");
+
+  // 2) Select a tenant: active tenants only, roles reload with the header.
+  mark = captured.length;
+  R.tenantOptions = await pick("tenant-select", "Ganesh Travels");
+  await sleep(600);
+  R.afterTenant = api(since(mark));
+
+  // 3) Select OPERATOR: the grid.
+  mark = captured.length;
+  R.roleOptions = await pick("role-select", "OPERATOR");
+  await waitFor(q("[data-testid=permission-matrix]"));
+  await sleep(300);
+  R.afterRole = api(since(mark));
+  let b = await boxes();
+  R.grid = {
+    total: b.length, granted: [...new Set(b.filter((x) => x.checked).map((x) => x.code))].sort(),
+    columns: await evaluate(`[...document.querySelectorAll('[data-testid=permission-matrix] thead th')].map(t => t.innerText.trim())`),
+    menus: await evaluate(`[...document.querySelectorAll('[data-menu]')].map(r => r.dataset.menu)`),
+    nullCellsHaveNoBox: await evaluate(`(() => { const r = document.querySelector('[data-resource="Service renewals"]'); return [...r.cells].slice(2, 6).every(c => !c.querySelector('[role=checkbox]')); })()`),
+    moduleOnlyMenu: await evaluate(`!!document.querySelector('[data-menu=my_work] [role=checkbox]')`),
+    other: await evaluate(`${q("[data-testid=other-codes]")}?.innerText ?? null`),
+  };
+  await shot("grid-1366x768");
+
+  // 4) Shared code: video.live on two menus; device.read on three modules and two View boxes.
+  await clickBox("Live Monitoring, Live map: Live video"); await sleep(450);
+  R.sharedAction = { dialog: await dialogText(), stillTicked: checkedBy(await boxes(), "video.live") };
+  await mouseClick(dialogButton("Cancel")); await sleep(450);
+  R.sharedActionCancelled = { "video.live": checkedBy(await boxes(), "video.live"), saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`) };
+  await clickBox("Live Monitoring, Live map: Live video"); await sleep(450);
+  await mouseClick(dialogButton("Remove permissions")); await sleep(450);
+  b = await boxes();
+  R.sharedUntick = { "video.live": checkedBy(b, "video.live"), saveEnabled: !(await evaluate(`${q("[data-testid=matrix-save]")}.disabled`)) };
+  await clickBox("Live Monitoring, Live map: Live video"); await sleep(250);
+  b = await boxes();
+  R.sharedRetick = { "video.live": checkedBy(b, "video.live") };
+  await mouseClick(button("Reset")); await sleep(250);
+
+  // 5) Module box: untick, disabled; re-tick grants nothing else.
+  await clickBox("Alerts & Events: module access"); await sleep(300);
+  b = await boxes();
+  R.moduleOff = { module: state(b, "Alerts & Events: module access"), handle: state(b, "Alerts & Events, Handle alerts: Handle alerts"), ruleAdd: state(b, "Alerts & Events, Alarm rules: Add") };
+  await shot("module-off-1366x768");
+  await clickBox("Alerts & Events: module access"); await sleep(300);
+  b = await boxes();
+  R.moduleOn = { module: state(b, "Alerts & Events: module access"), handle: state(b, "Alerts & Events, Handle alerts: Handle alerts"), ruleAdd: state(b, "Alerts & Events, Alarm rules: Add") };
+  await mouseClick(button("Reset")); await sleep(250);
+
+  // 5b) A module code shared by menus: closes all of them; the note names what else was unticked.
+  await clickBox("Fleet Overview: module access"); await sleep(500);
+  R.impactDialog = { text: await dialogText(), removed: await evaluate(`[...document.querySelectorAll('[data-removed]')].map(e => e.innerText.replace(/\\s*\\n\\s*/g, ' | '))`), nothingChangedYet: checkedBy(await boxes(), "device.read") };
+  await shot("impact-1366x768");
+  await mouseClick(dialogButton("Remove permissions")); await sleep(400);
+  b = await boxes();
+  R.sharedModule = { deviceRead: checkedBy(b, "device.read"), groupRead: checkedBy(b, "group.read"), liveVideo: checkedBy(b, "video.live"), alarmRead: checkedBy(b, "alarm.read"), note: await evaluate(`${q("[data-testid=matrix-note]")}?.innerText ?? null`) };
+  await mouseClick(button("Reset")); await sleep(250);
+  R.noChangesSaveDisabled = await evaluate(`${q("[data-testid=matrix-save]")}.disabled`);
+
+  // 6) Review, failure keeps the edits, then success and re-read.
+  await clickBox("Vehicles & Assets, Vehicles: Add"); await clickBox("Alerts & Events, Handle alerts: Handle alerts"); await sleep(250);
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(600);
+  R.review = await dialogText();
+  await shot("review-1366x768");
+  const failures = {};
+  for (const e of [[403, "FORBIDDEN", "You cannot grant or remove permissions you do not hold: [device.create]"], [400, "INVALID_VALUE", "Not a checkbox of the menu grid: [own.data.read]"], [400, "VALIDATION_FAILED", "permissionCodes too many"], [409, "PROTECTED_ROLE", "ADMIN has full access within its tenant by policy; its permissions cannot be edited"], [404, "NOT_FOUND", "Role not found"], [400, "TENANT_REQUIRED", "Select a tenant (X-Tenant-Id header) for this operation"]]) {
+    nextPutError = e;
+    await mouseClick(dialogButton("Save")); await sleep(700);
+    failures[e[1]] = { inline: await evaluate(`[...document.querySelectorAll('[data-testid=matrix-save-error]')].pop()?.innerText.replace(/\\s*\\n\\s*/g, ' | ') ?? null`), dialogOpen: await evaluate(`!!document.querySelector('[role=alertdialog]')`) };
+  }
+  R.failures = failures;
+  await shot("save-failed-1366x768");
+  b = await boxes();
+  R.afterFailure = { editsKept: { add: state(b, "Vehicles & Assets, Vehicles: Add"), handle: state(b, "Alerts & Events, Handle alerts: Handle alerts") }, successToast: (await toasts()).some((t) => /saved/i.test(t)), server: held[1][3] };
+  mark = captured.length;
+  await sleep(4500); // earlier error toasts expire
+  await mouseClick(dialogButton("Save")); await sleep(1000);
+  R.save = { requests: since(mark).filter((c) => /menu-permissions/.test(c.path)).map((c) => ({ method: c.method, path: c.path, tenant: c.tenant, body: c.body, bearer: c.auth })), toasts: await toasts(), server: [...held[1][3]].sort() };
+  b = await boxes();
+  R.afterSave = { add: state(b, "Vehicles & Assets, Vehicles: Add"), handle: state(b, "Alerts & Events, Handle alerts: Handle alerts"), saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`) };
+  await shot("saved-1366x768");
+
+  // 7) editable:false cells: the caller doesn't hold group.create; a code they don't hold can't be touched.
+  notHeldByCaller.add("group.create");
+  await pick("role-select", "VIEWER"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  await pick("role-select", "OPERATOR"); await sleep(600);
+  b = await boxes();
+  const before = state(b, "Vehicles & Assets, Device groups: Add");
+  await clickBox("Vehicles & Assets, Device groups: Add"); await sleep(200);
+  R.readOnlyCell = { before, after: state(await boxes(), "Vehicles & Assets, Device groups: Add") };
+  notHeldByCaller.clear();
+
+  // 8) ADMIN: everything ticked and disabled, no Save.
+  await pick("role-select", "ADMIN"); await waitFor(q("[data-testid=matrix-locked]")); await sleep(300);
+  b = await boxes();
+  R.admin = { total: b.length, disabled: b.filter((x) => x.disabled).length, ticked: b.filter((x) => x.checked).length, unticked: b.filter((x) => !x.checked).map((x) => x.code), banner: await evaluate(`${q("[data-testid=matrix-locked]")}.innerText`), saveButton: await evaluate(`!!${q("[data-testid=matrix-save]")}`) };
+  await shot("admin-1366x768");
+
+  // 9) Tenant switch: nothing of the old tenant stays.
+  await pick("role-select", "OPERATOR"); await sleep(600);
+  const t1 = (await boxes()).filter((x) => x.checked).map((x) => x.code);
+  mark = captured.length;
+  await pick("tenant-select", "Beta Fleet"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(500);
+  const t2 = [...new Set((await boxes()).filter((x) => x.checked).map((x) => x.code))].sort();
+  R.tenantSwitch = { tenant1: [...new Set(t1)].sort(), tenant2: t2, serverTenant2: [...held[2][3]].sort(), requests: api(since(mark)) };
+
+  // 10) Unsaved work: role switch, tenant switch, shell switcher, sidebar link, Back, reload.
+  await clickBox("Alerts & Events, Handle alerts: Handle alerts"); await sleep(250);
+  await pick("role-select", "VIEWER"); await sleep(300);
+  R.dirtyRoleSwitch = await dialogText();
+  await mouseClick(dialogButton("Cancel")); await sleep(500);
+  await pick("tenant-select", "Ganesh Travels"); await sleep(300);
+  R.dirtyTenantSwitch = await dialogText();
+  await mouseClick(dialogButton("Cancel")); await sleep(500);
+  await mouseClick(q("[data-testid=tenant-switcher]")); await sleep(900);
+  await mouseClick(`[...document.querySelectorAll('[aria-label=Tenants] button')].find(x => x.textContent.includes('Ganesh Travels'))`); await sleep(600);
+  R.dirtyShellSwitch = { dialog: await dialogText(), url: await path_() };
+  await shot("tenant-guard-1366x768");
+  await mouseClick(dialogButton("Cancel")); await sleep(500);
+  R.dirtyShellSwitchCancelled = { editsKept: state(await boxes(), "Alerts & Events, Handle alerts: Handle alerts"), tenantShown: await evaluate(`${q("[data-testid=tenant-switcher]")}.innerText`) };
+  await mouseClick(`[...document.querySelectorAll('a[href="/drive-vision/overview"], a[href$="/platform/roles"]')].find(a => a.offsetParent !== null)`); await sleep(600);
+  R.dirtyLink = { dialog: await dialogText(), url: await evaluate(`location.pathname`) };
+  await shot("leave-guard-1366x768");
+  await mouseClick(dialogButton("Cancel")); await sleep(500);
+  send("Page.reload").catch(() => {}); await sleep(1500);
+  R.dirtyReloadStillHere = { editsKept: state(await boxes(), "Alerts & Events, Handle alerts: Handle alerts") };
+
+  // 11) Catalogue tab: unsaved role edits survive; create, edit, delete still work, without a tenant header.
+  await mouseClick(`[...document.querySelectorAll('[role=radio],[role=tab],button')].find(b => b.textContent.trim() === 'Catalogue')`); await sleep(900);
+  mark = captured.length;
+  await mouseClick(button("New permission")); await sleep(600);
+  await evaluate(`${q("#perm-code")}.focus()`); await send("Input.insertText", { text: "synthetic.thing" });
+  await evaluate(`${q("#perm-description")}.focus()`); await send("Input.insertText", { text: "Synthetic" });
+  await mouseClick(`[...document.querySelectorAll('[role=radio]')].find(b => b.textContent.trim() === 'TENANT')`);
+  await mouseClick(button("Create permission")); await sleep(900);
+  await mouseClick(`document.querySelector('[aria-label="Edit synthetic.thing"]')`); await sleep(600);
+  await evaluate(`${q("#perm-description")}.focus()`); await send("Input.insertText", { text: " edited" });
+  await mouseClick(`[...document.querySelectorAll('[data-testid=permission-form] button[type=submit]')][0]`); await sleep(900);
+  await mouseClick(`document.querySelector('[aria-label="Delete synthetic.thing"]')`); await sleep(500);
+  await mouseClick(dialogButton("Delete permission")); await sleep(900);
+  await shot("catalogue-1366x768");
+  R.catalogue = { requests: api(since(mark)), finalCodes: CATALOG.map((c) => c.code) };
+  await mouseClick(`[...document.querySelectorAll('[role=radio],[role=tab],button')].find(b => b.textContent.trim() === 'Role permissions')`); await sleep(500);
+  R.tabReturnEditsKept = state(await boxes(), "Alerts & Events, Handle alerts: Handle alerts");
+  await mouseClick(`[...document.querySelectorAll('a[href]')].find(a => a.offsetParent !== null && a.getAttribute('href') === '/drive-vision/overview')`); await sleep(600);
+  await mouseClick(dialogButton("Discard and leave")); await sleep(1800);
+  R.leaveConfirmed = await evaluate(`location.pathname`);
+
+  // 12) Load failures: no tenant required message path; 403 on the grid.
+  await go(ROUTE, 2500);
+  await pick("tenant-select", "Ganesh Travels"); await sleep(500);
+  getError = [403, "FORBIDDEN", "Missing permission role.permission.read"];
+  await pick("role-select", "OPERATOR"); await sleep(900);
+  R.loadForbidden = await evaluate(`document.querySelector('main').innerText.includes('You don\\'t have permission to do this') && document.querySelector('main').innerText.includes('Missing permission role.permission.read')`);
+  await shot("load-error-1366x768");
+  getError = [400, "INVALID_TENANT", "Tenant does not exist or is not ACTIVE"];
+  await pick("role-select", "VIEWER"); await sleep(1100);
+  R.invalidTenant = { tenantCleared: await evaluate(`document.querySelector('main').innerText.includes('Role permissions belong to a tenant')`), message: await evaluate(`[...document.querySelectorAll('[role=alert]')].map(e => e.innerText).join(' | ')`) };
+  getError = null;
+
+  // 13) Responsive, with a grid on screen.
+  await go(ROUTE, 2500);
+  await pick("tenant-select", "Ganesh Travels"); await sleep(500);
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  R.layout = {};
+  for (const [w, h] of VIEWPORTS) {
+    await viewport(w, h); await sleep(600);
+    await evaluate(`window.scrollTo(0, 0)`);
+    R.layout[`${w}x${h}`] = await evaluate(LAYOUT);
+    await shot(`grid-${w}x${h}`);
+  }
+  await viewport(1366, 768);
+
+  // 13b) Checkbox visibility at each width. Holding back one granted code gives a disabled ticked box.
+  notHeldByCaller.add("alarm.handle");
+  await pick("role-select", "VIEWER"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(500);
+  R.checkboxes = {};
+  R.osColourScheme = await evaluate(`matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'`);
+  for (const scheme of ["light", "dark"]) {
+    await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] });
+    for (const [w, h] of [[1366, 768], [768, 1024], [390, 844]]) {
+      await viewport(w, h); await sleep(500);
+      await evaluate(`document.querySelector('[data-testid=permission-matrix]').scrollIntoView({ block: 'start' })`); await sleep(250);
+      R.checkboxes[`${scheme}-${w}x${h}`] = await evaluate(BOX_STATES);
+      await shot(`checkboxes-${scheme}-${w}x${h}`);
+    }
+  }
+  await send("Emulation.setEmulatedMedia", { features: [] });
+  await viewport(1366, 768); await sleep(400);
+  const unticked = `[...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')].find(b => !b.disabled && b.getAttribute('aria-checked') === 'false')`;
+  const hoverAt = await evaluate(`(() => { const e = ${unticked}; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  const idle = await evaluate(`getComputedStyle(${unticked}).boxShadow`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: hoverAt.x, y: hoverAt.y }); await sleep(250);
+  const hovered = await evaluate(`getComputedStyle(${unticked}).boxShadow`);
+  // The 36 px target: 15 px off centre still lands on the box.
+  const reach = await evaluate(`(() => { const a = document.elementFromPoint(${hoverAt.x + 15}, ${hoverAt.y}); return a?.getAttribute('role') ?? a?.tagName; })()`);
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: 5 }); await sleep(200);
+  // Keyboard: Tab reaches a box with a visible ring, Space toggles it.
+  await evaluate(`document.querySelector('[aria-label="Search modules"]').focus()`);
+  await evaluate(`document.querySelector('[data-testid=matrix-save]').blur()`);
+  let keyFocus = null;
+  for (let i = 0; i < 12 && !keyFocus; i++) {
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
+    await sleep(120);
+    keyFocus = await evaluate(`(() => { const a = document.activeElement; if (a?.getAttribute('role') !== 'checkbox') return null; const s = getComputedStyle(a); return { label: a.getAttribute('aria-label'), checked: a.getAttribute('aria-checked'), focusVisible: a.matches(':focus-visible'), ring: s.boxShadow }; })()`);
+  }
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", windowsVirtualKeyCode: 32, text: " " });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
+  await sleep(450);
+  const spaceDialog = await dialogText();
+  if (spaceDialog) { await mouseClick(dialogButton("Cancel")); await sleep(400); }
+  R.checkboxInteraction = { idleShadow: idle, hoveredShadow: hovered, hoverVisible: idle !== hovered, offCentreHit: reach, keyFocus, spaceToggled: await evaluate(`document.activeElement?.getAttribute('aria-checked') ?? null`), spaceDialog };
+  await mouseClick(button("Reset")).catch(() => {}); await sleep(250);
+  notHeldByCaller.clear();
+
+  // 13c) Back and Forward with real history entries: overview → permissions → roles → Back to permissions.
+  await go(`${APP}/drive-vision/overview`, 2500);
+  const link = (end) => `[...document.querySelectorAll('a[href]')].find(a => a.offsetParent !== null && a.getAttribute('href').endsWith(${JSON.stringify(end)}))`;
+  await mouseClick(link("/platform/permissions")); await waitFor(q("[data-testid=role-select]")); await sleep(900);
+  await pick("tenant-select", "Ganesh Travels"); await sleep(400);
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  await mouseClick(link("/platform/roles")); await sleep(1500);
+  await traverse(-1);
+  await waitFor(q("[data-testid=permission-matrix]")); await sleep(400);
+  const h0 = await history();
+  const nav = { start: { url: await path_(), index: h0.index, count: h0.count } };
+  await clickBox("Vehicles & Assets, Vehicles: Edit"); await sleep(300);
+  nav.dirtyEntriesAdded = (await history()).count - h0.count;
+  await traverse(-1);
+  const hb = await history();
+  nav.backDirty = { dialog: await dialogText(), url: await path_(), index: hb.index, count: hb.count };
+  await shot("back-guard-1366x768");
+  await mouseClick(dialogButton("Cancel")); await sleep(500);
+  nav.backCancelled = { url: await path_(), editsKept: state(await boxes(), "Vehicles & Assets, Vehicles: Edit"), index: (await history()).index, count: (await history()).count };
+  await traverse(1);
+  const hf = await history();
+  nav.forwardDirty = { dialog: await dialogText(), url: await path_(), index: hf.index, count: hf.count };
+  await mouseClick(dialogButton("Cancel")); await sleep(500);
+  nav.forwardCancelled = { url: await path_(), editsKept: state(await boxes(), "Vehicles & Assets, Vehicles: Edit"), index: (await history()).index, count: (await history()).count };
+  await traverse(1); await sleep(200);
+  await mouseClick(dialogButton("Discard and leave")); await sleep(1500);
+  nav.forwardConfirmed = { url: await path_(), index: (await history()).index, count: (await history()).count };
+  await traverse(-1); await waitFor(q("[data-testid=permission-matrix]")); await sleep(500);
+  // Saved: the guard is gone, and one Back leaves.
+  await clickBox("Vehicles & Assets, Vehicles: Edit"); await sleep(300);
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(500);
+  await mouseClick(dialogButton("Save")); await sleep(1100);
+  nav.saved = { saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`), count: (await history()).count };
+  const beforeBack = (await history()).index;
+  await traverse(-1); await sleep(700);
+  nav.backAfterSave = { url: await path_(), dialog: await dialogText(), onePress: (await history()).index === beforeBack - 1 };
+  await traverse(1); await waitFor(q("[data-testid=matrix-save]")); await sleep(500);
+  nav.forwardAfterSave = { url: await path_(), dialog: await dialogText() };
+  // Unsaved, confirmed Back.
+  await clickBox("Vehicles & Assets, Vehicles: Delete"); await sleep(300);
+  await traverse(-1); await sleep(200);
+  await mouseClick(dialogButton("Discard and leave")); await sleep(1500);
+  nav.backConfirmed = { url: await path_(), count: (await history()).count };
+  R.backForward = nav;
+
+  // 13d) A browser without the Navigation API: Back is still held, once.
+  const noNav = await send("Page.addScriptToEvaluateOnNewDocument", { source: "Object.defineProperty(window, 'navigation', { value: undefined, configurable: true });" });
+  await go(`${APP}/drive-vision/overview`, 2500);
+  await mouseClick(link("/platform/permissions")); await waitFor(q("[data-testid=role-select]")); await sleep(900);
+  await pick("tenant-select", "Ganesh Travels"); await sleep(400);
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  await clickBox("Vehicles & Assets, Vehicles: Delete"); await sleep(300);
+  const ln = (await history()).index;
+  await traverse(-1);
+  R.noNavigationApi = { apiMissing: await evaluate(`window.navigation === undefined`), dialog: await dialogText(), url: await path_(), sameEntry: (await history()).index === ln };
+  await mouseClick(dialogButton("Discard and leave")); await sleep(1500);
+  R.noNavigationApi.left = await path_();
+  await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: noNav.identifier });
+
+  // 13e) Sign out, desktop and phone. No edits: straight out. Edits: Cancel keeps everything; Continue signs out.
+  R.signOut = {};
+  for (const [name, w, h] of [["desktop", 1366, 768], ["mobile", 390, 844]]) {
+    await viewport(w, h);
+    await go(ROUTE, 2600);
+    await pick("tenant-select", "Ganesh Travels"); await sleep(400);
+    await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+    const edited = "Vehicles & Assets, Vehicles: Delete";
+    await clickBox(edited); await sleep(300);
+    await mouseClick(profileButton); await waitFor(`document.querySelector('[role=menuitem]')`); await sleep(250);
+    const logoutMark = captured.length;
+    await mouseClick(menuItem("Sign out")); await sleep(800);
+    const r = { dialog: await dialogText(), sessionKept: await sessionHeld(), logoutCalls: since(logoutMark).filter((c) => c.path === "/auth/logout").length };
+    await shot(`sign-out-${w}x${h}`);
+    await mouseClick(dialogButton("Cancel")); await sleep(500);
+    r.cancelled = { url: await path_(), editsKept: state(await boxes(), edited), sessionKept: await sessionHeld(), logoutCalls: since(logoutMark).filter((c) => c.path === "/auth/logout").length, pageInteractive: await bodyInteractive(), dialogClosed: (await dialogText()) === null };
+    await mouseClick(profileButton); await waitFor(`document.querySelector('[role=menuitem]')`); await sleep(250);
+    await mouseClick(menuItem("Sign out")); await sleep(700);
+    await mouseClick(dialogButton("Continue")); await sleep(1500);
+    r.confirmed = { url: await path_(), sessionKept: await sessionHeld(), logoutCalls: since(logoutMark).filter((c) => c.path === "/auth/logout").length };
+    await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+    await go(ROUTE, 2600);
+    await mouseClick(profileButton); await waitFor(`document.querySelector('[role=menuitem]')`); await sleep(250);
+    const cleanMark = captured.length;
+    await mouseClick(menuItem("Sign out")); await sleep(1500);
+    r.clean = { dialog: await dialogText(), url: await path_(), logoutCalls: since(cleanMark).filter((c) => c.path === "/auth/logout").length };
+    R.signOut[name] = r;
+    await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+  }
+  await viewport(1366, 768);
+
+  // 13f) Another administrator changes the role between load and save.
+  await go(ROUTE, 2600);
+  await pick("tenant-select", "Ganesh Travels"); await sleep(400);
+  await pick("role-select", "DISPATCHER"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  const editedBox = "Alerts & Events, Alerts: View";
+  const startCodes = [...held[1][9]];
+  // A code the module rule lets through: Sensors' module box.
+  await clickBox("Sensors: module access"); await sleep(300);
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(500);
+  held[1][9] = [...startCodes, "alarm.read"];
+  const newer = [...held[1][9]];
+  let cMark = captured.length;
+  await mouseClick(dialogButton("Save")); await sleep(1000);
+  R.conflict = {
+    requests: since(cMark).filter((c) => /menu-permissions/.test(c.path)).map((c) => c.method),
+    banner: await evaluate(`${q("[data-testid=matrix-conflict]")}?.innerText.replace(/\\s*\\n\\s*/g, ' | ') ?? null`),
+    dialogClosed: (await dialogText()) === null, editsKept: state(await boxes(), "Sensors: module access"), saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`),
+    server: [...held[1][9]].sort(), serverUntouched: JSON.stringify(held[1][9]) === JSON.stringify(newer), successToast: (await toasts()).some((t) => /saved/i.test(t)),
+  };
+  await shot("conflict-1366x768");
+  // The read failing keeps the conflict and the edits.
+  getError = [503, "UPSTREAM_UNAVAILABLE", "Service unavailable"];
+  await mouseClick(q("[data-testid=matrix-reload-latest]")); await sleep(800);
+  R.conflictReloadFailed = { editsKept: state(await boxes(), "Sensors: module access"), stillConflict: await evaluate(`!!${q("[data-testid=matrix-conflict]")}`) };
+  getError = null;
+  cMark = captured.length;
+  await mouseClick(q("[data-testid=matrix-reload-latest]")); await sleep(900);
+  const after = await boxes();
+  R.conflictReloaded = { requests: since(cMark).filter((c) => /menu-permissions/.test(c.path)).map((c) => c.method), banner: await evaluate(`!!${q("[data-testid=matrix-conflict]")}`), editsGone: state(after, "Sensors: module access"), newerShown: state(after, editedBox), saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`) };
+  // Saved against the new state: read, write, re-read.
+  await clickBox("Sensors: module access"); await sleep(300);
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(500);
+  cMark = captured.length;
+  await mouseClick(dialogButton("Save")); await sleep(1100);
+  R.conflictResolved = { requests: since(cMark).filter((c) => /menu-permissions/.test(c.path)).map((c) => c.method), server: [...held[1][9]].sort() };
+  // The pre-save read failing writes nothing.
+  await clickBox("Sensors: module access"); await sleep(300);
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(500);
+  getError = [503, "UPSTREAM_UNAVAILABLE", "Service unavailable"];
+  cMark = captured.length;
+  await mouseClick(dialogButton("Save")); await sleep(800);
+  R.preReadFailed = { requests: since(cMark).filter((c) => /menu-permissions/.test(c.path)).map((c) => c.method), dialogOpen: (await dialogText()) !== null, error: await evaluate(`[...document.querySelectorAll('[data-testid=matrix-save-error]')].pop()?.innerText.replace(/\\s*\\n\\s*/g, ' | ') ?? null`) };
+  getError = null;
+  await mouseClick(dialogButton("Cancel")); await sleep(400);
+  await mouseClick(button("Reset")); await sleep(300);
+
+  // 13g) Top-bar switcher with edits, confirmed.
+  await clickBox("Sensors: module access"); await sleep(300);
+  await mouseClick(q("[data-testid=tenant-switcher]")); await sleep(900);
+  await mouseClick(`[...document.querySelectorAll('[aria-label=Tenants] button')].find(x => x.textContent.includes('Beta Fleet'))`); await sleep(600);
+  await mouseClick(dialogButton("Discard and switch")); await sleep(1500);
+  await waitFor(q("[data-testid=permission-matrix]")); await sleep(500);
+  R.shellSwitchConfirmed = { tenantShown: await evaluate(`${q("[data-testid=tenant-switcher]")}.innerText`), dialog: await dialogText(), saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`) };
+
+  // 14) Tenant user: no picker, no tenant list, no header, no Catalogue tab.
+  identity = IDS.tenantAdmin;
+  mark = captured.length;
+  await go(ROUTE, 3000);
+  await waitFor(q("[data-testid=role-select]"));
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(300);
+  await clickBox("Vehicles & Assets, Vehicles: Delete"); await sleep(200);
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(500);
+  R.tenantUserReview = await dialogText();
+  await mouseClick(dialogButton("Save")); await sleep(900);
+  const reqs = since(mark);
+  R.tenantUser = {
+    tenantPicker: await evaluate(`!!${q("[data-testid=tenant-select]")}`), shellSwitcher: await evaluate(`!!${q("[data-testid=tenant-switcher]")}`), catalogueTab: await evaluate(`[...document.querySelectorAll('main button, main [role=radio]')].some(b => b.textContent.trim() === 'Catalogue')`),
+    tenantList: reqs.filter((c) => c.path.startsWith("/platform")).length, withHeader: reqs.filter((c) => c.tenant !== null).length, requests: api(reqs),
+  };
+  await shot("tenant-user-1366x768");
+  const sidebarText = `[...document.querySelectorAll('aside, nav')].map(n => n.innerText).join(' ')`;
+  R.tenantNaming = {
+    sidebarHasRolePermissions: await evaluate(`[...document.querySelectorAll('a[href$="/platform/permissions"]')].some(a => a.innerText.includes('Role Permissions') || a.getAttribute('aria-label') === 'Role Permissions')`),
+    sidebarHasCatalogue: await evaluate(`(${sidebarText}).includes('Permission Catalogue')`),
+    platformGroup: await evaluate(`[...document.querySelectorAll('[aria-label=Sections] a')].map(a => a.innerText.trim()).includes('Platform')`),
+    activeSection: await evaluate(`document.querySelector('[aria-label=Sections] a[aria-current=true]')?.innerText.trim() ?? null`),
+    title: await evaluate(`document.querySelector('h1')?.innerText`),
+    url: await path_(),
+  };
+  await viewport(390, 844); await sleep(500);
+  await evaluate(`window.scrollTo(0, 0)`);
+  await shot("tenant-user-390x844");
+  await viewport(1366, 768);
+  for (const [name, permissions] of [["noReadPermission", ["device.read"]], ["manageOnly", ["device.read", "permission.manage"]]]) {
+    identity = { ...IDS.tenantAdmin, permissions };
+    const mk = captured.length;
+    await go(ROUTE, 2600);
+    R[`tenantDenied_${name}`] = { url: await path_(), page: await evaluate(`document.querySelector('main')?.innerText.slice(0, 120).replace(/\\s*\\n\\s*/g, ' | ') ?? null`), matrix: await evaluate(`!!${q("[data-testid=role-select]")}`), menuPermissionCalls: since(mk).filter((c) => /menu-permissions/.test(c.path)).length };
+  }
+
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ note: "MOCKED: every /api/v1 response is synthetic; the live backend was not called", results: R }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch((e) => { console.error(e); fs.writeFileSync(path.join(OUT, "results.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

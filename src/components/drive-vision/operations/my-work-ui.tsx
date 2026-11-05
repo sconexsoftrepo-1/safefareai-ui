@@ -62,8 +62,8 @@ export function DriverIdentity({ me }: { me: DriverDto }) {
 export function StatTile({ icon: Icon, label: name, value, hint, tone = "neutral" }: { icon: LucideIcon; label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: "neutral" | "brand" | "success" | "warning" }) {
   const chip = { neutral: "bg-surface-sunken text-ink-muted", brand: "bg-brand-soft text-brand-deep", success: "bg-success-soft text-success", warning: "bg-warning-soft text-warning" }[tone];
   return (
-    <div className="flex min-w-0 items-start gap-3 rounded-card border border-line/60 bg-surface p-4 shadow-card">
-      <span className={cn("grid size-9 shrink-0 place-items-center rounded-full", chip)} aria-hidden>
+    <div className="flex min-w-0 items-start gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
+      <span className={cn("grid size-9 shrink-0 place-items-center rounded-control", chip)} aria-hidden>
         <Icon className="size-4" />
       </span>
       <div className="min-w-0">

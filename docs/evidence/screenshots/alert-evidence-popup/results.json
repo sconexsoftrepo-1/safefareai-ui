@@ -1,0 +1,312 @@
+{
+  "note": "MOCKED: real generated media served from a made-up host. No real vendor media was used.",
+  "results": {
+    "generated": {
+      "pngBytes": 32900,
+      "webmBytes": 102199
+    },
+    "rows": [
+      "IMAGE · READY · URL available | Open",
+      "VIDEO · ch 1 · READY · URL available | Open",
+      "IMAGE · READY · URL available | Open",
+      "IMAGE · READY · URL available | Open",
+      "VIDEO · READY · URL available | Open",
+      "VIDEO · READY · URL available | Open",
+      "IMAGE · READY · URL available | Open",
+      "IMAGE · READY · URL available | Open",
+      "IMAGE · PENDING · URL available | Open",
+      "IMAGE · FAILED · URL available | Open",
+      "IMAGE · READY · URL available | Open",
+      "IMAGE · PENDING · URL available | Open",
+      "VIDEO · READY | Link missing | Open",
+      "VIDEO · PENDING | Waiting for link | Open"
+    ],
+    "scrollAfterOpen": 118,
+    "image": {
+      "src": "https://media.gpstracktech.com/ok.png?Expires=1893456000&Signature=ab%2Bcd%3D",
+      "natural": [
+        1280,
+        720
+      ],
+      "shown": [
+        1118,
+        629
+      ],
+      "aspectKept": true,
+      "fits": true,
+      "opacity": "1"
+    },
+    "imageUrlExact": true,
+    "drawerBehind": true,
+    "zoom": "150%",
+    "zoomReset": true,
+    "mediaClickKeepsOpen": true,
+    "fullscreenImage": {
+      "element": "evidence-stage",
+      "label": "Exit fullscreen"
+    },
+    "escapeInFullscreenKeepsPopup": true,
+    "fullscreenExit": {
+      "element": null,
+      "label": "Fullscreen",
+      "popupOpen": true
+    },
+    "imageDownload": {
+      "status": "started",
+      "text": "Download started: alert-501-evidence-1.png"
+    },
+    "afterEscape": {
+      "popupOpen": false,
+      "drawerOpen": true,
+      "scrollTop": 120,
+      "url": true,
+      "focusIsOpen": true
+    },
+    "backgroundBlocked": true,
+    "outsideClick": {
+      "popupOpen": false,
+      "drawerOpen": true
+    },
+    "video": {
+      "src": "https://media.gpstracktech.com/ok.webm?Expires=1893456000&Signature=ab%2Bcd%3D",
+      "controls": true,
+      "autoplay": false,
+      "paused": true,
+      "state": "ready",
+      "duration": 3.378379,
+      "size": [
+        1280,
+        720
+      ],
+      "stage": "rgb(15, 24, 38)"
+    },
+    "videoUrlExact": true,
+    "playing": {
+      "state": "playing",
+      "time": true,
+      "paused": false
+    },
+    "speed": 1.5,
+    "paused": "paused",
+    "fullscreenVideo": "evidence-stage",
+    "fullscreenCalls": [
+      "enter:evidence-stage",
+      "exit",
+      "enter:evidence-stage",
+      "exit"
+    ],
+    "closedFromFullscreen": {
+      "fullscreen": false,
+      "popupOpen": false,
+      "paused": true,
+      "src": null,
+      "readyState": 0
+    },
+    "videoDownload": {
+      "status": "started",
+      "text": "Download started: alert-501-evidence-2.webm"
+    },
+    "noCors": {
+      "shown": true,
+      "download": {
+        "status": "failed",
+        "text": "The media server doesn't allow this app to download files, so nothing was saved. Right-click the image and choose Save image as."
+      }
+    },
+    "notFound": {
+      "problem": "not-found",
+      "text": "Image not found | The media server doesn't have this file. | Try again"
+    },
+    "expired": {
+      "problem": "denied",
+      "text": "Access denied or link expired | The media server refused this video. Signed links expire, so reopening the alert may give a new one. | Try again"
+    },
+    "hevc": {
+      "problem": "unsupported",
+      "text": "Format not supported | This browser can't play this video/hevc file. It may be damaged, or need another app. Try downloading it. | Try again"
+    },
+    "corrupt": {
+      "problem": "unsupported",
+      "text": "Format not supported | This browser can't display this image/png file. It may be damaged, or need another app. Try downloading it. | Try again"
+    },
+    "hiddenStatus": {
+      "problem": "unknown",
+      "text": "Couldn't load this image | The link may have expired, the file may be gone, or the connection failed. The media server doesn't let the browser see which. | Try again"
+    },
+    "pendingOpens": {
+      "shown": true,
+      "status": "PENDING"
+    },
+    "failedOpens": {
+      "shown": true,
+      "status": "FAILED"
+    },
+    "networkFailure": {
+      "problem": "unknown",
+      "text": "Couldn't load this image | The link may have expired, the file may be gone, or the connection failed. The media server doesn't let the browser see which. | Try again"
+    },
+    "afterRetry": {
+      "shown": true,
+      "error": false
+    },
+    "pending404": {
+      "problem": "not-found",
+      "text": "Image not found | The media server doesn't have this file. | The server still reports this as PENDING, so the file may not be available yet. | Try again"
+    },
+    "statusesUnchanged": [
+      "IMAGE · READY · URL available",
+      "VIDEO · ch 1 · READY · URL available",
+      "IMAGE · READY · URL available",
+      "IMAGE · READY · URL available",
+      "VIDEO · READY · URL available",
+      "VIDEO · READY · URL available",
+      "IMAGE · READY · URL available",
+      "IMAGE · READY · URL available",
+      "IMAGE · PENDING · URL available",
+      "IMAGE · FAILED · URL available",
+      "IMAGE · READY · URL available",
+      "IMAGE · PENDING · URL available",
+      "VIDEO · READY",
+      "VIDEO · PENDING"
+    ],
+    "disabledOpen": [
+      true,
+      true
+    ],
+    "unavailable": [
+      "Link missing",
+      "Waiting for link"
+    ],
+    "tabsOpened": 1,
+    "newPages": [
+      {
+        "url": "https://landing.dllplayer.com/color-picker-dll/welcome",
+        "openedByApp": false,
+        "step": "startup"
+      },
+      {
+        "url": "about:blank",
+        "openedByApp": false,
+        "step": "startup"
+      },
+      {
+        "url": "chrome-extension://hfaciehifhdcgoolaejkoncjciicbemc/welcome.html",
+        "openedByApp": false,
+        "step": "startup"
+      },
+      {
+        "url": "http://127.0.0.1:3113/drive-vision/alerts?kind=incidents&alarm=900",
+        "openedByApp": false,
+        "step": "startup"
+      },
+      {
+        "url": "edge://downloads-hub/",
+        "openedByApp": false,
+        "step": "image download"
+      }
+    ],
+    "downloadsBegun": [
+      "alert-501-evidence-1.png",
+      "alert-501-evidence-2.webm"
+    ],
+    "downloadProgress": {
+      "inProgress": 12,
+      "completed": 2
+    },
+    "sameUrl": true,
+    "alarmOpen": [
+      "Image",
+      "Video"
+    ],
+    "alarmVideo": true,
+    "alarmAfterEscape": {
+      "popup": false,
+      "drawer": 1
+    },
+    "layout": {
+      "image-1440x900": {
+        "dialog": [
+          1120,
+          828
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "video-1440x900": {
+        "dialog": [
+          1120,
+          828
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "image-768x1024": {
+        "dialog": [
+          722,
+          860
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "video-768x1024": {
+        "dialog": [
+          722,
+          860
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "image-375x812": {
+        "dialog": [
+          375,
+          812
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "video-375x812": {
+        "dialog": [
+          375,
+          812
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "image-320x568": {
+        "dialog": [
+          320,
+          568
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      },
+      "video-320x568": {
+        "dialog": [
+          320,
+          568
+        ],
+        "fits": true,
+        "toolbarVisible": true,
+        "overflow": false
+      }
+    },
+    "signedUrlsSeen": 12
+  },
+  "downloads": [
+    [
+      "alert-501-evidence-1.png",
+      32900
+    ],
+    [
+      "alert-501-evidence-2.webm",
+      102199
+    ]
+  ]
+}

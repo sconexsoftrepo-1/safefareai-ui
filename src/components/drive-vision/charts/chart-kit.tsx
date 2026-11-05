@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /** Shared chart styling: recessive axes, hairline grid, text tokens for labels. */
 export const AXIS_PROPS = {
   stroke: "var(--dv-border)",
-  tick: { fill: "var(--dv-ink-subtle)", fontSize: 11 },
+  tick: { fill: "var(--dv-ink-muted)", fontSize: 12 },
   tickLine: false,
   axisLine: false,
   tickMargin: 8,

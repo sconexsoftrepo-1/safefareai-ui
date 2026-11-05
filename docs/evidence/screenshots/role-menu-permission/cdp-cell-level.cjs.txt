@@ -1,0 +1,260 @@
+// Role menu permissions (headless Edge via CDP). EVERY */api/v1/* request is answered locally with SYNTHETIC data
+// shaped like docs/contracts/role-menu-permission-api.txt: nothing reaches the BFF, no credentials are used and no
+// real writes happen. This proves the frontend against the documented contract, not the live backend.
+const fs = require("fs");
+const path = require("path");
+const OUT = "C:/Sconex-Projects/Drive Vision/docs/evidence/screenshots/role-menu-permission";
+fs.mkdirSync(OUT, { recursive: true });
+const APP = "http://127.0.0.1:3113";
+const CDP = "http://127.0.0.1:9343";
+const ROUTE = `${APP}/drive-vision/platform/permissions`;
+const VIEWPORTS = [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 768], [1920, 1080]];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { ALL_CODES, TENANT_CODES } = require("C:/Sconex-Projects/Drive Vision/tests/helpers/identities.cjs");
+
+let ws, seq = 0;
+const pending = new Map();
+const send = (method, params = {}) => { const id = ++seq; ws.send(JSON.stringify({ id, method, params })); return new Promise((res, rej) => pending.set(id, { res, rej, method })); };
+const evaluate = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails).slice(0, 400)); return r.result.value; };
+const jwt = () => `x.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.y`;
+
+const IDS = {
+  sfa: { userId: 1, platform: true, homeTenantId: null, tenantId: null, roleId: 1, roleCode: "ADMIN", permissions: ALL_CODES, screens: [] },
+  tenantAdmin: { userId: 2, platform: false, homeTenantId: 1, tenantId: 1, roleId: 1, roleCode: "ADMIN", permissions: TENANT_CODES, screens: [] },
+};
+let identity = IDS.sfa;
+
+// SYNTHETIC tenants and roles (role ids and codes as in the contract).
+const TENANTS = [
+  { id: 1, code: "Ganesh", name: "Ganesh Travels (synthetic)", status: "ACTIVE" },
+  { id: 2, code: "Beta", name: "Beta Fleet (synthetic)", status: "ACTIVE" },
+  { id: 3, code: "Closed", name: "Closed Co (synthetic)", status: "SUSPENDED" },
+];
+const ROLES = [
+  [1, "ADMIN", "Administrator: full access within the tenant", true],
+  [2, "FLEET OWNER", "Fleet manager", false],
+  [3, "OPERATOR", "Operations user", false],
+  [4, "DRIVER", "Driver", false],
+  [9, "DISPATCHER", "Dispatcher: plans dispatches and driver work", false],
+  [10, "VIEWER", "Viewer: read-only access", false],
+].map(([id, code, description, adm]) => ({ id, code, description, protectedRole: adm, fullAccess: adm }));
+
+// Per-tenant state: tenant 1 and tenant 2 start differently so a leak shows.
+const held = { 1: { 2: ["device.read"], 3: ["device.read", "alarm.read", "alarm.handle", "group.read", "video.live"], 4: [], 9: ["device.read"], 10: ["device.read", "alarm.read"] }, 2: { 2: ["alarm.read"], 3: ["sensor.read", "alarm.read"], 4: [], 9: [], 10: [] } };
+const notHeldByCaller = new Set();
+function grid(tenantId, roleId) {
+  const admin = roleId === 1;
+  const has = (c) => admin || held[tenantId][roleId].includes(c);
+  const cell = (c) => ({ permissionCode: c, granted: has(c), editable: !admin && !notHeldByCaller.has(c) });
+  const act = (label, c) => ({ label, ...cell(c) });
+  const res = (label, x = {}) => ({ label, view: null, add: null, edit: null, delete: null, actions: [], ...x });
+  return {
+    tenantId, roleId, roleCode: ROLES.find((r) => r.id === roleId).code, fullAccess: admin, editable: !admin,
+    menus: [
+      { menuId: 4, menuKey: "dashboard", title: "Fleet Overview", icon: "layout-dashboard", parentId: null, sortOrder: 10, access: cell("device.read"), resources: [res("Fleet overview", { view: cell("device.read") })] },
+      { menuId: 5, menuKey: "live_monitoring", title: "Live Monitoring", icon: "radar", parentId: null, sortOrder: 20, access: cell("device.read"), resources: [res("Live map", { view: cell("device.read"), actions: [act("Live video", "video.live")] })] },
+      { menuId: 6, menuKey: "historical_video", title: "Historical Video", icon: "cctv", parentId: null, sortOrder: 30, access: cell("video.playback"), resources: [res("Recordings", { view: cell("video.playback"), actions: [act("Live video", "video.live")] })] },
+      {
+        menuId: 7, menuKey: "vehicles_assets", title: "Vehicles & Assets", icon: "truck", parentId: null, sortOrder: 40, access: cell("device.read"),
+        resources: [
+          res("Vehicles", { view: cell("device.read"), add: cell("device.create"), edit: cell("device.update"), delete: cell("device.delete") }),
+          res("Device groups", { view: cell("group.read"), add: cell("group.create"), edit: cell("group.update"), delete: cell("group.delete") }),
+          res("Maintenance reminders", { view: cell("maintenance.read"), add: cell("maintenance.create"), edit: cell("maintenance.update") }),
+          res("Service renewals", { actions: [act("Service renewals", "renewal.manage")] }),
+        ],
+      },
+      { menuId: 66, menuKey: "sensors", title: "Sensors", icon: "cpu", parentId: null, sortOrder: 47, access: cell("sensor.read"), resources: [res("Sensors", { view: cell("sensor.read"), actions: [act("Send sensor readings", "sensor.ingest")] })] },
+      {
+        menuId: 9, menuKey: "alerts_events", title: "Alerts & Events", icon: "bell-ring", parentId: null, sortOrder: 60, access: cell("alarm.read"),
+        resources: [res("Alerts", { view: cell("alarm.read") }), res("Handle alerts", { actions: [act("Handle alerts", "alarm.handle")] }), res("Alarm rules", { view: cell("alarm.rule.read"), add: cell("alarm.rule.create"), edit: cell("alarm.rule.update"), delete: cell("alarm.rule.delete") })],
+      },
+      { menuId: 12, menuKey: "my_work", title: "My Work", icon: "briefcase", parentId: null, sortOrder: 90, access: { permissionCode: "driver.app", granted: admin ? false : has("driver.app"), editable: !admin }, resources: [res("My Work", { view: { permissionCode: "driver.app", granted: admin ? false : has("driver.app"), editable: !admin } })] },
+      { menuId: 13, menuKey: "reports", title: "Reports", icon: "file", parentId: null, sortOrder: 95, access: { permissionCode: "report.read", granted: false, editable: false }, resources: [res("Reports", { view: { permissionCode: "report.read", granted: false, editable: false }, add: cell("report.create"), edit: cell("report.update"), delete: { permissionCode: "report.delete", granted: false, editable: false }, actions: [act("Export", "report.export"), { label: "Share", permissionCode: "report.share", granted: false, editable: false }] })] },
+      { menuId: 14, menuKey: "module_only", title: "Module only", icon: "x", parentId: null, sortOrder: 96, access: cell("only.read"), resources: [] },
+    ],
+    otherPermissionCodes: ["own.data.read"],
+  };
+}
+
+let CATALOG = [{ code: "device.read", description: "View devices (synthetic)", scope: "TENANT" }, { code: "tenant.all", description: "All tenants (synthetic)", scope: "PLATFORM" }];
+let nextPutError = null;
+let getError = null; // [status, code, msg]
+const captured = [];
+const cors = () => [{ name: "Access-Control-Allow-Origin", value: APP }, { name: "Access-Control-Allow-Headers", value: "Authorization, Content-Type, X-Request-Id, X-Tenant-Id" }, { name: "Access-Control-Allow-Methods", value: "GET,POST,PUT,PATCH,DELETE,OPTIONS" }];
+const envelopeError = (status, errorCode, msg) => ({ code: status, msg, data: null, total: null, extend: { errorCode, fieldErrors: [], requestId: `mock-${errorCode}` } });
+
+async function onPaused({ requestId, request }) {
+  const u = new URL(request.url);
+  const p = u.pathname.replace(/^.*\/api\/v1/, "");
+  const th = Object.entries(request.headers).find(([k]) => k.toLowerCase() === "x-tenant-id")?.[1] ?? null;
+  const body = request.postData ? JSON.parse(request.postData) : null;
+  if (request.method === "OPTIONS") return send("Fetch.fulfillRequest", { requestId, responseCode: 204, responseHeaders: cors(), body: "" });
+  captured.push({ method: request.method, path: p, query: u.search, tenant: th, body, auth: /^Bearer /.test(Object.entries(request.headers).find(([k]) => k.toLowerCase() === "authorization")?.[1] ?? "") });
+  const ok = (data, total) => ({ code: 200, msg: "Success", data, ...(total !== undefined ? { total } : {}) });
+  let status = 200, res = ok(null);
+  const m = p.match(/^\/roles\/(\d+)\/menu-permissions$/);
+  const tenantId = identity.platform ? (th ? Number(th) : null) : identity.tenantId;
+  if (p === "/me") res = ok({ id: 1, displayName: "Synthetic user", email: "synthetic@example.invalid", ...(identity.platform ? {} : { tenantName: "Ganesh Travels (synthetic)", tenantCode: "Ganesh" }) });
+  else if (p === "/me/permissions") res = ok(identity);
+  else if (p === "/platform/tenants") res = ok(TENANTS, TENANTS.length);
+  else if (p === "/platform/switch-tenant") { const t = TENANTS.find((x) => x.id === body.tenantId); res = ok({ tenantId: t.id, code: t.code, name: t.name, header: "X-Tenant-Id" }); }
+  else if (p === "/roles" && request.method === "GET") res = ok(ROLES.map((r) => ({ ...r, tenantId })), ROLES.length);
+  else if (m) {
+    const roleId = Number(m[1]);
+    if (tenantId === null) { status = 400; res = envelopeError(400, "TENANT_REQUIRED", "Select a tenant (X-Tenant-Id header) for this operation"); }
+    else if (request.method === "GET" && getError) { status = getError[0]; res = envelopeError(...getError); }
+    else if (request.method === "GET") res = ok(grid(tenantId, roleId));
+    else if (nextPutError) { status = nextPutError[0]; res = envelopeError(...nextPutError); nextPutError = null; }
+    else { held[tenantId][roleId] = [...new Set(body.permissionCodes)]; res = ok(grid(tenantId, roleId)); }
+  } else if (p === "/permissions" && request.method === "GET") res = ok(CATALOG, CATALOG.length);
+  else if (p === "/permissions" && request.method === "POST") { CATALOG = [...CATALOG, { code: body.code, description: body.description, scope: body.scope }]; status = 201; res = { code: 201, msg: "Created", data: body }; }
+  else if (/^\/permissions\//.test(p) && request.method === "PUT") { const code = decodeURIComponent(p.split("/")[2]); CATALOG = CATALOG.map((c) => (c.code === code ? { code, ...body } : c)); res = ok({ code, ...body }); }
+  else if (/^\/permissions\//.test(p) && request.method === "DELETE") { const code = decodeURIComponent(p.split("/")[2]); CATALOG = CATALOG.filter((c) => c.code !== code); res = ok(null); }
+  await send("Fetch.fulfillRequest", { requestId, responseCode: status, responseHeaders: [...cors(), { name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(res)).toString("base64") });
+}
+
+async function viewport(w, h) { await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 768 }); await send("Emulation.setTouchEmulationEnabled", { enabled: false }); }
+async function go(url, ms = 2200) { await send("Page.navigate", { url }); await sleep(ms); }
+async function shot(name) { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(path.join(OUT, `${name}.png`), Buffer.from(r.data, "base64")); }
+async function waitFor(expr, ms = 6000) { const end = Date.now() + ms; while (Date.now() < end) { if (await evaluate(`!!(${expr})`)) return true; await sleep(120); } console.error("waitFor timeout", expr); return false; }
+const q = (s) => `document.querySelector(${JSON.stringify(s)})`;
+async function mouseClick(expr) {
+  const box = await evaluate(`(() => { const e = ${expr}; if (!e) return null; e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  if (!box) return false;
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: type === "mouseMoved" ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: type === "mouseMoved" ? 0 : 1, pointerType: "mouse" });
+  await sleep(220);
+  return true;
+}
+async function pick(trigger, optionText) {
+  await mouseClick(q(`[data-testid=${trigger}]`));
+  await waitFor(`document.querySelector('[role=option]')`);
+  const options = await evaluate(`[...document.querySelectorAll('[role=option]')].map(o => o.innerText.replace(/\\s+/g, ' ').trim())`);
+  await mouseClick(`[...document.querySelectorAll('[role=option]')].find(o => o.innerText.includes(${JSON.stringify(optionText)}))`);
+  await sleep(700);
+  return options;
+}
+const button = (t) => `[...document.querySelectorAll('button')].find(b => b.offsetParent !== null && b.textContent.trim().startsWith(${JSON.stringify(t)}))`;
+const clickBox = (label) => mouseClick(`[...document.querySelectorAll('[role=checkbox]')].find(b => b.getAttribute('aria-label') === ${JSON.stringify(label)})`);
+const dialogButton = (t) => `[...document.querySelectorAll('[role=alertdialog] button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(t)}))`;
+const dialogText = () => evaluate(`document.querySelector('[role=alertdialog]')?.innerText.replace(/\\s*\\n\\s*/g, ' | ') ?? null`);
+const toasts = () => evaluate(`[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText.replace(/\\s*\\n\\s*/g, ' | '))`);
+const BOXES = `[...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')].map(b => ({ label: b.getAttribute('aria-label'), code: b.parentElement.dataset.code, checked: b.getAttribute('aria-checked') === 'true', disabled: b.disabled }))`;
+const boxes = () => evaluate(BOXES);
+const checkedBy = (list, code) => list.filter((b) => b.code === code).map((b) => b.checked);
+const state = (list, label) => { const b = list.find((x) => x.label === label); return b ? { checked: b.checked, disabled: b.disabled } : null; };
+const LAYOUT = `(() => {
+  const vw = document.documentElement.clientWidth;
+  const sc = document.querySelector('[data-testid=matrix-scroll]');
+  const cb = document.querySelector('[data-testid=permission-matrix] [role=checkbox]')?.getBoundingClientRect();
+  return { pageOverflow: document.documentElement.scrollWidth > vw, matrixScrolls: sc ? sc.scrollWidth > sc.clientWidth : null, checkbox: cb ? [Math.round(cb.width), Math.round(cb.height)] : null };
+})()`;
+const since = (i) => captured.slice(i);
+const api = (list) => list.filter((c) => /^\/roles|^\/platform|^\/permissions/.test(c.path)).map((c) => `${c.method} ${c.path}${c.query} tenant=${c.tenant}`);
+
+// Real browser traversal, by history entry, so entry counts can be read back.
+const history = async () => { const h = await send("Page.getNavigationHistory"); return { index: h.currentIndex, count: h.entries.length, entries: h.entries }; };
+async function traverse(delta) { const h = await history(); await send("Page.navigateToHistoryEntry", { entryId: h.entries[h.index + delta].id }); await sleep(1000); }
+const path_ = () => evaluate(`location.pathname`);
+const profileButton = `[...document.querySelectorAll('[aria-label="Open profile menu"]')].find(b => b.offsetParent !== null)`;
+const menuItem = (t) => `[...document.querySelectorAll('[role=menuitem]')].find(i => i.textContent.trim() === ${JSON.stringify(t)})`;
+const sessionHeld = () => evaluate(`!!sessionStorage.getItem('safefare:session:v1')`);
+const newSession = () => JSON.stringify({ accessToken: jwt(), tokenType: "Bearer", accessExpiresAt: Date.now() + 3600_000, refreshToken: "synthetic", refreshExpiresAt: null });
+const bodyInteractive = () => evaluate(`getComputedStyle(document.body).pointerEvents !== 'none'`);
+
+// Rendered colours of one box of each state, and contrast against the row it sits on.
+const BOX_STATES = `(() => {
+  const lum = (rgb) => { const [r, g, b] = rgb.map(v => v / 255).map(c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const [h, l] = [lum(a), lum(b)].sort((x, y) => y - x); return +((h + 0.05) / (l + 0.05)).toFixed(2); };
+  // Painted on a canvas, so rgb(), oklab() and alpha all resolve to the colour actually seen.
+  const paint = (layers) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, 1, 1); for (const l of layers) { x.fillStyle = l; x.fillRect(0, 0, 1, 1); } return [...x.getImageData(0, 0, 1, 1).data].slice(0, 3); };
+  const backdropLayers = (el) => { const chain = []; for (let n = el.parentElement; n; n = n.parentElement) chain.unshift(getComputedStyle(n).backgroundColor); return chain; };
+  const all = [...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')];
+  const pick = (f) => all.find(f);
+  const states = {
+    checked: pick(b => !b.disabled && b.getAttribute('aria-checked') === 'true'),
+    unchecked: pick(b => !b.disabled && b.getAttribute('aria-checked') === 'false'),
+    disabledChecked: pick(b => b.disabled && b.getAttribute('aria-checked') === 'true'),
+    disabledUnchecked: pick(b => b.disabled && b.getAttribute('aria-checked') === 'false'),
+    moduleBox: pick(b => /module access/.test(b.getAttribute('aria-label')) && !b.disabled),
+  };
+  const out = {};
+  for (const [k, el] of Object.entries(states)) {
+    if (!el) { out[k] = null; continue; }
+    const s = getComputedStyle(el), r = el.getBoundingClientRect(), layers = backdropLayers(el), row = paint(layers), fill = paint([...layers, s.backgroundColor]), border = paint([...layers, s.backgroundColor, s.borderTopColor]);
+    const after = getComputedStyle(el, '::after');
+    out[k] = { size: [Math.round(r.width), Math.round(r.height)], fill: 'rgb(' + fill.join(',') + ')', border: 'rgb(' + border.join(',') + ')', borderStyle: s.borderTopStyle, borderWidth: s.borderTopWidth, opacity: s.opacity, hasMark: !!el.querySelector('svg'), markColor: el.querySelector('svg') ? getComputedStyle(el.querySelector('svg')).color : null, row: 'rgb(' + row.join(',') + ')', borderVsRow: ratio(border, row), fillVsRow: ratio(fill, row), markVsFill: el.querySelector('svg') ? ratio(paint([getComputedStyle(el.querySelector('svg')).color]), fill) : null, clickTarget: Math.round(parseFloat(after.width)) };
+  }
+  return out;
+})()`;
+const maxOf = (states) => Object.values(states).filter(Boolean);
+
+const R = {};
+async function main() {
+  const page = (await (await fetch(`${CDP}/json/list`)).json()).find((t) => t.type === "page");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => (ws.onopen = r));
+  ws.onmessage = (mm) => {
+    const msg = JSON.parse(mm.data);
+    if (msg.id && pending.has(msg.id)) { const p = pending.get(msg.id); pending.delete(msg.id); msg.error ? p.rej(new Error(`${p.method}: ${msg.error.message}`)) : p.res(msg.result); }
+    else if (msg.method === "Fetch.requestPaused") onPaused(msg.params).catch((e) => console.error("mock", e.message));
+    else if (msg.method === "Page.javascriptDialogOpening") { R.beforeUnloadDialog = msg.params.type; send("Page.handleJavaScriptDialog", { accept: false }).catch(() => {}); }
+  };
+  await send("Page.enable"); await send("Runtime.enable"); await send("Input.setIgnoreInputEvents", { ignore: false }).catch(() => {});
+  await send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/*", requestStage: "Request" }] });
+  await viewport(1366, 768);
+  await go(`${APP}/login`, 1200);
+  await evaluate(`sessionStorage.setItem('safefare:session:v1', ${JSON.stringify(newSession())})`);
+
+
+  await go(ROUTE, 3000);
+  await waitFor(q("[data-testid=tenant-select]"));
+  await pick("tenant-select", "Ganesh Travels"); await sleep(500);
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(400);
+  const box = (label) => evaluate(`(() => { const b = [...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')].find(x => x.getAttribute('aria-label') === ${JSON.stringify(label)}); return b ? { checked: b.getAttribute('aria-checked') === 'true', disabled: b.disabled } : null; })()`);
+  const P = (l) => `${l} (no permission code)`;
+  const rowText = (key) => evaluate(`document.querySelector('[data-menu="${key}"]')?.innerText ?? null`);
+  R.nonEditableView = { module: await box("Reports: module access"), view: await box("Reports, Reports: View"), add: await box("Reports, Reports: Add"), edit: await box("Reports, Reports: Edit"), delete: await box("Reports, Reports: Delete"), actionEditable: await box("Reports, Reports: Export"), actionReadOnly: await box("Reports, Reports: Share") };
+  R.myWork = { view: await box("My Work, My Work: View"), module: await box("My Work: module access"), add: await box(P("My Work, My Work: Add")), edit: await box(P("My Work, My Work: Edit")), delete: await box(P("My Work, My Work: Delete")), actionBoxes: await evaluate(`document.querySelector('[data-resource="My Work"]').cells[6].querySelectorAll('[role=checkbox]').length`) };
+  R.moduleOnly = { view: await box(P("Module only, Module only: View")), add: await box(P("Module only, Module only: Add")) };
+  R.counts = await evaluate(`({ coded: document.querySelectorAll('[data-testid=permission-matrix] [data-code]').length, pending: document.querySelectorAll('[data-testid=permission-matrix] [data-pending]').length, tickedPending: document.querySelectorAll('[data-pending] [aria-checked=true]').length })`);
+  await shot("cell-level-grid-1366x768");
+  await clickBox("Reports, Reports: Add"); await sleep(250);
+  await clickBox("Reports, Reports: Export"); await sleep(250);
+  R.afterEditableClicks = { add: await box("Reports, Reports: Add"), export: await box("Reports, Reports: Export"), view: await box("Reports, Reports: View") };
+  await clickBox("Reports, Reports: View"); await clickBox("Reports, Reports: Delete"); await sleep(250);
+  R.readOnlyClicksIgnored = { view: await box("Reports, Reports: View"), delete: await box("Reports, Reports: Delete") };
+  await clickBox(P("My Work, My Work: Add")); await clickBox(P("My Work, My Work: Delete")); await sleep(300);
+  R.pending = { add: await box(P("My Work, My Work: Add")), delete: await box(P("My Work, My Work: Delete")), edit: await box(P("My Work, My Work: Edit")), note: await evaluate(`${q("[data-testid=matrix-pending]")}?.innerText ?? null`), title: await evaluate(`document.querySelector('[data-pending]').title`) };
+  await shot("cell-level-pending-1366x768");
+  await mouseClick(q("[data-testid=matrix-save]")); await sleep(600);
+  R.review = await dialogText();
+  await shot("cell-level-review-1366x768");
+  const mark = captured.length;
+  await mouseClick(dialogButton("Save")); await sleep(1100);
+  const put = since(mark).find((x) => x.method === "PUT");
+  R.save = { requests: since(mark).filter((x) => /menu-permissions/.test(x.path)).map((x) => x.method), body: put?.body ?? null, noInvented: !JSON.stringify(put?.body ?? {}).match(/driver\.(create|update|delete)|null|undefined/), toast: await toasts(), pendingKept: await box(P("My Work, My Work: Add")) };
+  await clickBox("Vehicles & Assets, Vehicles: Delete"); await sleep(200);
+  await mouseClick(button("Reset")); await sleep(300);
+  R.reset = { pendingCleared: await box(P("My Work, My Work: Add")), note: await evaluate(`!!${q("[data-testid=matrix-pending]")}`), saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`) };
+  await clickBox(P("My Work, My Work: Edit")); await sleep(250);
+  R.pendingOnly = { saveDisabled: await evaluate(`${q("[data-testid=matrix-save]")}.disabled`), bodyDirty: await evaluate(`document.querySelector('main').innerText.includes('unsaved')`) };
+  await pick("role-select", "VIEWER"); await sleep(600);
+  R.roleSwitch = { dialog: await dialogText(), pendingGone: await box(P("My Work, My Work: Edit")) };
+  await pick("role-select", "ADMIN"); await waitFor(q("[data-testid=matrix-locked]")); await sleep(400);
+  R.admin = { add: await box(P("My Work, My Work: Add")), allDisabled: await evaluate(`[...document.querySelectorAll('[data-testid=permission-matrix] [role=checkbox]')].every(b => b.disabled)`), ticked: await evaluate(`document.querySelectorAll('[data-pending] [aria-checked=true]').length`) };
+  await pick("role-select", "OPERATOR"); await waitFor(q("[data-testid=permission-matrix]")); await sleep(400);
+  R.layout = {};
+  for (const [w, h] of [[1366, 768], [768, 1024], [390, 844]]) {
+    await viewport(w, h); await sleep(500);
+    await evaluate(`document.querySelector('[data-menu=my_work]').scrollIntoView({ block: 'center' })`); await sleep(250);
+    R.layout[`${w}x${h}`] = await evaluate(`(() => { const b = document.querySelector('[data-pending] [role=checkbox]'), s = getComputedStyle(b), r = b.getBoundingClientRect(); return { overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, size: [Math.round(r.width), Math.round(r.height)], border: s.borderTopColor, fill: s.backgroundColor, style: s.borderTopStyle, opacity: s.opacity }; })()`);
+    await shot(`cell-level-my-work-${w}x${h}`);
+  }
+  fs.writeFileSync(path.join(OUT, "results-cell-level.json"), JSON.stringify({ note: "MOCKED: every /api/v1 response is synthetic; the live backend was not called", results: R }, null, 2));
+  console.log(JSON.stringify(R, null, 0));
+  process.exit(0);
+  fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify({ note: "MOCKED: every /api/v1 response is synthetic; the live backend was not called", results: R }, null, 2));
+  console.log("done");
+  process.exit(0);
+}
+main().catch((e) => { console.error(e); fs.writeFileSync(path.join(OUT, "results.partial.json"), JSON.stringify(R, null, 2)); process.exit(1); });

@@ -1,0 +1,52 @@
+{
+  "note": "REAL VENDOR MEDIA: alert 900's two files loaded from y.gpstracktech.com on 2026-11-05. API responses mocked from the supplied response. Measurements only; no screenshots, because this is real footage.",
+  "results": {
+    "rows": [
+      "IMAGE · PENDING · URL available | Open",
+      "VIDEO · PENDING · URL available | Open"
+    ],
+    "imageLoaded": true,
+    "image": {
+      "natural": [
+        1280,
+        720
+      ],
+      "srcExact": true,
+      "status": "PENDING"
+    },
+    "imageError": null,
+    "imageDownload": {
+      "status": "failed",
+      "text": "The media server doesn't allow this app to download files, so nothing was saved. Right-click the image and choose Save image as."
+    },
+    "videoReady": true,
+    "video": {
+      "size": [
+        720,
+        576
+      ],
+      "duration": 10.984,
+      "srcExact": true,
+      "autoplay": false,
+      "paused": true,
+      "status": "PENDING",
+      "canPlayH264": "probably",
+      "canPlayH265": ""
+    },
+    "videoError": null,
+    "playback": {
+      "state": "playing",
+      "advanced": true,
+      "currentTime": 2.32388,
+      "error": null
+    },
+    "videoErrorAfterPlay": null,
+    "videoDownload": {
+      "status": "failed",
+      "text": "The media server doesn't allow this app to download files, so nothing was saved. Try the ⋮ menu on the player."
+    },
+    "drawerOpen": true,
+    "sameUrl": true,
+    "tabsOpenedByApp": 0
+  }
+}

@@ -1,0 +1,1189 @@
+{
+  "note": "MOCKED: every /api/v1 response is synthetic; the live backend was not called",
+  "results": {
+    "noTenant": {
+      "requests": [
+        "GET /platform/tenants?status=ACTIVE tenant=null"
+      ],
+      "roleRequests": 0,
+      "message": true,
+      "roleDisabled": true
+    },
+    "tenantOptions": [
+      "Beta Fleet (synthetic) Beta",
+      "Ganesh Travels (synthetic) Ganesh"
+    ],
+    "afterTenant": [
+      "POST /platform/switch-tenant tenant=null",
+      "GET /platform/tenants?status=ACTIVE tenant=null",
+      "GET /roles tenant=1"
+    ],
+    "roleOptions": [
+      "ADMIN Administrator: full access within the tenant",
+      "FLEET OWNER Fleet manager",
+      "OPERATOR Operations user",
+      "DRIVER Driver",
+      "DISPATCHER Dispatcher: plans dispatches and driver work",
+      "VIEWER Viewer: read-only access"
+    ],
+    "afterRole": [
+      "GET /roles/3/menu-permissions tenant=1"
+    ],
+    "grid": {
+      "total": 32,
+      "granted": [
+        "alarm.handle",
+        "alarm.read",
+        "device.read",
+        "group.read",
+        "video.live"
+      ],
+      "columns": [
+        "#",
+        "Module Name",
+        "Add",
+        "Edit",
+        "Delete",
+        "View",
+        "Actions"
+      ],
+      "menus": [
+        "dashboard",
+        "live_monitoring",
+        "historical_video",
+        "vehicles_assets",
+        "sensors",
+        "alerts_events",
+        "my_work"
+      ],
+      "nullCellsHaveNoBox": true,
+      "moduleOnlyMenu": true,
+      "other": "Also held by this role, not shown as checkboxes and kept on save: own.data.read"
+    },
+    "sharedAction": {
+      "dialog": "Remove from other modules too? | Unticking video.live in Live Monitoring removes it from OPERATOR everywhere it is used, because one code is one permission. | video.live | Also in: Historical Video | Cancel | Remove permissions",
+      "stillTicked": [
+        true,
+        true
+      ]
+    },
+    "sharedActionCancelled": {
+      "video.live": [
+        true,
+        true
+      ],
+      "saveDisabled": true
+    },
+    "sharedUntick": {
+      "video.live": [
+        false,
+        false
+      ],
+      "saveEnabled": true
+    },
+    "sharedRetick": {
+      "video.live": [
+        true,
+        true
+      ]
+    },
+    "moduleOff": {
+      "module": {
+        "checked": false,
+        "disabled": false
+      },
+      "handle": {
+        "checked": false,
+        "disabled": true
+      },
+      "ruleAdd": {
+        "checked": false,
+        "disabled": true
+      }
+    },
+    "moduleOn": {
+      "module": {
+        "checked": true,
+        "disabled": false
+      },
+      "handle": {
+        "checked": false,
+        "disabled": false
+      },
+      "ruleAdd": {
+        "checked": false,
+        "disabled": false
+      }
+    },
+    "impactDialog": {
+      "text": "Remove from other modules too? | Unticking device.read in Fleet Overview removes it from OPERATOR everywhere it is used, because one code is one permission. | Modules that will close: Live Monitoring, Vehicles & Assets | device.read | Also in: Live Monitoring, Vehicles & Assets | group.read | Also in: Vehicles & Assets | video.live | Also in: Live Monitoring, Historical Video | Cancel | Remove permissions",
+      "removed": [
+        "device.read | Also in: Live Monitoring, Vehicles & Assets",
+        "group.read | Also in: Vehicles & Assets",
+        "video.live | Also in: Live Monitoring, Historical Video"
+      ],
+      "nothingChangedYet": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "sharedModule": {
+      "deviceRead": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "groupRead": [
+        false
+      ],
+      "liveVideo": [
+        false,
+        false
+      ],
+      "alarmRead": [
+        true,
+        true
+      ],
+      "note": "Unticking device.read closes every menu that depends on it, so 2 more permissions were unticked: video.live, group.read."
+    },
+    "noChangesSaveDisabled": true,
+    "review": "Save permissions for OPERATOR? | This changes the role in one tenant only. Users of this role get the change at their next login or token refresh; anyone signed in keeps their current permissions until then. | Tenant | Ganesh Travels (synthetic) | Role | OPERATOR | +1 added · −1 removed · 4 unchanged | Added | device.create | Removed | alarm.handle | Unchanged (4) | Kept unchanged, not in the grid: own.data.read | Cancel | Save",
+    "failures": {
+      "FORBIDDEN": {
+        "inline": "You don't have permission to do this | You cannot grant or remove permissions you do not hold: [device.create] | HTTP 403 · FORBIDDEN · ref mock-FORBIDDEN",
+        "dialogOpen": true
+      },
+      "INVALID_VALUE": {
+        "inline": "The server rejected a permission | Not a checkbox of the menu grid: [own.data.read] | HTTP 400 · INVALID_VALUE · ref mock-INVALID_VALUE",
+        "dialogOpen": true
+      },
+      "VALIDATION_FAILED": {
+        "inline": "The server rejected the permission list | permissionCodes too many | HTTP 400 · VALIDATION_FAILED · ref mock-VALIDATION_FAILED",
+        "dialogOpen": true
+      },
+      "PROTECTED_ROLE": {
+        "inline": "This role can't be edited | ADMIN has full access within its tenant by policy; its permissions cannot be edited | HTTP 409 · PROTECTED_ROLE · ref mock-PROTECTED_ROLE",
+        "dialogOpen": true
+      },
+      "NOT_FOUND": {
+        "inline": "This role no longer exists | Role not found | HTTP 404 · NOT_FOUND · ref mock-NOT_FOUND",
+        "dialogOpen": true
+      },
+      "TENANT_REQUIRED": {
+        "inline": "Select a tenant first | Select a tenant (X-Tenant-Id header) for this operation | HTTP 400 · TENANT_REQUIRED · ref mock-TENANT_REQUIRED",
+        "dialogOpen": true
+      }
+    },
+    "afterFailure": {
+      "editsKept": {
+        "add": {
+          "checked": true,
+          "disabled": false
+        },
+        "handle": {
+          "checked": false,
+          "disabled": false
+        }
+      },
+      "successToast": false,
+      "server": [
+        "device.read",
+        "alarm.read",
+        "alarm.handle",
+        "group.read",
+        "video.live"
+      ]
+    },
+    "save": {
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/roles/3/menu-permissions",
+          "tenant": "1",
+          "body": null,
+          "bearer": true
+        },
+        {
+          "method": "PUT",
+          "path": "/roles/3/menu-permissions",
+          "tenant": "1",
+          "body": {
+            "permissionCodes": [
+              "alarm.read",
+              "device.create",
+              "device.read",
+              "group.read",
+              "video.live"
+            ]
+          },
+          "bearer": true
+        },
+        {
+          "method": "GET",
+          "path": "/roles/3/menu-permissions",
+          "tenant": "1",
+          "body": null,
+          "bearer": true
+        }
+      ],
+      "toasts": [
+        "Permissions saved for OPERATOR | 1 added · 1 removed. Users of this role get the change at their next login or token refresh."
+      ],
+      "server": [
+        "alarm.read",
+        "device.create",
+        "device.read",
+        "group.read",
+        "video.live"
+      ]
+    },
+    "afterSave": {
+      "add": {
+        "checked": true,
+        "disabled": false
+      },
+      "handle": {
+        "checked": false,
+        "disabled": false
+      },
+      "saveDisabled": true
+    },
+    "readOnlyCell": {
+      "before": {
+        "checked": false,
+        "disabled": true
+      },
+      "after": {
+        "checked": false,
+        "disabled": true
+      }
+    },
+    "admin": {
+      "total": 32,
+      "disabled": 32,
+      "ticked": 31,
+      "unticked": [
+        "driver.app"
+      ],
+      "banner": "ADMIN has full access by policy. Its permissions can't be edited.",
+      "saveButton": false
+    },
+    "tenantSwitch": {
+      "tenant1": [
+        "alarm.read",
+        "device.create",
+        "device.read",
+        "group.read",
+        "video.live"
+      ],
+      "tenant2": [
+        "alarm.read",
+        "sensor.read"
+      ],
+      "serverTenant2": [
+        "alarm.read",
+        "sensor.read"
+      ],
+      "requests": [
+        "POST /platform/switch-tenant tenant=null",
+        "GET /platform/tenants?status=ACTIVE tenant=null",
+        "GET /roles tenant=2",
+        "GET /roles/3/menu-permissions tenant=2"
+      ]
+    },
+    "dirtyRoleSwitch": "Discard unsaved changes? | You have 1 unsaved change for OPERATOR. Switching roles discards them. | Cancel | Discard and switch",
+    "dirtyTenantSwitch": "Discard unsaved changes? | You have 1 unsaved change for OPERATOR. Switching tenants discards them. | Cancel | Discard and switch",
+    "dirtyShellSwitch": {
+      "dialog": "Discard unsaved changes? | You have unsaved permission changes. Switching tenants discards them. | Cancel | Discard and switch",
+      "url": "/drive-vision/platform/permissions"
+    },
+    "dirtyShellSwitchCancelled": {
+      "editsKept": {
+        "checked": true,
+        "disabled": false
+      },
+      "tenantShown": "Beta Fleet (synthetic)"
+    },
+    "dirtyLink": {
+      "dialog": "Leave without saving? | You have 1 unsaved change for OPERATOR. Leaving this page discards them. | Cancel | Discard and leave",
+      "url": "/drive-vision/platform/permissions"
+    },
+    "beforeUnloadDialog": "beforeunload",
+    "dirtyReloadStillHere": {
+      "editsKept": {
+        "checked": true,
+        "disabled": false
+      }
+    },
+    "catalogue": {
+      "requests": [
+        "POST /permissions tenant=null",
+        "GET /permissions tenant=null",
+        "PUT /permissions/synthetic.thing tenant=null",
+        "GET /permissions tenant=null",
+        "DELETE /permissions/synthetic.thing tenant=null",
+        "GET /permissions tenant=null"
+      ],
+      "finalCodes": [
+        "device.read",
+        "tenant.all"
+      ]
+    },
+    "tabReturnEditsKept": {
+      "checked": true,
+      "disabled": false
+    },
+    "leaveConfirmed": "/drive-vision/overview",
+    "loadForbidden": true,
+    "invalidTenant": {
+      "tenantCleared": true,
+      "message": "The selected tenant was rejected by the server (inactive or invalid). Showing all tenants again."
+    },
+    "layout": {
+      "320x568": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "390x844": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "768x1024": {
+        "pageOverflow": false,
+        "matrixScrolls": true,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "1024x768": {
+        "pageOverflow": false,
+        "matrixScrolls": false,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "1366x768": {
+        "pageOverflow": false,
+        "matrixScrolls": false,
+        "checkbox": [
+          20,
+          20
+        ]
+      },
+      "1920x1080": {
+        "pageOverflow": false,
+        "matrixScrolls": false,
+        "checkbox": [
+          20,
+          20
+        ]
+      }
+    },
+    "checkboxes": {
+      "light-1366x768": {
+        "checked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        },
+        "unchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(255,255,255)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.87,
+          "fillVsRow": 1.05,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "disabledChecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(111,108,123)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 5.11,
+          "markVsFill": 5.11,
+          "clickTarget": 36
+        },
+        "disabledUnchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(239,238,244)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "dashed",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 1.15,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "moduleBox": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        }
+      },
+      "light-768x1024": {
+        "checked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        },
+        "unchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(255,255,255)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.87,
+          "fillVsRow": 1.05,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "disabledChecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(111,108,123)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 5.11,
+          "markVsFill": 5.11,
+          "clickTarget": 36
+        },
+        "disabledUnchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(239,238,244)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "dashed",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 1.15,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "moduleBox": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        }
+      },
+      "light-390x844": {
+        "checked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        },
+        "unchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(255,255,255)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.87,
+          "fillVsRow": 1.05,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "disabledChecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(111,108,123)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 5.11,
+          "markVsFill": 5.11,
+          "clickTarget": 36
+        },
+        "disabledUnchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(239,238,244)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "dashed",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 1.15,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "moduleBox": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        }
+      },
+      "dark-1366x768": {
+        "checked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        },
+        "unchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(255,255,255)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.87,
+          "fillVsRow": 1.05,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "disabledChecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(111,108,123)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 5.11,
+          "markVsFill": 5.11,
+          "clickTarget": 36
+        },
+        "disabledUnchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(239,238,244)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "dashed",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 1.15,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "moduleBox": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        }
+      },
+      "dark-768x1024": {
+        "checked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        },
+        "unchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(255,255,255)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.87,
+          "fillVsRow": 1.05,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "disabledChecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(111,108,123)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 5.11,
+          "markVsFill": 5.11,
+          "clickTarget": 36
+        },
+        "disabledUnchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(239,238,244)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "dashed",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 1.15,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "moduleBox": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        }
+      },
+      "dark-390x844": {
+        "checked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        },
+        "unchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(255,255,255)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.87,
+          "fillVsRow": 1.05,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "disabledChecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(111,108,123)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 5.11,
+          "markVsFill": 5.11,
+          "clickTarget": 36
+        },
+        "disabledUnchecked": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(239,238,244)",
+          "border": "rgb(111,108,123)",
+          "borderStyle": "dashed",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": false,
+          "markColor": null,
+          "row": "rgb(255,255,255)",
+          "borderVsRow": 5.11,
+          "fillVsRow": 1.15,
+          "markVsFill": null,
+          "clickTarget": 36
+        },
+        "moduleBox": {
+          "size": [
+            20,
+            20
+          ],
+          "fill": "rgb(201,67,43)",
+          "border": "rgb(201,67,43)",
+          "borderStyle": "solid",
+          "borderWidth": "2px",
+          "opacity": "1",
+          "hasMark": true,
+          "markColor": "rgb(255, 255, 255)",
+          "row": "rgb(250,249,251)",
+          "borderVsRow": 4.63,
+          "fillVsRow": 4.63,
+          "markVsFill": 4.86,
+          "clickTarget": 36
+        }
+      }
+    },
+    "osColourScheme": "dark",
+    "checkboxInteraction": {
+      "idleShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+      "hoveredShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.663301 0.142347 0.0920625 / 0.25) 0px 0px 0px 3px, rgba(0, 0, 0, 0) 0px 0px 0px 0px",
+      "hoverVisible": true,
+      "offCentreHit": "checkbox",
+      "keyFocus": {
+        "label": "Fleet Overview: module access",
+        "checked": "true",
+        "focusVisible": true,
+        "ring": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(255, 255, 255, 0.97) 0px 0px 0px 1.9377px, rgba(201, 67, 43, 0.97) 0px 0px 0px 4.84426px, rgba(0, 0, 0, 0) 0px 0px 0px 0px"
+      },
+      "spaceToggled": "true",
+      "spaceDialog": "Remove from other modules too? | Unticking device.read in Fleet Overview removes it from OPERATOR everywhere it is used, because one code is one permission. | Modules that will close: Live Monitoring, Vehicles & Assets | device.read | Also in: Live Monitoring, Vehicles & Assets | device.create | Also in: Vehicles & Assets | group.read | Also in: Vehicles & Assets | video.live | Also in: Live Monitoring, Historical Video | Cancel | Remove permissions"
+    },
+    "backForward": {
+      "start": {
+        "url": "/drive-vision/platform/permissions",
+        "index": 29,
+        "count": 31
+      },
+      "dirtyEntriesAdded": 0,
+      "backDirty": {
+        "dialog": "Leave without saving? | You have 1 unsaved change for OPERATOR. Leaving this page discards them. | Cancel | Discard and leave",
+        "url": "/drive-vision/platform/permissions",
+        "index": 29,
+        "count": 31
+      },
+      "backCancelled": {
+        "url": "/drive-vision/platform/permissions",
+        "editsKept": {
+          "checked": true,
+          "disabled": false
+        },
+        "index": 29,
+        "count": 31
+      },
+      "forwardDirty": {
+        "dialog": "Leave without saving? | You have 1 unsaved change for OPERATOR. Leaving this page discards them. | Cancel | Discard and leave",
+        "url": "/drive-vision/platform/permissions",
+        "index": 29,
+        "count": 31
+      },
+      "forwardCancelled": {
+        "url": "/drive-vision/platform/permissions",
+        "editsKept": {
+          "checked": true,
+          "disabled": false
+        },
+        "index": 29,
+        "count": 31
+      },
+      "forwardConfirmed": {
+        "url": "/drive-vision/platform/roles",
+        "index": 30,
+        "count": 31
+      },
+      "saved": {
+        "saveDisabled": true,
+        "count": 31
+      },
+      "backAfterSave": {
+        "url": "/drive-vision/overview",
+        "dialog": null,
+        "onePress": true
+      },
+      "forwardAfterSave": {
+        "url": "/drive-vision/platform/permissions",
+        "dialog": null
+      },
+      "backConfirmed": {
+        "url": "/drive-vision/overview",
+        "count": 31
+      }
+    },
+    "noNavigationApi": {
+      "apiMissing": true,
+      "dialog": "Leave without saving? | You have 1 unsaved change for OPERATOR. Leaving this page discards them. | Cancel | Discard and leave",
+      "url": "/drive-vision/platform/permissions",
+      "sameEntry": true,
+      "left": "/drive-vision/overview"
+    },
+    "signOut": {
+      "desktop": {
+        "dialog": "Sign out? | You have unsaved permission changes. If you sign out, these changes will be lost. Do you want to continue? | Cancel | Continue",
+        "sessionKept": true,
+        "logoutCalls": 0,
+        "cancelled": {
+          "url": "/drive-vision/platform/permissions",
+          "editsKept": {
+            "checked": true,
+            "disabled": false
+          },
+          "sessionKept": true,
+          "logoutCalls": 0,
+          "pageInteractive": true,
+          "dialogClosed": true
+        },
+        "confirmed": {
+          "url": "/login",
+          "sessionKept": false,
+          "logoutCalls": 1
+        },
+        "clean": {
+          "dialog": null,
+          "url": "/login",
+          "logoutCalls": 1
+        }
+      },
+      "mobile": {
+        "dialog": "Sign out? | You have unsaved permission changes. If you sign out, these changes will be lost. Do you want to continue? | Cancel | Continue",
+        "sessionKept": true,
+        "logoutCalls": 0,
+        "cancelled": {
+          "url": "/drive-vision/platform/permissions",
+          "editsKept": {
+            "checked": true,
+            "disabled": false
+          },
+          "sessionKept": true,
+          "logoutCalls": 0,
+          "pageInteractive": true,
+          "dialogClosed": true
+        },
+        "confirmed": {
+          "url": "/login",
+          "sessionKept": false,
+          "logoutCalls": 1
+        },
+        "clean": {
+          "dialog": null,
+          "url": "/login",
+          "logoutCalls": 1
+        }
+      }
+    },
+    "conflict": {
+      "requests": [
+        "GET"
+      ],
+      "banner": "This role's permissions were changed by another administrator. Reload the latest permissions before saving. Your changes stay on screen until you reload, which discards them. | Reload Latest Permissions",
+      "dialogClosed": true,
+      "editsKept": {
+        "checked": true,
+        "disabled": false
+      },
+      "saveDisabled": true,
+      "server": [
+        "alarm.read",
+        "device.read"
+      ],
+      "serverUntouched": true,
+      "successToast": false
+    },
+    "conflictReloadFailed": {
+      "editsKept": {
+        "checked": true,
+        "disabled": false
+      },
+      "stillConflict": true
+    },
+    "conflictReloaded": {
+      "requests": [
+        "GET"
+      ],
+      "banner": false,
+      "editsGone": {
+        "checked": false,
+        "disabled": false
+      },
+      "newerShown": {
+        "checked": true,
+        "disabled": false
+      },
+      "saveDisabled": true
+    },
+    "conflictResolved": {
+      "requests": [
+        "GET",
+        "PUT",
+        "GET"
+      ],
+      "server": [
+        "alarm.read",
+        "device.read",
+        "sensor.read"
+      ]
+    },
+    "preReadFailed": {
+      "requests": [
+        "GET"
+      ],
+      "dialogOpen": true,
+      "error": "The server refused the change | Service unavailable | HTTP 503 · UPSTREAM_UNAVAILABLE · ref mock-UPSTREAM_UNAVAILABLE"
+    },
+    "shellSwitchConfirmed": {
+      "tenantShown": "Beta Fleet (synthetic)",
+      "dialog": null,
+      "saveDisabled": true
+    },
+    "tenantUserReview": "Save permissions for OPERATOR? | This changes the role in one tenant only. Users of this role get the change at their next login or token refresh; anyone signed in keeps their current permissions until then. | Tenant | Ganesh Travels (synthetic) | Role | OPERATOR | +1 added · −0 removed · 6 unchanged | Added | device.delete | Unchanged (6) | Kept unchanged, not in the grid: own.data.read | Cancel | Save",
+    "tenantUser": {
+      "tenantPicker": false,
+      "shellSwitcher": false,
+      "catalogueTab": false,
+      "tenantList": 0,
+      "withHeader": 0,
+      "requests": [
+        "GET /roles tenant=null",
+        "GET /roles/3/menu-permissions tenant=null",
+        "GET /roles/3/menu-permissions tenant=null",
+        "PUT /roles/3/menu-permissions tenant=null",
+        "GET /roles/3/menu-permissions tenant=null"
+      ]
+    },
+    "tenantNaming": {
+      "sidebarHasRolePermissions": true,
+      "sidebarHasCatalogue": false,
+      "platformGroup": false,
+      "activeSection": "Admin",
+      "title": "Role Permissions",
+      "url": "/drive-vision/platform/permissions"
+    },
+    "tenantDenied_noReadPermission": {
+      "url": "/drive-vision/platform/permissions",
+      "page": "You don't have access to this page | Your account's permissions don't include this page. | Role: ADMIN | Go to Fleet Overvi",
+      "matrix": false,
+      "menuPermissionCalls": 0
+    },
+    "tenantDenied_manageOnly": {
+      "url": "/drive-vision/platform/permissions",
+      "page": "You don't have access to this page | Your account's permissions don't include this page. | Role: ADMIN | Go to Fleet Overvi",
+      "matrix": false,
+      "menuPermissionCalls": 0
+    }
+  }
+}

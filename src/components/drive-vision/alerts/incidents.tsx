@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CheckCheck, CircleSlash, FileVideo, Info, MessageSquarePlus, RotateCcw, ShieldCheck } from "lucide-react";
+import { useEffect, useState, type RefObject } from "react";
+import { CheckCheck, CircleSlash, FileVideo, MessageSquarePlus, RotateCcw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,7 +10,9 @@ import { alertService, type AlertNoteAction } from "@/features/drive-vision/api/
 import { describeApiError } from "@/features/drive-vision/api/errors";
 import { RESOLVE_OUTCOMES, type AlarmTypeDto, type AlertDetailDto, type AlertRow, type ResolveOutcome } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
-import { formatDateTime, formatRelative } from "@/features/drive-vision/utils/format";
+import { usePolledQuery } from "@/features/drive-vision/hooks/use-polled-query";
+import { canAccessScreen } from "@/features/drive-vision/access/access-policy";
+import { formatLocalDateTime, formatRelative } from "@/features/drive-vision/utils/format";
 import { DataTable, type DataTableColumn } from "../shared/data-table";
 import { LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState } from "../shared/api-states";
@@ -20,17 +22,28 @@ import { FormField } from "../shared/form-field";
 import { SearchInput } from "../shared/filter-bar";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
-import { useCan } from "@/features/drive-vision/access/use-access";
+import { useAccess, useCan } from "@/features/drive-vision/access/use-access";
 import { safeHttpUrl } from "../reports/reports-model";
-import { ALARM_PAGE_SIZE, alarmLabel, deviceLabel, incidentQuery, type AlertsView } from "./alerts-model";
+import { EvidenceViewer } from "./evidence-viewer";
+import { availabilityLabel, evidenceFromRow, type EvidenceItem } from "./evidence-model";
+import { ALARM_PAGE_SIZE, alarmLabel, deviceLabel, incidentQuery, severityLabel, type AlertKindParam, type AlertsTab, type AlertsView } from "./alerts-model";
 
 const SEARCH_DEBOUNCE_MS = 350;
+const KIND_TAB: Record<AlertKindParam, AlertsTab> = { AI: "ai", ROUTINE: "routine" };
+const KIND_NAME: Record<AlertKindParam, string> = { AI: "AI events", ROUTINE: "routine alarms" };
 
-/** Incident list on GET /alerts. Filters: the page's range/device/type plus open-only and keyword. */
+/**
+ * The live alert list on GET /alerts, polled every 5 seconds while it is on screen: Incidents shows every kind, the
+ * AI and Routine tabs pass `alertKind`. Filters: the page's range/device/type plus open-only and keyword; a filter
+ * change restarts the loop on the new query at once. The AI and Routine tabs also poll the other tab's total
+ * (pageSize 1). Needs `alarm.read`: without it nothing is requested.
+ */
 export function IncidentsList({
   view,
   now,
   typeById,
+  alertKind,
+  refreshRef,
   onPage,
   onOpen,
   onTotal,
@@ -38,14 +51,17 @@ export function IncidentsList({
   view: AlertsView;
   now: Date;
   typeById: Map<number | undefined, AlarmTypeDto>;
+  alertKind?: AlertKindParam;
+  /** Set to the list's "poll now", for the page's Refresh button. */
+  refreshRef: RefObject<(() => void) | null>;
   onPage: (page: number) => void;
   onOpen: (id: number | null) => void;
-  onTotal: (total: number | undefined) => void;
+  onTotal: (tab: AlertsTab, total: number | undefined) => void;
 }) {
   const [openOnly, setOpenOnly] = useState(true);
   const [searchInput, setSearchInput] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [version, setVersion] = useState(0);
+  const canRead = canAccessScreen(useAccess(), "alerts");
 
   useEffect(() => {
     const next = searchInput.trim();
@@ -57,10 +73,29 @@ export function IncidentsList({
     return () => clearTimeout(timer);
   }, [searchInput, keyword, onPage]);
 
-  const query = useMemo(() => incidentQuery(view, now, { openOnly, keyword }), [view, now, openOnly, keyword]);
-  const listQ = useApiQuery(`incidents:${JSON.stringify(query)}:${version}`, () => alertService.listAlerts(query));
-  useEffect(() => onTotal(listQ.data?.total), [listQ.data, onTotal]);
+  const filters = JSON.stringify([view.range, view.deviceId, view.typeId, openOnly, keyword]);
+  const listQ = usePolledQuery(canRead ? `alerts:live:${alertKind ?? "all"}:${filters}:${view.page}` : null, (signal) => alertService.listAlerts(incidentQuery(view, new Date(), { openOnly, keyword, kind: alertKind }), signal));
+  const otherKind: AlertKindParam | null = alertKind ? (alertKind === "AI" ? "ROUTINE" : "AI") : null;
+  const otherQ = usePolledQuery(canRead && otherKind ? `alerts:live-count:${otherKind}:${filters}` : null, (signal) => alertService.listAlerts({ ...incidentQuery(view, new Date(), { openOnly, keyword, kind: otherKind! }), pageNumber: 1, pageSize: 1 }, signal));
+
+  const total = listQ.data?.total;
+  const otherTotal = otherQ.data?.total;
+  const { refetch } = listQ;
+  useEffect(() => onTotal(alertKind ? KIND_TAB[alertKind] : "incidents", total), [alertKind, total, onTotal]);
+  useEffect(() => {
+    if (otherKind) onTotal(KIND_TAB[otherKind], otherTotal);
+  }, [otherKind, otherTotal, onTotal]);
+  useEffect(() => {
+    refreshRef.current = refetch;
+  }, [refetch, refreshRef]);
+  // Alerts close while this is open, so the current page can stop existing.
+  useEffect(() => {
+    if (total !== undefined && view.page > 1 && (view.page - 1) * ALARM_PAGE_SIZE >= total) onPage(Math.max(1, Math.ceil(total / ALARM_PAGE_SIZE)));
+  }, [total, view.page, onPage]);
+
   const items = listQ.data?.items ?? [];
+  const noun = alertKind ? KIND_NAME[alertKind] : "alerts";
+  const shownAt = listQ.updatedAt ? new Date(listQ.updatedAt) : now;
 
   const columns: DataTableColumn<AlertRow>[] = [
     {
@@ -76,22 +111,31 @@ export function IncidentsList({
         </div>
       ),
     },
-    { id: "device", header: "Device", cell: (a) => deviceLabel(a) },
+    {
+      id: "device",
+      header: "Device",
+      cell: (a) => (
+        <div className="min-w-0">
+          <p className="font-medium">{deviceLabel(a)}</p>
+          {a.terminalNo && a.deviceName ? <p className="font-mono text-[11px] text-ink-muted tabular">{a.terminalNo}</p> : null}
+        </div>
+      ),
+    },
     {
       id: "time",
       header: "Time",
       cell: (a) =>
         a.alarmTime ? (
           <div>
-            <p className="whitespace-nowrap tabular">{formatDateTime(a.alarmTime)}</p>
-            <p className="text-xs text-ink-muted">{formatRelative(a.alarmTime, now)}</p>
+            <p className="whitespace-nowrap tabular">{formatLocalDateTime(a.alarmTime)}</p>
+            <p className="text-xs text-ink-muted">{formatRelative(a.alarmTime, shownAt)}</p>
           </div>
         ) : (
           "—"
         ),
     },
     { id: "assignee", header: "Assignee", hideBelow: "lg", cell: (a) => a.assigneeName ?? <span className="text-ink-subtle">—</span> },
-    { id: "severity", header: "Severity", align: "right", hideBelow: "xl", cell: (a) => (typeof a.severity === "number" ? <span className="text-ink-muted tabular" title="Raw value; the scale is undocumented">{a.severity}</span> : "—") },
+    { id: "severity", header: "Severity", cell: (a) => <SeverityBadge severity={a.severity} /> },
     { id: "status", header: "Status", cell: (a) => <HandlingBadge alert={a} /> },
   ];
 
@@ -103,27 +147,40 @@ export function IncidentsList({
           <Checkbox checked={openOnly} onCheckedChange={(v) => (setOpenOnly(v === true), onPage(1))} /> Open only
         </label>
       </div>
-      {listQ.error ? (
+      {listQ.stale ? (
+        <p className="mx-4 mt-3 rounded-lg bg-warning-soft px-3 py-1.5 text-xs text-warning" role="status" data-testid="alerts-stale">
+          Couldn&apos;t refresh. Showing the last update{listQ.updatedAt ? ` from ${formatLocalDateTime(new Date(listQ.updatedAt))}` : ""}; trying again.
+        </p>
+      ) : null}
+      {listQ.error && !listQ.data ? (
         <ApiErrorState error={listQ.error} onRetry={listQ.refetch} />
       ) : !listQ.data ? (
         <LoadingSkeleton variant="table" rows={8} />
       ) : (
         <DataTable
-          caption="Incidents"
+          caption={alertKind ? KIND_NAME[alertKind] : "Incidents"}
           data={items}
           columns={columns}
           getRowId={(a) => String(a.id)}
           onRowClick={(a) => a.id !== undefined && onOpen(a.id)}
           activeRowId={view.alarmId !== null ? String(view.alarmId) : null}
-          isLoading={listQ.refreshing}
           pageSize={ALARM_PAGE_SIZE}
           serverPagination={{ page: view.page, total: listQ.data.total, onPageChange: onPage }}
-          emptyTitle={openOnly ? "No open alerts" : "No alerts"}
-          emptyDescription="The server returned no alerts for these filters."
+          emptyTitle={openOnly ? `No open ${noun}` : `No ${noun}`}
+          emptyDescription={`The server returned no ${noun} for these filters.`}
         />
       )}
-      <AlertWorkflowDrawer id={view.alarmId} typeById={typeById} onClose={() => onOpen(null)} onChanged={() => setVersion((v) => v + 1)} />
+      <AlertWorkflowDrawer id={view.alarmId} typeById={typeById} onClose={() => onOpen(null)} onChanged={refetch} />
     </>
+  );
+}
+
+function SeverityBadge({ severity }: { severity: number | null | undefined }) {
+  if (typeof severity !== "number") return <span className="text-ink-subtle">—</span>;
+  return (
+    <StatusBadge size="sm" tone={severity === 1 ? "serious" : severity === 2 ? "warning" : "neutral"}>
+      {severityLabel(severity)}
+    </StatusBadge>
   );
 }
 
@@ -161,6 +218,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
   const [pending, setPending] = useState<Pending | null>(null);
   const [note, setNote] = useState("");
   const [outcome, setOutcome] = useState<ResolveOutcome | "">("");
+  const [viewing, setViewing] = useState<EvidenceItem | null>(null);
   const canHandle = useCan("alerts.handle");
   const detail = updated && updated.id === id ? updated.data : detailQ.data;
   const alert = detail?.alert;
@@ -197,7 +255,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
         open={id !== null}
         onOpenChange={(o) => !o && (onClose(), setUpdated(null))}
         title={alert ? alarmLabel(alert, typeById) : id !== null ? `Alert ${id}` : ""}
-        description={alert ? `${deviceLabel(alert)}${alert.alarmTime ? ` · ${formatDateTime(alert.alarmTime)}` : ""}` : undefined}
+        description={alert ? `${deviceLabel(alert)}${alert.alarmTime ? ` · ${formatLocalDateTime(alert.alarmTime)}` : ""}` : undefined}
         footer={
           alert && canHandle ? (
             <div className="flex flex-wrap justify-end gap-2">
@@ -230,14 +288,24 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
               <DetailRow label="Status">
                 <HandlingBadge alert={alert} />
               </DetailRow>
+              <DetailRow label="Severity">
+                <SeverityBadge severity={alert.severity} />
+              </DetailRow>
               <DetailRow label="Kind">{alert.kind ?? "—"}</DetailRow>
+              <DetailRow label="Device">{deviceLabel(alert)}</DetailRow>
+              {alert.terminalNo ? (
+                <DetailRow label="Terminal">
+                  <span className="font-mono text-xs">{alert.terminalNo}</span>
+                </DetailRow>
+              ) : null}
+              <DetailRow label="Alarm time">{alert.alarmTime ? formatLocalDateTime(alert.alarmTime) : "—"}</DetailRow>
               <DetailRow label="Driver (server)">
                 <span title="As reported by the server for this alert. The app never derives an alarm's driver from the vehicle's current assignment.">{alert.driverName ?? "—"}</span>
               </DetailRow>
               <DetailRow label="Assignee">{alert.assigneeName ?? "—"}</DetailRow>
               <DetailRow label="Speed">{typeof alert.speedKmh === "number" ? `${alert.speedKmh} km/h` : "—"}</DetailRow>
               <DetailRow label="Location">{alert.address ?? (typeof alert.lat === "number" && typeof alert.lon === "number" ? `${alert.lat.toFixed(5)}, ${alert.lon.toFixed(5)}` : "—")}</DetailRow>
-              <DetailRow label="Handled">{alert.handledAt ? formatDateTime(alert.handledAt) : "—"}</DetailRow>
+              <DetailRow label="Handled">{alert.handledAt ? formatLocalDateTime(alert.handledAt) : "—"}</DetailRow>
             </dl>
 
             <section aria-labelledby="inc-evidence">
@@ -249,16 +317,30 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
               ) : (
                 <ul className="divide-y divide-line text-[13px]">
                   {evidence.map((e, i) => {
-                    // Placeholder hosts (the BFF returned https://example.invalid/… on 2026-10-29, #29) are never linked.
+                    const item = id !== null ? evidenceFromRow(e, id, i, evidence.length > 1) : null;
+                    // A type the viewer can't show keeps its link. Placeholder hosts (#29) are never linked.
                     const url = safeHttpUrl(e.url);
                     return (
                       <li key={e.id ?? i} className="flex items-center gap-2 py-1.5">
                         <span className="min-w-0 flex-1 truncate">
                           {e.mediaType ?? "Media"}
                           {typeof e.channel === "number" ? ` · ch ${e.channel}` : ""}
-                          {e.status ? ` · ${e.status}` : ""}
+                          {item ? (availabilityLabel(item) ? ` · ${availabilityLabel(item)}` : "") : e.status ? ` · ${e.status}` : ""}
                         </span>
-                        {url ? (
+                        {item?.state === "ready" ? (
+                          <button type="button" onClick={() => setViewing(item)} className="text-xs font-medium text-brand-deep hover:underline" data-testid="evidence-open">
+                            Open
+                          </button>
+                        ) : item ? (
+                          <>
+                            <span className={item.noteIsError ? "text-xs text-danger" : "text-xs text-ink-muted"} title={item.state === "unusable" ? "The server returned a link that can't be opened (placeholder or non-web address)" : undefined} data-testid="evidence-unavailable">
+                              {item.note}
+                            </span>
+                            <button type="button" disabled className="cursor-not-allowed text-xs font-medium text-ink-muted" data-testid="evidence-open-disabled">
+                              Open
+                            </button>
+                          </>
+                        ) : url ? (
                           <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-brand-deep hover:underline">
                             Open
                           </a>
@@ -272,6 +354,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                   })}
                 </ul>
               )}
+              <EvidenceViewer item={viewing} context={alarmLabel(alert, typeById)} onClose={() => setViewing(null)} />
             </section>
 
             <section aria-labelledby="inc-history">
@@ -287,7 +370,8 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                       <p className="flex flex-wrap items-center gap-1.5">
                         <span className="font-mono text-[11px] font-semibold">{a.actionType ?? "ACTION"}</span>
                         <span className="text-ink-muted">{a.automatic ? "automatic" : (a.actorName ?? (a.actorUserId !== undefined ? `User ${a.actorUserId}` : ""))}</span>
-                        <span className="ml-auto text-xs text-ink-subtle tabular">{a.createdAt ? formatDateTime(a.createdAt) : ""}</span>
+                        {a.assigneeName ? <span className="text-ink-muted">→ {a.assigneeName}</span> : null}
+                        <span className="ml-auto text-xs text-ink-subtle tabular">{a.createdAt ? formatLocalDateTime(a.createdAt) : ""}</span>
                       </p>
                       {a.note ? <p className="mt-0.5 text-ink-muted">{a.note}</p> : null}
                     </li>
@@ -295,9 +379,6 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                 </ol>
               )}
             </section>
-            <p className="flex items-start gap-1.5 text-xs text-ink-muted">
-              <Info className="mt-px size-3.5 shrink-0" aria-hidden /> The server decides which actions are allowed for the current status. Assigning alerts isn&apos;t available yet (the API contract for it is unclear).
-            </p>
           </div>
         )}
       </SlideOverPanel>
