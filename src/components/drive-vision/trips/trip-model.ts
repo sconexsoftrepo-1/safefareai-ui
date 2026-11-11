@@ -1,5 +1,6 @@
 import type { RouteDto } from "@/features/drive-vision/api/types";
 import { formatDateTime } from "@/features/drive-vision/utils/format";
+import { formatTripTime } from "@/features/drive-vision/utils/trip-ist-time";
 import { checkPosition } from "../monitoring/live-fleet-model";
 
 export interface LatLonPoint {
@@ -39,7 +40,7 @@ export function routeGeometry(route: RouteDto | undefined): RouteGeometry {
   const trip = route?.trip;
   const stops = (route?.stops ?? []).flatMap((s) => {
     const p = at(s.lat, s.lon);
-    return p ? [{ ...p, title: `Stop${s.stopType ? ` (${s.stopType})` : ""}${s.startTime ? ` · ${formatDateTime(s.startTime)}` : ""}` }] : [];
+    return p ? [{ ...p, title: `Stop${s.stopType ? ` (${s.stopType})` : ""}${s.startTime ? ` · ${formatTripTime(s.startTime)}` : ""}` }] : [];
   });
   const events = (route?.events ?? []).flatMap((e) => {
     const p = at(e.lat, e.lon);

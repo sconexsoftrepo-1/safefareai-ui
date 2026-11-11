@@ -12,8 +12,8 @@ import { SENSOR_SUB_IDS, cleanSensorTime, isSensorSubId, isTimeRangeValid, type 
 
 /** Sensors with their own colours on the page. IR, PRS and unknown types use the generic style. */
 export type SensorKind = "ULT" | "SMK" | "ALC";
-export type UltrasonicReading = "safe" | "warning" | "no_echo";
-export type ReadingTone = "success" | "warning" | "neutral";
+export type UltrasonicReading = "safe" | "warning" | "no_echo" | "object_very_close";
+export type ReadingTone = "success" | "warning" | "danger" | "neutral";
 /** ongoing → "Ongoing"; ended_after_gap → "Ended after inactivity gap"; both false → "Ended"; otherwise unknown. */
 export type AlertStatus = "ongoing" | "ended_gap" | "ended" | "unknown";
 
@@ -45,7 +45,8 @@ export interface SensorAlertView {
   /** ULT only. */
   reading: UltrasonicReading | null;
   readingTone: ReadingTone | null;
-  /** ULT only: "3" / "287.07 cm" / "Distance unavailable"; null for other sensors. */
+  /** ULT only: "3" / "287.07 cm" / "Distance unavailable"; null for other sensors, and for an "object very close"
+   *  reading sent without a distance (the reading itself is the message; no distance is invented). */
   distanceText: string | null;
   vehicle: string | null;
   iotKit: string | null;
@@ -101,15 +102,24 @@ export function payloadReading(data: string | null | undefined): string | null {
   return payloadFields(data).get("reading")?.toUpperCase() || null;
 }
 
-const ULT_READINGS: Readonly<Record<string, { reading: UltrasonicReading; title: string; tone: ReadingTone }>> = {
-  SAFE: { reading: "safe", title: "Safe reading", tone: "success" },
-  WARNING: { reading: "warning", title: "Warning reading", tone: "warning" },
-  NO_ECHO: { reading: "no_echo", title: "No echo", tone: "neutral" },
+const ULT_READINGS: Readonly<Record<string, { reading: UltrasonicReading; title: string; label: string; tone: ReadingTone }>> = {
+  SAFE: { reading: "safe", title: "Safe reading", label: "Safe", tone: "success" },
+  WARNING: { reading: "warning", title: "Warning reading", label: "Warning", tone: "warning" },
+  NO_ECHO: { reading: "no_echo", title: "No echo", label: "No echo", tone: "neutral" },
+  // "distance:NA,reading:object very close": the sensor reports an obstacle too close to measure.
+  OBJECT_VERY_CLOSE: { reading: "object_very_close", title: "Object Very Close", label: "Object Very Close", tone: "danger" },
 };
 
-/** The ultrasonic reading (SAFE / WARNING / NO_ECHO, any case), or null for a missing or unknown reading word. */
+/** Display label of a normalized ultrasonic reading ("object_very_close" → "Object Very Close"). */
+export const ULT_READING_LABEL: Readonly<Record<UltrasonicReading, string>> = Object.fromEntries(Object.values(ULT_READINGS).map((r) => [r.reading, r.label])) as Record<UltrasonicReading, string>;
+
+/**
+ * The ultrasonic reading, or null for a missing or unknown reading word. Case-insensitive, and spaces, hyphens and
+ * underscores are equivalent: "object very close", "OBJECT VERY CLOSE", "object_very_close" and "object-very-close"
+ * are one reading (as are "no_echo" / "no echo").
+ */
 export function ultrasonicReading(data: string | null | undefined): (typeof ULT_READINGS)[string] | null {
-  const r = payloadReading(data);
+  const r = payloadReading(data)?.trim().replace(/[\s_-]+/g, "_");
   return r && Object.hasOwn(ULT_READINGS, r) ? ULT_READINGS[r] : null;
 }
 
@@ -190,8 +200,10 @@ export function interpretAlert(record: SensorAlert, index: number): SensorAlertV
   let distance: string | null = null;
 
   if (kind === "ULT") {
-    distance = distanceText(record.sensor_data);
     const r = ultrasonicReading(record.sensor_data);
+    // "Object very close" comes with distance:NA: the reading is the message, so no "Distance unavailable" beside it.
+    // A real distance sent with it is still shown as sent.
+    distance = r?.reading === "object_very_close" && !ultrasonicDistance(record.sensor_data) ? null : distanceText(record.sensor_data);
     if (r) [title, reading, readingTone] = [r.title, r.reading, r.tone];
     else title = "Ultrasonic sensor alert";
   } else if (kind) {

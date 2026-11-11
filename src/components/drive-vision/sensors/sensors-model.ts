@@ -74,6 +74,8 @@ const IST_OFFSET_MS = 5.5 * HOUR;
 
 export const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   MATCH: { label: "Match", tone: "success" },
+  /** Passenger Analytics demo journey (passenger-demo.ts): counts equal. */
+  EXACT: { label: "Exact", tone: "success" },
   MISMATCH: { label: "Mismatch", tone: "warning" },
   OVER_CAPACITY: { label: "Over capacity", tone: "danger" },
   OVER_CAPACITY_MISMATCH: { label: "Over capacity · mismatch", tone: "danger" },

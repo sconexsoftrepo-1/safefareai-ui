@@ -86,7 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Devices & Assets", screen: "vehicles", href: SCREEN_ROUTES.vehicles, icon: Truck, description: "Tracking devices, device groups and maintenance reminders", subtitle: "Manage registered vehicles, tracking devices, device groups and maintenance reminders." },
       { label: "Drivers", screen: "drivers", href: SCREEN_ROUTES.drivers, icon: UserRound, description: "Driver records and assignments", subtitle: "Driver records, licences and vehicle assignments" },
-      { label: "Dispatch", screen: "dispatch", href: SCREEN_ROUTES.dispatch, icon: ClipboardList, description: "Trip dispatch, conflicts and swaps", subtitle: "Dispatched trips, conflict checks and driver swaps" },
+      { label: "My Journeys", screen: "dispatch", href: SCREEN_ROUTES.dispatch, icon: ClipboardList, description: "Trip dispatch, conflicts and swaps", subtitle: "Dispatched trips, conflict checks and driver swaps" },
       { label: "Workforce", screen: "workforce", href: SCREEN_ROUTES.workforce, icon: CalendarCheck2, description: "Availability, shifts, leave and checklists", subtitle: "Driver availability, shifts, leave and pre-trip checklists" },
     ],
   },

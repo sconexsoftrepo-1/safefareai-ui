@@ -10,6 +10,7 @@ import type { LatLon } from "@/features/drive-vision/types";
 import { cn } from "@/lib/utils";
 import { attributionBottom, baseMapSource, loadMapLibre } from "./base-map-config";
 import { FleetMap, MapButton, type MapMarker, type MapPin, type MapRoute } from "./fleet-map";
+import { VehicleMarkerGlyph } from "./vehicle-marker";
 import type { GeoBounds } from "./projection";
 
 /**
@@ -319,7 +320,7 @@ function GeoCanvas({
               </HtmlMarker>
             ) : (
               <HtmlMarker key={g.id} rt={map} lat={g.members[0].lat} lon={g.members[0].lon} z={g.members[0].id === selectedId ? 5 : 4}>
-                <MarkerGlyph marker={g.members[0]} selected={g.members[0].id === selectedId} onClick={onMarkerClick} />
+                <VehicleMarkerGlyph marker={g.members[0]} selected={g.members[0].id === selectedId} onClick={onMarkerClick} mapBearing={map.map.getBearing()} />
               </HtmlMarker>
             )
           )
@@ -393,40 +394,6 @@ function HtmlMarker({ rt, lat, lon, z, children }: { rt: { map: MapLibreMap; ml:
     if (node) node.style.zIndex = String(z);
   }, [z, rt]);
   return createPortal(children, el);
-}
-
-function MarkerGlyph({ marker: m, selected, onClick }: { marker: MapMarker; selected: boolean; onClick?: (id: string) => void }) {
-  const [hovered, setHovered] = useState(false);
-  const color = m.color ?? "var(--dv-ink-subtle)";
-  const r = selected ? 10 : 7.5;
-  const size = 44;
-  const c = size / 2;
-  const Tag = onClick ? "button" : "div";
-  return (
-    <Tag
-      {...(onClick ? { type: "button" as const, onClick: () => onClick(m.id), "aria-pressed": selected } : {})}
-      aria-label={`${m.label}${m.statusLabel ? `, ${m.statusLabel}` : ""}${m.alarm ? ", active alarm" : ""}`}
-      data-marker-id={m.id}
-      className="relative block outline-none focus-visible:rounded-full focus-visible:ring-2 focus-visible:ring-[var(--dv-ink)]"
-      style={{ width: size, height: size, cursor: onClick ? "pointer" : undefined }}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
-      onFocus={() => setHovered(true)}
-      onBlur={() => setHovered(false)}
-    >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden className="overflow-visible">
-        <g transform={`translate(${c} ${c})`}>
-          {m.alarm ? <circle r={r + 7} fill="var(--dv-danger)" fillOpacity={0.16} stroke="var(--dv-danger)" strokeOpacity={0.5} strokeWidth={1.2} /> : null}
-          {selected ? <circle r={r + 6} fill="var(--dv-ink)" fillOpacity={0.14} /> : null}
-          {m.showHeading && m.heading !== undefined ? <path d={`M0 ${-r - 7} L4.5 ${-r - 1} L-4.5 ${-r - 1} Z`} fill={selected ? "var(--dv-ink)" : color} transform={`rotate(${m.heading})`} /> : null}
-          <circle r={r} fill={color} stroke={selected ? "var(--dv-ink)" : "white"} strokeWidth={selected ? 3 : 2.2} />
-        </g>
-      </svg>
-      {selected || hovered ? (
-        <span className="pointer-events-none absolute bottom-[calc(100%-6px)] left-1/2 -translate-x-1/2 rounded-full bg-[var(--dv-ink)] px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap text-white">{m.label}</span>
-      ) : null}
-    </Tag>
-  );
 }
 
 function PinGlyph({ pin: p, active, onClick }: { pin: MapPin; active: boolean; onClick?: (id: string) => void }) {

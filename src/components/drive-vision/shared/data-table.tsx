@@ -169,6 +169,8 @@ export function DataTable<T>({
               return (
                 <tr
                   key={id}
+                  data-row-id={id}
+                  data-active={active ? "true" : undefined}
                   tabIndex={onRowClick ? 0 : undefined}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   onKeyDown={

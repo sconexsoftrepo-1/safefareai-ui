@@ -9,7 +9,8 @@ import type { TripDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import type { DateRangeKey } from "@/features/drive-vision/types";
 import { DATE_RANGE_OPTIONS, resolveDateRange } from "@/features/drive-vision/utils/time";
-import { formatDateTime, formatKm, formatNumber, formatSeconds } from "@/features/drive-vision/utils/format";
+import { formatKm, formatNumber, formatSeconds } from "@/features/drive-vision/utils/format";
+import { formatTripTime, formatTripTimeFull, tripIstIso } from "@/features/drive-vision/utils/trip-ist-time";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "../shared/page-header";
 import { Panel, PanelHeader } from "../shared/panel";
@@ -28,6 +29,8 @@ const PAGE_SIZE = 20;
 const n = (v: number | undefined) => (typeof v === "number" ? formatNumber(v) : "—");
 const secs = (v: number | undefined) => (typeof v === "number" ? formatSeconds(v) : "—");
 const km = (v: number | undefined) => (typeof v === "number" ? formatKm(v) : "—");
+/** Hover text for a trip row: full IST start and end (Trips API times are IST wall clock, trip-ist-time.ts). */
+const tripSpan = (t: TripDto) => `${formatTripTimeFull(t.startTime)} → ${t.inProgress || !t.endTime ? "in progress" : formatTripTimeFull(t.endTime)}`;
 
 /**
  * Trip history on GET /trips, /trips/summary, /trips/{id} and /trips/{id}/route (trip-controller,
@@ -58,8 +61,8 @@ export function TripHistory({ initialDriverId }: { initialDriverId?: number | nu
       id: "start",
       header: "Started",
       cell: (t) => (
-        <span className="inline-flex items-center gap-1.5 tabular">
-          {t.startTime ? formatDateTime(t.startTime) : "—"}
+        <span className="inline-flex items-center gap-1.5 tabular" title={t.startTime ? tripSpan(t) : undefined}>
+          {t.startTime ? <time dateTime={tripIstIso(t.startTime)}>{formatTripTime(t.startTime)}</time> : "—"}
           {t.inProgress ? <StatusBadge size="sm" tone="info">In progress</StatusBadge> : null}
         </span>
       ),
@@ -177,7 +180,7 @@ function TripDetailPanel({ id }: { id: number | null }) {
 
   return (
     <Panel aria-labelledby="trip-detail-title" className="flex flex-col">
-      <PanelHeader titleId="trip-detail-title" title={trip?.deviceName ?? `Trip ${id}`} description={trip?.startTime ? `${formatDateTime(trip.startTime)} → ${trip.endTime ? formatDateTime(trip.endTime) : "in progress"}` : undefined} />
+      <PanelHeader titleId="trip-detail-title" title={trip?.deviceName ?? `Trip ${id}`} description={trip?.startTime ? `${formatTripTime(trip.startTime)} → ${trip.endTime ? formatTripTime(trip.endTime) : "in progress"}` : undefined} />
       <div className="px-5 pb-3">
         {routeQ.error ? (
           <ApiErrorState error={routeQ.error} onRetry={routeQ.refetch} compact title="Couldn't load the route" />
@@ -234,7 +237,7 @@ function TripDetailPanel({ id }: { id: number | null }) {
               <ol className="space-y-1">
                 {stops.map((st, i) => (
                   <li key={st.id ?? i} className="text-xs">
-                    <span className="font-medium">{i + 1}.</span> {st.startTime ? formatDateTime(st.startTime) : "?"}
+                    <span className="font-medium">{i + 1}.</span> {st.startTime ? formatTripTime(st.startTime) : "?"}
                     {st.stopType ? ` · ${st.stopType}` : ""}
                     {st.address ? ` · ${st.address}` : ""}
                   </li>

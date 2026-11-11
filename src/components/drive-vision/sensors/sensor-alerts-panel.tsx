@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { BellRing, CircleHelp, Cigarette, Clock, Loader2, Radar, RefreshCw, ScanLine, ShieldCheck, Timer, Wine, X, type LucideIcon } from "lucide-react";
+import { BellRing, CircleHelp, Flame, Clock, Loader2, Radar, RefreshCw, ScanLine, ShieldCheck, Timer, Wine, X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ import {
   latestAlert,
   readDateRange,
   toDateTimeInput,
+  ULT_READING_LABEL,
   type AlertQueryFilters,
   type AlertStatus,
   type SensorAlertView,
@@ -45,7 +46,7 @@ type StyleKey = "ULT" | "SMK" | "ALC" | "IRPRS" | "UNKNOWN";
 /** Sensor colours: ULT blue, SMK amber, ALC purple; IR and PRS keep the generic style they had; unknown is neutral. */
 const KIND_STYLE: Record<StyleKey, { icon: LucideIcon; chip: string; edge: string; tone: Tone }> = {
   ULT: { icon: Radar, chip: "bg-powder text-info", edge: "border-l-info", tone: "info" },
-  SMK: { icon: Cigarette, chip: "bg-warning-soft text-warning", edge: "border-l-warning", tone: "warning" },
+  SMK: { icon: Flame, chip: "bg-warning-soft text-warning", edge: "border-l-warning", tone: "warning" },
   ALC: { icon: Wine, chip: "bg-lavender text-ai-ink", edge: "border-l-ai-ink", tone: "lavender" },
   IRPRS: { icon: CircleHelp, chip: "bg-surface-sunken text-ink-muted", edge: "border-l-serious", tone: "serious" },
   UNKNOWN: { icon: CircleHelp, chip: "bg-surface-sunken text-ink-muted", edge: "border-l-line-strong", tone: "neutral" },
@@ -54,8 +55,7 @@ const styleKey = (v: Pick<SensorAlertView, "kind" | "code">): StyleKey => v.kind
 const styleOf = (v: Pick<SensorAlertView, "kind" | "code">) => KIND_STYLE[styleKey(v)];
 
 const STATUS_TONE: Record<AlertStatus, Tone> = { ongoing: "serious", ended_gap: "info", ended: "neutral", unknown: "neutral" };
-const READING_TONE: Record<NonNullable<SensorAlertView["readingTone"]>, Tone> = { success: "success", warning: "warning", neutral: "neutral" };
-const READING_LABEL: Record<NonNullable<SensorAlertView["reading"]>, string> = { safe: "Safe", warning: "Warning", no_echo: "No echo" };
+const READING_TONE: Record<NonNullable<SensorAlertView["readingTone"]>, Tone> = { success: "success", warning: "warning", danger: "danger", neutral: "neutral" };
 
 /** "Ultrasonic Sensor · ULT · Sub-ID 2", or "Sensor · XYZ" for an unknown type. */
 const sensorLine = (v: SensorAlertView) => [v.sensorName ?? "Sensor", v.code, v.subId !== null ? `Sub-ID ${v.subId}` : null].filter(Boolean).join(" · ");
@@ -318,7 +318,7 @@ function ReadingBadge({ view }: { view: SensorAlertView }) {
   if (!view.reading || !view.readingTone) return null;
   return (
     <span data-testid="sensor-alert-reading" data-reading={view.reading}>
-      <StatusBadge tone={READING_TONE[view.readingTone]}>{READING_LABEL[view.reading]}</StatusBadge>
+      <StatusBadge tone={READING_TONE[view.readingTone]}>{ULT_READING_LABEL[view.reading]}</StatusBadge>
     </span>
   );
 }
@@ -428,10 +428,10 @@ function AlertCard({ view }: { view: SensorAlertView }) {
         </Field>
       </dl>
 
-      <div className="mt-auto min-w-0" data-testid="sensor-alert-data">
+      {/* <div className="mt-auto min-w-0" data-testid="sensor-alert-data">
         <p className="text-[11px] text-ink-muted">Sensor data</p>
         <code className="block rounded-control bg-surface-muted px-2 py-1 font-mono text-xs break-all text-ink">{view.sensorData ?? "—"}</code>
-      </div>
+      </div> */}
     </article>
   );
 }

@@ -297,6 +297,23 @@ test("SA ULT: reading SAFE / WARNING / NO_ECHO in any case; distance:NA or missi
   same([ult("distance:3,reading:ECHO").title, ult("distance:3,reading:ECHO").reading], ["Ultrasonic sensor alert", null], "unknown reading: nothing invented");
 });
 
+test("SA ULT object very close: any case / spacing reads as one reading; title and badge 'Object Very Close'; no 'Distance unavailable', no invented distance", () => {
+  const m = model();
+  const ult = (sensor_data) => m.interpretAlert(rec({ sensor_data }), 0);
+  for (const data of ["distance:NA,reading:object very close", "distance:NA,reading:OBJECT VERY CLOSE", "distance:NA,reading:object_very_close", "distance:NA,reading:object-very-close", "reading: Object  Very Close ,distance:NA"]) {
+    const v = ult(data);
+    same([v.title, v.reading, v.readingTone, v.distanceText], ["Object Very Close", "object_very_close", "danger", null], data);
+  }
+  assert.equal(m.ULT_READING_LABEL.object_very_close, "Object Very Close");
+  assert.equal(ult("distance:12 cm,reading:object very close").distanceText, "12 cm", "a real distance sent with it is shown as sent");
+  same([ult("distance:NA,reading:NO_ECHO").distanceText, ult("distance:NA,reading:SAFE").distanceText], ["Distance unavailable", "Distance unavailable"], "other readings keep 'Distance unavailable'");
+  same([m.ULT_READING_LABEL.safe, m.ULT_READING_LABEL.warning, m.ULT_READING_LABEL.no_echo], ["Safe", "Warning", "No echo"], "existing badge labels unchanged");
+  for (const sensor_type of ["SMK", "ALC", "IR", "PRS", "TMP"]) {
+    const v = m.interpretAlert({ sensor_type, sensor_data: "distance:NA,reading:object very close" }, 0);
+    same([v.reading, v.readingTone, v.distanceText, v.title === "Object Very Close"], [null, null, null, false], `${sensor_type}: not a ULT reading`);
+  }
+});
+
 test("SA status and duration fields: ongoing / ended after gap / ended; missing ended_at is never a fabricated time", () => {
   const m = model();
   const ended = m.interpretAlert(SAMPLE.alerts[0], 0);
@@ -847,4 +864,22 @@ test("SA page: a vehicle row without a device (or without a number) isn't offere
   same(alertRequests().map((r) => r.search), ["?tenant_id=10&vehicle_number=TS09AB1234&max_gap_seconds=60"]);
   for (const r of alertRequests()) assert.doesNotMatch(r.search, /vehicle_number=(&|$)/);
   assert.ok(requests.some((r) => r.path === "/api/v1/devices/102/passenger-summary"), "device.id of the chosen vehicle");
+});
+
+test("SA panel: 'Object Very Close' reads the same on the Latest Sensor Alert and the card — title, red badge, no 'Distance unavailable'", async () => {
+  const ovc = { ...FIXTURE.alerts[0], started_at: "2026-11-09 09:00:00", ended_at: "2026-11-09 09:00:12", lasted_seconds: 12, sensor_data: "distance:NA,reading:object very close" };
+  await mountPanel({ scope: { kind: "vehicle", vehicleNumber: "AP31Z0044", busName: "Bus 1" }, query: query({ data: parsed({ ...FIXTURE, alerts: [ovc, ...FIXTURE.alerts] }) }) });
+  const latest = $('[data-testid="sensor-alert-latest"]');
+  const first = $$('[data-testid="sensor-alert-card"]')[0];
+  assert.ok(latest.textContent.includes("Object Very Close"), "latest: title");
+  assert.equal(field(first, "sensor-alert-title"), "Object Very Close", "card: title");
+  for (const el of [latest, first]) {
+    const badge = el.querySelector('[data-testid="sensor-alert-reading"]');
+    same([badge.dataset.reading, badge.textContent], ["object_very_close", "Object Very Close"]);
+    assert.match(badge.innerHTML, /danger/, "danger tone");
+    assert.ok(!el.textContent.includes("Distance unavailable"), "no 'Distance unavailable'");
+  }
+  assert.equal(first.querySelector('[data-testid="sensor-alert-distance"]'), null, "no distance row; distance:NA is not a number");
+  const ult = $$('[data-testid="sensor-alert-card"]').find((c) => field(c, "sensor-alert-title") === "No echo");
+  same([ult.querySelector('[data-testid="sensor-alert-reading"]').textContent, field(ult, "sensor-alert-distance")], ["No echo", "3"], "NO_ECHO card unchanged");
 });

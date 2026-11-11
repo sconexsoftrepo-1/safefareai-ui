@@ -7,6 +7,7 @@ import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { canViewWidget } from "@/features/drive-vision/access/access-policy";
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { formatDateTime, formatKm, formatNumber, formatSeconds } from "@/features/drive-vision/utils/format";
+import { formatTripTime } from "@/features/drive-vision/utils/trip-ist-time";
 import { Panel, PanelHeader } from "../shared/panel";
 import { LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState } from "../shared/api-states";
@@ -119,7 +120,7 @@ export function VehicleRecentTrips({ id }: { id: number }) {
           {tripsQ.data.items.map((t, i) => (
             <li key={t.id ?? i} className="flex items-center gap-2 py-2">
               <span className="min-w-0 flex-1">
-                <span className="block tabular">{t.startTime ? formatDateTime(t.startTime) : "—"}</span>
+                <span className="block tabular">{t.startTime ? formatTripTime(t.startTime) : "—"}</span>
                 <span className="block truncate text-xs text-ink-muted">{t.driverName ?? "No driver"}</span>
               </span>
               <span className="text-right text-xs tabular">

@@ -662,7 +662,9 @@ test("Sensors page source: picker on GET /vehicles?assigned=true; device paths o
   assert.match(page, /vehicleRegistryService\.listAllVehicles\(\{ assigned: true \}\)/);
   assert.doesNotMatch(page, /fleetService\.listAllDevices/, "devices are no longer the picker's source");
   assert.match(page, /const deviceId = bus\?\.deviceId \?\? null;/);
-  for (const call of ["sensorService.passengerSummary(deviceId!", "sensorService.comparison(deviceId!", "sensorService.stops(deviceId!", "sensorService.bms(deviceId!", "sensorService.readings(deviceId!", "sensorService.alcohol(deviceId!", "sensorService.recalculate(deviceId!"]) {
+  // Reads go through `source`, which is sensorService unless the explicit Passenger Analytics demo journey is chosen.
+  assert.match(page, /const source = demo \? passengerDemoSource : sensorService;/);
+  for (const call of ["source.passengerSummary(deviceId!", "source.comparison(deviceId!", "source.stops(deviceId!", "source.bms(deviceId!", "source.readings(deviceId!", "source.alcohol(deviceId!", "sensorService.recalculate(deviceId!"]) {
     assert.ok(page.includes(call), call);
   }
   assert.match(page, /const registration = cleanVehicleNumber\(bus\?\.vehicleNumber\);/);
