@@ -8,8 +8,6 @@ const nextConfig: NextConfig = {
 
   devIndicators: false,
 
-  // Generate static HTML, CSS and JavaScript into /out.
-  // output: "export",
 
   // Generate routes as directories containing index.html.
   trailingSlash: true,
