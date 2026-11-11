@@ -58,9 +58,10 @@ export function toList<T>(res: ApiResponse<T[]>): ListResult<T> {
 }
 
 /** Max page size allowed by the spec for paged lists. */
-const MAX_PAGE_SIZE = 100;
+export const MAX_PAGE_SIZE = 100;
 
-async function collectPages<T>(fetchPage: (pageNumber: number) => Promise<ListResult<T>>, maxPages: number): Promise<CollectedList<T>> {
+/** Fetches page 1, then further pages until `total` is reached or `maxPages` is hit (`truncated` then). */
+export async function collectPages<T>(fetchPage: (pageNumber: number) => Promise<ListResult<T>>, maxPages: number): Promise<CollectedList<T>> {
   const first = await fetchPage(1);
   const items = [...first.items];
   let page = 1;

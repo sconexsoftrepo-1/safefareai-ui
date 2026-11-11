@@ -33,7 +33,7 @@ const SEARCH_DEBOUNCE_MS = 350;
 export const WRITES_PENDING = "Moving and deleting devices and creating groups are disabled until write operations are approved.";
 
 /**
- * Vehicles & Assets on live BFF data.
+ * Devices & Assets (route /vehicles, server menu_key "vehicles_assets") on live BFF data.
  * - Table: server-paged GET /devices with `keyword` and `groupId` (the API has no sort parameter, so columns aren't sortable).
  * - Expiry filter and asset tree need every device, so they fetch all pages and filter in the browser.
  * - Last report comes from GET /monitor/realtime for the devices on screen.
@@ -132,7 +132,7 @@ export function VehiclesPage() {
     <div>
       <PageHeader
         eyebrow={<DataSourceBadge source={source} />}
-        title="Vehicles & Assets"
+        title="Devices & Assets"
         description={
           active.data
             ? `${total} device${total === 1 ? "" : "s"}${filtersActive ? " match" : ""} · ${ref.groups.length} group${ref.groups.length === 1 ? "" : "s"}`
@@ -165,7 +165,7 @@ export function VehiclesPage() {
             setPage(1);
           }}
           options={[
-            { value: "table", label: "Vehicle list" },
+            { value: "table", label: "Device list" },
             { value: "tree", label: "Asset tree" },
           ]}
         />

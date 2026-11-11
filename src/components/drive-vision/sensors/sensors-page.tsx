@@ -2,14 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Activity, BusFront, Gauge, Loader2, Plus, RefreshCw, RotateCw, ScanLine, TriangleAlert, Users, Wine } from "lucide-react";
+import { Activity, BellRing, BusFront, Gauge, Info, Loader2, Plus, RefreshCw, RotateCw, ScanLine, TriangleAlert, Users, Wine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { sensorService } from "@/features/drive-vision/api/sensor-service";
-import { fleetService } from "@/features/drive-vision/api/fleet-service";
+import { sensorAlertsService } from "@/features/drive-vision/api/sensor-alerts-service";
+import { cleanVehicleNumber } from "@/features/drive-vision/api/sensor-alerts";
+import { vehicleRegistryService } from "@/features/drive-vision/api/vehicle-registry-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
 import type { AlcoholDetectionDto, BmsRowDto, ComparisonStopDto, SensorReadingDto, StopVisitDto } from "@/features/drive-vision/api/types";
 import { useApiQuery, type ApiQuery } from "@/features/drive-vision/hooks/use-api-query";
@@ -30,7 +32,12 @@ import { FormField, fieldA11y } from "../shared/form-field";
 import { TenantRequiredButton } from "../shared/tenant-required";
 import { toast } from "../shared/toast-provider";
 import { dateToIstInput } from "../trips/track-model";
+import { SensorAlertsPanel, type SensorAlertsScope } from "./sensor-alerts-panel";
+import { SENSORS_TABPANEL_ID, SensorsTabs, sensorsTabId } from "./sensors-tabs";
+import { DEFAULT_QUERY_FILTERS, totalAlerts, type AlertQueryFilters } from "./sensor-alerts-model";
 import {
+  pickSensorVehicle,
+  sensorVehicles,
   ALCOHOL_SENSOR_SUB_ID,
   IR_SENSOR_SUB_ID,
   alcoholMeta,
@@ -50,7 +57,9 @@ import {
   type WindowPreset,
 } from "./sensors-model";
 
-type Tab = "comparison" | "stops" | "bms" | "readings";
+type Tab = "comparison" | "stops" | "bms" | "readings" | "alerts";
+/** The Bus dropdown's "All vehicles" choice: Sensor Alerts for every vehicle; the per-bus views need a bus. */
+const ALL_VEHICLES = "all";
 const READINGS_PAGE_SIZE = 20;
 const TABLE_PAGE_SIZE = 25;
 
@@ -98,29 +107,46 @@ const plusMinus = (inn?: number | null, out?: number | null) => (
  * GET /devices/{id}/passenger-summary (cards), /stops/comparison (sensor vs BMS), /stops, /bms and
  * /sensors/readings (with GET /sensors/types). Writes: POST /sensors/readings (add a reading) and
  * POST /devices/{id}/stops/recalculate, each confirmed and reported after the server answers.
+ * Sensor Alerts tab (first and default): GET /api/sensors/alerts (same-origin proxy to the Python service) for the
+ * chosen vehicle's number or, with "All vehicles", without one. It has no time window, so the window selector,
+ * per-bus cards, Recalculate and Add reading belong to the four reconciliation tabs.
+ * Vehicle picker: GET /api/v1/vehicles?assigned=true (vehicle.read) — only vehicles with a device. The vehicle's
+ * device.id drives every /devices/{id}/… call; its vehicleNumber is Sensor Alerts' vehicle_number (sensors-model.ts).
  */
 export function SensorsPage() {
   const params = useSearchParams();
   const access = useAccess();
   const canPickBus = canViewWidget(access, "sensors.deviceChoices");
+  // Deep links: ?vehicle=<vehicle id>, or the older ?device=<device id> (matched to the vehicle that device is fitted in).
+  const [link] = useState(() => ({ vehicleId: /^\d+$/.test(params.get("vehicle") ?? "") ? Number(params.get("vehicle")) : null, deviceId: /^\d+$/.test(params.get("device") ?? "") ? Number(params.get("device")) : null }));
   const ingestGate = useActionGate("sensors.ingest");
   const recalcGate = useActionGate("sensors.recalculate");
-  const [chosenId, setDeviceId] = useState<number | null>(() => (/^\d+$/.test(params.get("device") ?? "") ? Number(params.get("device")) : null));
+  // The chosen vehicle's id (never its device id), "all", or null = not chosen yet.
+  const [chosenId, setVehicleId] = useState<number | typeof ALL_VEHICLES | null>(null);
   const [preset, setPreset] = useState<WindowPreset>("24h");
   const [custom, setCustom] = useState(() => ({ from: dateToIstInput(new Date(Date.now() - 86_400_000)), to: dateToIstInput(new Date()) }));
   // "Now" for relative presets; Refresh moves it forward so "Last 24 hours" really is the last 24 hours.
   const [now, setNow] = useState(() => new Date());
-  const [tab, setTab] = useState<Tab>("comparison");
+  // Sensor Alerts is the default on every fresh entry (the app keeps no per-screen tab state).
+  const [tab, setTab] = useState<Tab>("alerts");
   const [sensorSubId, setSensorSubId] = useState("all");
+  // Sensor Alerts' server-side filters (sensor, date range). Kept when the vehicle changes.
+  const [alertFilters, setAlertFilters] = useState<AlertQueryFilters>(DEFAULT_QUERY_FILTERS);
   const [readingsPage, setReadingsPage] = useState(1);
   const [adding, setAdding] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
 
-  const devicesQ = useApiQuery(canPickBus ? "sensors:devices" : null, () => fleetService.listAllDevices());
+  // Vehicles with a device fitted (pages of 100). Tenant-scoped like every fleet read (shared client + query key).
+  const vehiclesQ = useApiQuery(canPickBus ? "sensors:assigned-vehicles" : null, () => vehicleRegistryService.listAllVehicles({ assigned: true }));
   const typesQ = useApiQuery("sensors:types", () => sensorService.sensorTypes());
-  const devices = useMemo(() => [...(devicesQ.data?.items ?? [])].filter((d) => typeof d.id === "number").sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "")), [devicesQ.data]);
-  // The chosen bus, else the first one, so the screen opens with data.
-  const deviceId = chosenId ?? devices[0]?.id ?? null;
+  const vehicles = useMemo(() => sensorVehicles(vehiclesQ.data?.items), [vehiclesQ.data]);
+  // Without a vehicle to choose (no vehicle.read, the list failed or has no assigned vehicle) Sensor Alerts covers
+  // every permitted vehicle and the per-bus tabs ask for one.
+  const noBusChoice = !canPickBus || (!!vehiclesQ.error && !vehiclesQ.data) || (vehiclesQ.data !== undefined && vehicles.length === 0);
+  const allVehicles = chosenId === ALL_VEHICLES || noBusChoice;
+  const bus = allVehicles ? null : pickSensorVehicle(vehicles, typeof chosenId === "number" ? chosenId : null, link);
+  // device.id of the chosen vehicle — the {id} of every device-based sensor path below. Never the vehicle id.
+  const deviceId = bus?.deviceId ?? null;
 
   const resolved = useMemo(() => resolveWindow(preset, custom, now), [preset, custom, now]);
   const win = resolved.window;
@@ -132,8 +158,31 @@ export function SensorsPage() {
   const readingsQ = useApiQuery(key && tab === "readings" ? `sensors:readings:${key}:${sensorSubId}:${readingsPage}` : null, () =>
     sensorService.readings(deviceId!, { ...win!, sensorSubId: sensorSubId === "all" ? undefined : Number(sensorSubId), pageNumber: readingsPage, pageSize: READINGS_PAGE_SIZE })
   );
-  const activeQ = { comparison: comparisonQ, stops: stopsQ, bms: bmsQ, readings: readingsQ }[tab];
+  // On Sensor Alerts no per-bus table is shown; comparisonQ is idle there (its key needs tab === "comparison"), so
+  // refreshing it is a no-op.
+  const activeQ = { comparison: comparisonQ, stops: stopsQ, bms: bmsQ, readings: readingsQ }[tab === "alerts" ? "comparison" : tab];
   const alcoholQ = useApiQuery(key ? `sensors:alcohol:${key}` : null, () => sensorService.alcohol(deviceId!, win!));
+
+  // Sensor Alerts: vehicle_number is the chosen vehicle's vehicleNumber — never the vehicle id, device id, terminal
+  // number or sensor kit. The caller's effective tenant (a tenant user's own; the Safe-Fare Admin's selected one)
+  // only decides whether the Python demo may be shown: the request always carries the demo tenant (python-client.ts).
+  const registration = cleanVehicleNumber(bus?.vehicleNumber);
+  const alertsTenant = access.tenantId;
+  const alertsVehicle = allVehicles ? null : registration;
+  const alertsScopeKey = allVehicles || registration ? `${alertsTenant ?? "-"}:${alertsVehicle ?? "*"}` : null;
+  // Every filter is part of the key: a new filter is a new request (loading state, never another filter's data).
+  const alertsKey = alertsScopeKey ? `sensors:alerts:${alertsScopeKey}:${alertFilters.sensorSubId ?? "*"}:${alertFilters.fromTime ?? "-"}:${alertFilters.toTime ?? "-"}` : null;
+  const alertsQ = useApiQuery(alertsKey, () => sensorAlertsService.list({ vehicleNumber: alertsVehicle, sensorSubId: alertFilters.sensorSubId, fromTime: alertFilters.fromTime, toTime: alertFilters.toTime }, alertsTenant));
+  const busLabel = bus ? (bus.deviceName ? `${bus.vehicleNumber} · ${bus.deviceName}` : bus.vehicleNumber) : "This vehicle";
+  const alertsScope: SensorAlertsScope = allVehicles
+    ? { kind: "all" }
+    : !bus
+      ? vehiclesQ.error && !vehiclesQ.data
+        ? { kind: "lookup-failed", busName: busLabel, error: vehiclesQ.error, retry: vehiclesQ.refetch }
+        : { kind: "resolving", busName: busLabel }
+      : registration
+        ? { kind: "vehicle", vehicleNumber: registration, busName: busLabel }
+        : { kind: "no-registration", busName: busLabel };
 
   function refreshAll() {
     if (preset === "custom") {
@@ -143,8 +192,22 @@ export function SensorsPage() {
     } else setNow(new Date());
   }
 
+  const onAlerts = tab === "alerts";
+  /** The Refresh button reloads the active tab's data: Sensor Alerts, or the per-bus views (never both). */
+  function refreshScreen() {
+    if (!onAlerts) {
+      if (deviceId !== null) refreshAll();
+      return;
+    }
+    if (vehiclesQ.error && vehiclesQ.data === undefined) vehiclesQ.refetch();
+    if (alertsKey && !alertsQ.loading && !alertsQ.refreshing) alertsQ.refetch();
+  }
+  const refreshBusy = onAlerts ? alertsQ.loading || alertsQ.refreshing : summaryQ.loading;
+  const refreshSpinning = onAlerts ? alertsQ.refreshing : summaryQ.refreshing;
+  const refreshDisabled = onAlerts ? (!alertsKey && !(vehiclesQ.error && vehiclesQ.data === undefined)) || refreshBusy : deviceId === null || refreshBusy;
+  const alertCount = useMemo(() => (alertsQ.data ? totalAlerts(alertsQ.data) : null), [alertsQ.data]);
+
   const s = summaryQ.data;
-  const bus = devices.find((d) => d.id === deviceId);
   const capacityNote = s ? `${s.capacitySource === "VEHICLE" ? "From the vehicle" : "Default"}${s.truncated ? " · window truncated" : ""}` : undefined;
   const truncated = (tab === "comparison" && comparisonQ.data?.truncated) || (tab === "stops" && stopsQ.data?.truncated) || (tab === "bms" && bmsQ.data?.truncated);
 
@@ -212,22 +275,28 @@ export function SensorsPage() {
 
   const recalcWhy = recalcBlock(win);
 
+  const busLine = allVehicles
+    ? "All vehicles"
+    : bus
+      ? `${bus.vehicleNumber} · ${bus.deviceName ?? `Device ${bus.deviceId}`}${bus.terminalNo ? ` · ${bus.terminalNo}` : ""}${!onAlerts && s?.lastUpdatedAt ? ` · last data ${formatDateTime(s.lastUpdatedAt)}` : ""}`
+      : "Choose a vehicle";
+
   return (
     <div>
       <PageHeader
-        title="Sensors"
-        description={bus ? `${bus.name ?? `Device ${bus.id}`}${bus.terminalNo ? ` · ${bus.terminalNo}` : ""}${s?.lastUpdatedAt ? ` · last data ${formatDateTime(s.lastUpdatedAt)}` : ""}` : "Choose a bus"}
+        // The shell shows the title and subtitle ("Sensors & Safety Monitoring", nav-config.ts); this is the toolbar.
+        title="Sensors & Safety Monitoring"
         actions={
           <>
-            <Button variant="outline" onClick={refreshAll} disabled={deviceId === null || summaryQ.loading}>
-              <RefreshCw className={summaryQ.refreshing ? "animate-spin" : undefined} /> Refresh
+            <Button variant="outline" onClick={refreshScreen} disabled={refreshDisabled}>
+              <RefreshCw className={refreshSpinning ? "animate-spin" : undefined} /> Refresh
             </Button>
-            {recalcGate.allowed ? (
+            {!onAlerts && recalcGate.allowed ? (
               <Button variant="outline" onClick={() => setRecalculating(true)} disabled={deviceId === null || recalcWhy !== null} title={recalcWhy ?? undefined}>
                 <RotateCw /> Recalculate
               </Button>
             ) : null}
-            {ingestGate.allowed ? (
+            {onAlerts ? null : ingestGate.allowed ? (
               <Button onClick={() => setAdding(true)} disabled={deviceId === null}>
                 <Plus /> Add reading
               </Button>
@@ -240,133 +309,160 @@ export function SensorsPage() {
 
       <Panel className="mb-4 p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:flex-wrap @3xl:items-end">
-          <FormField id="sn-bus" label="Bus" className="@3xl:w-72">
+          <FormField id="sn-bus" label="Vehicle" className="@3xl:w-72">
             {!canPickBus ? (
-              <p className="text-xs text-ink-muted">Choosing a bus needs device.read.</p>
-            ) : devicesQ.error ? (
-              <p className="text-xs text-danger">{describeApiError(devicesQ.error)}</p>
+              <p className="text-xs text-ink-muted">All vehicles · choosing one vehicle needs vehicle.read.</p>
+            ) : vehiclesQ.error && !vehiclesQ.data ? (
+              <p className="text-xs text-danger" role="alert">
+                {describeApiError(vehiclesQ.error)} Showing all vehicles.{" "}
+                <button type="button" className="font-medium underline" onClick={vehiclesQ.refetch}>
+                  Retry
+                </button>
+              </p>
+            ) : vehiclesQ.data && vehicles.length === 0 ? (
+              <p className="text-xs text-ink-muted" data-testid="sensors-no-assigned-vehicles">
+                No vehicle has a device assigned yet. Assign one under Devices &amp; Assets. Showing all vehicles.
+              </p>
             ) : (
-              <Select value={deviceId !== null ? String(deviceId) : ""} onValueChange={(v) => (setDeviceId(Number(v)), setReadingsPage(1))} disabled={!devicesQ.data}>
+              <Select value={allVehicles ? ALL_VEHICLES : bus ? String(bus.vehicleId) : ""} onValueChange={(v) => (setVehicleId(v === ALL_VEHICLES ? ALL_VEHICLES : Number(v)), setReadingsPage(1))} disabled={!vehiclesQ.data}>
                 <SelectTrigger id="sn-bus" className="h-10 w-full">
-                  <SelectValue placeholder={devicesQ.data ? "Choose a bus" : "Loading buses…"} />
+                  <SelectValue placeholder={vehiclesQ.data ? "Choose a vehicle" : "Loading vehicles…"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {devices.map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>
-                      {d.name ?? `Device ${d.id}`}
-                      {d.terminalNo ? <span className="ml-1.5 font-mono text-[11px] text-ink-muted">{d.terminalNo}</span> : null}
+                  <SelectItem value={ALL_VEHICLES}>All vehicles</SelectItem>
+                  {vehicles.map((v) => (
+                    <SelectItem key={v.vehicleId} value={String(v.vehicleId)}>
+                      {v.vehicleNumber}
+                      {v.deviceName || v.terminalNo ? <span className="ml-1.5 text-[11px] text-ink-muted">{v.deviceName ?? <span className="font-mono">{v.terminalNo}</span>}</span> : null}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
+            {vehiclesQ.data?.truncated ? <p className="text-[11px] text-ink-muted">Showing the first {vehicles.length} of {vehiclesQ.data.total} vehicles.</p> : null}
           </FormField>
-          <div className="space-y-1.5">
-            <p className="text-[13px] font-medium text-ink">Time window (IST)</p>
-            <SegmentedControl
-              label="Time window"
-              value={preset}
-              onChange={(p) => (setPreset(p), setNow(new Date()), setReadingsPage(1))}
-              options={[
-                { value: "24h", label: "Last 24 h" },
-                { value: "today", label: "Today" },
-                { value: "yesterday", label: "Yesterday" },
-                { value: "7d", label: "7 days" },
-                { value: "custom", label: "Custom" },
-              ]}
-            />
-          </div>
-          {preset === "custom" ? (
-            <div className="flex flex-wrap items-end gap-2">
-              <FormField id="sn-from" label="From">
-                <Input id="sn-from" type="datetime-local" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
-              </FormField>
-              <FormField id="sn-to" label="To">
-                <Input id="sn-to" type="datetime-local" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
-              </FormField>
-            </div>
-          ) : null}
+          {onAlerts ? (
+            <p className="flex items-start gap-2 rounded-inner bg-powder/60 px-3 py-2 text-[13px] text-ink @3xl:max-w-xl" data-testid="alerts-window-note">
+              <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+              Sensor alerts show how long each sensor stayed active; filter them by date and time below. The time window applies to Sensor vs BMS, Stops, BMS records and Sensor readings only.
+            </p>
+          ) : (
+            <>
+              <div className="space-y-1.5" data-testid="time-window">
+                <p className="text-[13px] font-medium text-ink">Time window (IST)</p>
+                <SegmentedControl
+                  label="Time window"
+                  value={preset}
+                  onChange={(p) => (setPreset(p), setNow(new Date()), setReadingsPage(1))}
+                  options={[
+                    { value: "24h", label: "Last 24 h" },
+                    { value: "today", label: "Today" },
+                    { value: "yesterday", label: "Yesterday" },
+                    { value: "7d", label: "7 days" },
+                    { value: "custom", label: "Custom" },
+                  ]}
+                />
+              </div>
+              {preset === "custom" ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <FormField id="sn-from" label="From">
+                    <Input id="sn-from" type="datetime-local" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
+                  </FormField>
+                  <FormField id="sn-to" label="To">
+                    <Input id="sn-to" type="datetime-local" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
+                  </FormField>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
-        {resolved.error ? (
+        <p className="mt-2 text-xs text-ink-muted tabular" data-testid="vehicle-scope-line">
+          {busLine}
+        </p>
+        {!onAlerts && resolved.error ? (
           <p className="mt-2 text-xs text-danger" role="alert">
             {resolved.error}
           </p>
         ) : null}
       </Panel>
 
-      {deviceId === null ? (
-        <Panel>
-          <EmptyState icon={BusFront} title="Choose a bus" description="Pick a bus to see its passenger counts." />
-        </Panel>
-      ) : (
-        <>
-          <AlcoholCard query={alcoholQ} />
-          {summaryQ.error && !s ? (
-            <Panel className="mb-4">
-              <ApiErrorState error={summaryQ.error} onRetry={summaryQ.refetch} compact />
-            </Panel>
-          ) : (
-            <section aria-label="Passenger summary" className="mb-4 grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-6">
-              <MetricCard index={0} tone="featured" label="Bus capacity" value={s ? formatNumber(s.busCapacity ?? 0) : "—"} sublabel={capacityNote} icon={BusFront} />
-              <MetricCard
-                index={1}
-                tone="muted"
-                accent="sky"
-                label="On board · BMS"
-                value={<span className={cn(s?.actualOverCapacity && "text-danger")}>{showCount(s?.latestActualCount)}</span>}
-                sublabel={s?.actualOverCapacity ? `Over capacity by ${s.actualOverCapacityBy}` : s?.latestActualAt ? formatDateTime(s.latestActualAt) : "No count"}
-                icon={Users}
-              />
-              <MetricCard
-                index={2}
-                tone="muted"
-                accent="lavender"
-                label="On board · sensor"
-                value={<span className={cn(s?.sensorOverCapacity && "text-danger")}>{showCount(s?.latestSensorCount)}</span>}
-                sublabel={s?.sensorOverCapacity ? `Over capacity by ${s.sensorOverCapacityBy}` : s?.latestSensorAt ? formatDateTime(s.latestSensorAt) : "No count"}
-                icon={ScanLine}
-              />
-              <MetricCard index={3} tone="muted" accent="peach" label="Latest difference" value={showSigned(s?.latestDifference)} sublabel={s?.latestComparedAt ? formatDateTime(s.latestComparedAt) : "Sensor − BMS"} icon={Activity} />
-              <MetricCard index={4} tone="muted" accent="mint" label="Match rate" value={showPct(s?.matchRatePct)} sublabel={s ? `${s.matchedStops ?? 0} of ${s.comparedStops ?? 0} compared stops` : undefined} icon={Gauge} />
-              <MetricCard
-                index={5}
-                tone="muted"
-                accent="brand"
-                label="Over-capacity stops"
-                value={s ? formatNumber(s.overCapacityStops ?? 0) : "—"}
-                sublabel={s ? `${s.totalStops ?? 0} stops · max ${showCount(s.maximumActualPassengerCount)} BMS / ${showCount(s.maximumSensorPassengerCount)} sensor` : undefined}
-                icon={TriangleAlert}
-              />
-            </section>
-          )}
-          {s && (s.missingBmsStops || s.missingSensorStops || s.mismatchedStops) ? (
-            <div className="mb-3 flex flex-wrap gap-1.5 text-xs">
-              <StatusBadge size="sm" tone="warning">
-                {s.mismatchedStops ?? 0} mismatched
-              </StatusBadge>
-              <StatusBadge size="sm" tone="neutral">
-                {s.missingBmsStops ?? 0} without BMS
-              </StatusBadge>
-              <StatusBadge size="sm" tone="neutral">
-                {s.missingSensorStops ?? 0} without sensor count
-              </StatusBadge>
-            </div>
-          ) : null}
+      <SensorsTabs<Tab>
+        label="Sensors views"
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: "alerts", label: "Sensor Alerts", icon: BellRing, badge: alertCount, badgeLabel: alertCount === null ? undefined : `${alertCount} sensor alert${alertCount === 1 ? "" : "s"}` },
+          { value: "comparison", label: "Sensor vs BMS" },
+          { value: "stops", label: "Stops" },
+          { value: "bms", label: "BMS records" },
+          { value: "readings", label: "Sensor readings" },
+        ]}
+      />
 
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <SegmentedControl
-              label="View"
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: "comparison", label: "Sensor vs BMS" },
-                { value: "stops", label: "Stops" },
-                { value: "bms", label: "BMS records" },
-                { value: "readings", label: "Sensor readings" },
-              ]}
-            />
+      <div role="tabpanel" id={SENSORS_TABPANEL_ID} aria-labelledby={sensorsTabId(tab)}>
+        {onAlerts ? (
+          <SensorAlertsPanel key={alertsScopeKey ?? alertsScope.kind} scope={alertsScope} query={alertsQ} onRetry={alertsQ.refetch} filters={alertFilters} onFiltersChange={setAlertFilters} />
+        ) : deviceId === null ? (
+          <Panel>
+            <EmptyState icon={BusFront} title="Choose a vehicle" description="Passenger counts, stops, BMS records and sensor readings are per bus. Choose one in the Vehicle list above; Sensor Alerts covers all vehicles." />
+          </Panel>
+        ) : (
+          <>
+            <AlcoholCard query={alcoholQ} />
+            {summaryQ.error && !s ? (
+              <Panel className="mb-4">
+                <ApiErrorState error={summaryQ.error} onRetry={summaryQ.refetch} compact />
+              </Panel>
+            ) : (
+              <section aria-label="Passenger summary" className="mb-4 grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-6">
+                <MetricCard index={0} tone="featured" label="Bus capacity" value={s ? formatNumber(s.busCapacity ?? 0) : "—"} sublabel={capacityNote} icon={BusFront} />
+                <MetricCard
+                  index={1}
+                  tone="muted"
+                  accent="sky"
+                  label="On board · BMS"
+                  value={<span className={cn(s?.actualOverCapacity && "text-danger")}>{showCount(s?.latestActualCount)}</span>}
+                  sublabel={s?.actualOverCapacity ? `Over capacity by ${s.actualOverCapacityBy}` : s?.latestActualAt ? formatDateTime(s.latestActualAt) : "No count"}
+                  icon={Users}
+                />
+                <MetricCard
+                  index={2}
+                  tone="muted"
+                  accent="lavender"
+                  label="On board · sensor"
+                  value={<span className={cn(s?.sensorOverCapacity && "text-danger")}>{showCount(s?.latestSensorCount)}</span>}
+                  sublabel={s?.sensorOverCapacity ? `Over capacity by ${s.sensorOverCapacityBy}` : s?.latestSensorAt ? formatDateTime(s.latestSensorAt) : "No count"}
+                  icon={ScanLine}
+                />
+                <MetricCard index={3} tone="muted" accent="peach" label="Latest difference" value={showSigned(s?.latestDifference)} sublabel={s?.latestComparedAt ? formatDateTime(s.latestComparedAt) : "Sensor − BMS"} icon={Activity} />
+                <MetricCard index={4} tone="muted" accent="mint" label="Match rate" value={showPct(s?.matchRatePct)} sublabel={s ? `${s.matchedStops ?? 0} of ${s.comparedStops ?? 0} compared stops` : undefined} icon={Gauge} />
+                <MetricCard
+                  index={5}
+                  tone="muted"
+                  accent="brand"
+                  label="Over-capacity stops"
+                  value={s ? formatNumber(s.overCapacityStops ?? 0) : "—"}
+                  sublabel={s ? `${s.totalStops ?? 0} stops · max ${showCount(s.maximumActualPassengerCount)} BMS / ${showCount(s.maximumSensorPassengerCount)} sensor` : undefined}
+                  icon={TriangleAlert}
+                />
+              </section>
+            )}
+            {s && (s.missingBmsStops || s.missingSensorStops || s.mismatchedStops) ? (
+              <div className="mb-3 flex flex-wrap gap-1.5 text-xs">
+                <StatusBadge size="sm" tone="warning">
+                  {s.mismatchedStops ?? 0} mismatched
+                </StatusBadge>
+                <StatusBadge size="sm" tone="neutral">
+                  {s.missingBmsStops ?? 0} without BMS
+                </StatusBadge>
+                <StatusBadge size="sm" tone="neutral">
+                  {s.missingSensorStops ?? 0} without sensor count
+                </StatusBadge>
+              </div>
+            ) : null}
+
             {tab === "readings" ? (
-              <FilterBar>
+              <FilterBar className="mb-3">
                 <FilterSelect
                   label="Sensor type"
                   value={sensorSubId}
@@ -375,47 +471,46 @@ export function SensorsPage() {
                 />
               </FilterBar>
             ) : null}
-          </div>
+            {tab === "comparison" && comparisonQ.data?.summary ? <ComparisonStrip summary={comparisonQ.data.summary} /> : null}
+            {truncated ? (
+              <p className="mb-3 rounded-xl bg-warning-soft px-3 py-2 text-xs text-warning" role="status">
+                Only the first 1000 rows are shown — narrow the time window.
+              </p>
+            ) : null}
 
-          {tab === "comparison" && comparisonQ.data?.summary ? <ComparisonStrip summary={comparisonQ.data.summary} /> : null}
-          {truncated ? (
-            <p className="mb-3 rounded-xl bg-warning-soft px-3 py-2 text-xs text-warning" role="status">
-              Only the first 1000 rows are shown — narrow the time window.
-            </p>
-          ) : null}
-
-          <Panel className="overflow-hidden">
-            {activeQ.error && !activeQ.data ? (
-              <ApiErrorState error={activeQ.error} onRetry={activeQ.refetch} />
-            ) : !activeQ.data ? (
-              <LoadingSkeleton variant="table" rows={8} />
-            ) : tab === "comparison" ? (
-              <DataTable caption="Sensor vs BMS by stop" data={comparisonQ.data?.stops ?? []} columns={comparisonColumns} getRowId={(r) => `${r.stopId}-${r.stopVisitTime}`} pageSize={TABLE_PAGE_SIZE} isLoading={comparisonQ.refreshing} emptyTitle="No stops in this window" emptyDescription="Try a wider time window." />
-            ) : tab === "stops" ? (
-              <DataTable caption="Stop-wise passenger counts" data={stopsQ.data?.stops ?? []} columns={stopColumns} getRowId={(r) => `${r.stopId}-${r.stopVisitTime}`} pageSize={TABLE_PAGE_SIZE} isLoading={stopsQ.refreshing} emptyTitle="No stops in this window" emptyDescription="Try a wider time window." />
-            ) : tab === "bms" ? (
-              <DataTable caption="BMS records" data={bmsQ.data?.rows ?? []} columns={bmsColumns} getRowId={(r) => String(r.bmsId ?? `${r.stopId}-${r.stopVisitTime}`)} pageSize={TABLE_PAGE_SIZE} isLoading={bmsQ.refreshing} emptyTitle="No BMS records" emptyDescription="No BMS records in this window." />
-            ) : (
-              <DataTable
-                caption="Sensor readings"
-                data={readingsQ.data?.items ?? []}
-                columns={readingColumns}
-                getRowId={(r) => `${r.sensorId}-${r.timestamp}-${r.sensorSubId}`}
-                pageSize={READINGS_PAGE_SIZE}
-                isLoading={readingsQ.refreshing}
-                serverPagination={{ page: readingsPage, total: readingsQ.data?.total ?? 0, onPageChange: setReadingsPage }}
-                emptyTitle="No readings"
-                emptyDescription="No sensor readings in this window."
-              />
-            )}
-          </Panel>
-        </>
-      )}
+            <Panel className="overflow-hidden">
+              {activeQ.error && !activeQ.data ? (
+                <ApiErrorState error={activeQ.error} onRetry={activeQ.refetch} />
+              ) : !activeQ.data ? (
+                <LoadingSkeleton variant="table" rows={8} />
+              ) : tab === "comparison" ? (
+                <DataTable caption="Sensor vs BMS by stop" data={comparisonQ.data?.stops ?? []} columns={comparisonColumns} getRowId={(r) => `${r.stopId}-${r.stopVisitTime}`} pageSize={TABLE_PAGE_SIZE} isLoading={comparisonQ.refreshing} emptyTitle="No stops in this window" emptyDescription="Try a wider time window." />
+              ) : tab === "stops" ? (
+                <DataTable caption="Stop-wise passenger counts" data={stopsQ.data?.stops ?? []} columns={stopColumns} getRowId={(r) => `${r.stopId}-${r.stopVisitTime}`} pageSize={TABLE_PAGE_SIZE} isLoading={stopsQ.refreshing} emptyTitle="No stops in this window" emptyDescription="Try a wider time window." />
+              ) : tab === "bms" ? (
+                <DataTable caption="BMS records" data={bmsQ.data?.rows ?? []} columns={bmsColumns} getRowId={(r) => String(r.bmsId ?? `${r.stopId}-${r.stopVisitTime}`)} pageSize={TABLE_PAGE_SIZE} isLoading={bmsQ.refreshing} emptyTitle="No BMS records" emptyDescription="No BMS records in this window." />
+              ) : (
+                <DataTable
+                  caption="Sensor readings"
+                  data={readingsQ.data?.items ?? []}
+                  columns={readingColumns}
+                  getRowId={(r) => `${r.sensorId}-${r.timestamp}-${r.sensorSubId}`}
+                  pageSize={READINGS_PAGE_SIZE}
+                  isLoading={readingsQ.refreshing}
+                  serverPagination={{ page: readingsPage, total: readingsQ.data?.total ?? 0, onPageChange: setReadingsPage }}
+                  emptyTitle="No readings"
+                  emptyDescription="No sensor readings in this window."
+                />
+              )}
+            </Panel>
+          </>
+        )}
+      </div>
 
       {adding && deviceId !== null ? (
         <AddReadingPanel
           deviceId={deviceId}
-          busName={bus?.name ?? `Device ${deviceId}`}
+          busName={busLabel}
           types={(typesQ.data?.items ?? []).filter((t) => t.sensorSubId !== undefined).map((t) => ({ id: t.sensorSubId!, name: t.sensorName ?? `Type ${t.sensorSubId}` }))}
           onClose={() => setAdding(false)}
           onSaved={() => (setAdding(false), refreshAll())}
@@ -426,7 +521,7 @@ export function SensorsPage() {
         open={recalculating}
         onOpenChange={setRecalculating}
         tone="default"
-        title={`Recalculate stops for ${bus?.name ?? "this bus"}?`}
+        title={`Recalculate stops for ${bus?.vehicleNumber ?? "this bus"}?`}
         description="Rebuilds stop visits from GPS and raises any new over-capacity or mismatch alerts for the selected window. Running it again changes nothing."
         confirmLabel="Recalculate"
         onConfirm={async () => {

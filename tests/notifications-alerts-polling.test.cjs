@@ -473,7 +473,7 @@ test("severity labels are the documented scale; an unknown value isn't guessed",
 
 test("routine rows show device, terminal, alarm, time, severity and handling status; details use GET /alerts/{id}, not polled", async () => {
   const list = read("components/drive-vision/alerts/incidents.tsx");
-  for (const re of [/deviceLabel\(a\)/, /a\.terminalNo/, /alarmLabel\(a, typeById\)/, /formatLocalDateTime\(a\.alarmTime\)/, /<SeverityBadge severity=\{a\.severity\} \/>/, /<HandlingBadge alert=\{a\} \/>/]) assert.match(list, re);
+  for (const re of [/deviceLabel\(a\)/, /a\.terminalNo/, /alarmLabel\(a, typeById\)/, /formatAlertIstTime\(a\.alarmTime\)/, /alertIstRelative\(a\.alarmTime, shownAt\)/, /<SeverityBadge severity=\{a\.severity\} \/>/, /<HandlingBadge alert=\{a\} \/>/]) assert.match(list, re);
   assert.match(list, /useApiQuery\(id !== null \? `incidents:detail:\$\{id\}` : null, \(\) => alertService\.getAlert\(id!\)\)/, "the detail is a one-off read");
   assert.equal([...list.matchAll(/usePolledQuery\(/g)].length, 2, "the list and the other tab's total only");
   for (const label of ["Evidence", "History", "Assignee", "Driver (server)", "Terminal", "Severity"]) assert.ok(list.includes(label), label);

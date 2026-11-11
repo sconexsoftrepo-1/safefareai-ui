@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { LoadingSkeleton } from "../shared/feedback";
 
-/** /vehicles/new: the "Add vehicle" form lives on the Vehicles & Assets page; open it there. */
+/** /vehicles/new: the "Add vehicle" form lives on the Devices & Assets page; open it there. */
 export function NewVehicle() {
   const router = useRouter();
   useEffect(() => {

@@ -1,13 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+// Plus Jakarta Sans is self-hosted from @fontsource-variable (weights 200–800). It replaces
+// next/font/google, whose Turbopack loader failed to resolve. See docs/plus-jakarta-sans-font-fix-report.md.
+import "@fontsource-variable/plus-jakarta-sans/wght.css";
 import "./globals.css";
-
-const sans = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-plus-jakarta-sans",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: {
@@ -23,7 +18,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={sans.variable}>
+    <html lang="en">
       <body>{children}</body>
     </html>
   );

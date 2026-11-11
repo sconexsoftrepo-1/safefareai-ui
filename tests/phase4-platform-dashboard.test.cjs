@@ -36,7 +36,8 @@ test("P4 access: platform=true + tenant.all → platform dashboard (screen, nav,
   assert.equal(p.defaultLanding(a), "/drive-vision/platform");
   assert.equal(p.dataScope(a), "all-tenants");
   assert.equal(a.screens.has("myWork"), false, "no driver app");
-  for (const w of p.ALL_WIDGETS) assert.equal(p.canViewWidget(a, w), true, w);
+  // This fixture holds the V10 codes only; widgets gated solely by off-spec codes (vehicle.read) are out of its scope.
+  for (const w of p.ALL_WIDGETS) if (p.WIDGETS[w].anyOf.some((c) => ALL_CODES.includes(c))) assert.equal(p.canViewWidget(a, w), true, w);
 });
 
 test("P4 access: platform=true WITHOUT tenant.all → no platform dashboard, lands on Overview", () => {

@@ -347,7 +347,7 @@ function BrowserPanel() {
       <div className="grid gap-x-8 px-5 pb-2 md:grid-cols-2">
         <div className="divide-y divide-line">
           <ToggleRow id="d-motion" label="Reduce motion" description="Turns off transitions (the OS setting is also respected)" checked={prefs.reduceMotion} onChange={(v) => updatePreferences({ reduceMotion: v })} />
-          <ToggleRow id="d-assistant" label="Show AI assistant" description="Iris launcher (admins only)" checked={prefs.assistantEnabled} onChange={(v) => updatePreferences({ assistantEnabled: v })} />
+          <ToggleRow id="d-assistant" label="Show AI assistant" description="Iris launcher" checked={prefs.assistantEnabled} onChange={(v) => updatePreferences({ assistantEnabled: v })} />
         </div>
         <div className="divide-y divide-line">
           {(Object.keys(DASHBOARD_MODULE_LABELS) as DashboardModule[]).map((m) => (

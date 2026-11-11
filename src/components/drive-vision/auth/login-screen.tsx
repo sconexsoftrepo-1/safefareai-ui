@@ -358,11 +358,6 @@ export function LoginScreen() {
               Secure Access
               <span className="h-px flex-1 bg-slate-200" aria-hidden />
             </div>
-            {API_DEBUG ? (
-              <p className={cn("mt-2 text-center text-[12px] text-slate-400 short:mt-1", !API_BASE_URL && "text-red-600")}>
-                {API_BASE_URL ? `API: ${API_BASE_URL}` : "NEXT_PUBLIC_API_BASE_URL is not set"}
-              </p>
-            ) : null}
           </div>
         </div>
       </div>

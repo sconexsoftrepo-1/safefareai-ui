@@ -1,8 +1,52 @@
-import type { SensorReadingInput, SensorWindowQuery } from "@/features/drive-vision/api/types";
+import type { SensorReadingInput, SensorWindowQuery, VehicleRow } from "@/features/drive-vision/api/types";
 import type { Tone } from "../shared/status-badge";
 import { dateToIstInput, istInputToDate } from "../trips/track-model";
 
 /** Pure helpers for the Sensors screen (docs/contracts/passenger-counting-api.txt). Unit-tested. */
+
+/**
+ * A vehicle in the Sensors picker (GET /api/v1/vehicles?assigned=true). Its identifiers are never interchanged:
+ * - vehicleId     — the Safe-Fare vehicle id (picker value, ?vehicle= deep link);
+ * - deviceId      — device.id, the {id} of /devices/{id}/sensors/readings, /bms, /stops, /stops/comparison, …;
+ * - vehicleNumber — the label, and Sensor Alerts' vehicle_number.
+ */
+export interface SensorVehicle {
+  vehicleId: number;
+  vehicleNumber: string;
+  deviceId: number;
+  deviceName: string | null;
+  terminalNo: string | null;
+  vehicleType: string | null;
+}
+
+const nonEmpty = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+const posInt = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v > 0 ? v : null);
+
+/**
+ * Picker entries from GET /vehicles?assigned=true, sorted by vehicle number. A row without a vehicle id, number or
+ * device id (or one the server marks deviceAssigned: false) is dropped: it has no device to read sensors from.
+ */
+export function sensorVehicles(rows: readonly VehicleRow[] | undefined): SensorVehicle[] {
+  const out: SensorVehicle[] = [];
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const vehicleId = posInt(r.id);
+    const deviceId = posInt(r.device?.id);
+    const vehicleNumber = nonEmpty(r.vehicleNumber);
+    if (vehicleId === null || deviceId === null || !vehicleNumber || r.deviceAssigned === false) continue;
+    out.push({ vehicleId, vehicleNumber, deviceId, deviceName: nonEmpty(r.device?.name), terminalNo: nonEmpty(r.device?.terminalNo), vehicleType: nonEmpty(r.vehicleType) });
+  }
+  return out.sort((a, b) => a.vehicleNumber.localeCompare(b.vehicleNumber));
+}
+
+/**
+ * The vehicle shown: the one chosen (by vehicle id), else the deep-linked one (?vehicle= vehicle id, or the legacy
+ * ?device= device id), else the first, so the screen opens with data. null when there is none.
+ */
+export function pickSensorVehicle(list: readonly SensorVehicle[], chosenVehicleId: number | null, link: { vehicleId?: number | null; deviceId?: number | null } = {}): SensorVehicle | null {
+  if (chosenVehicleId !== null) return list.find((v) => v.vehicleId === chosenVehicleId) ?? null;
+  const linked = list.find((v) => (link.vehicleId != null && v.vehicleId === link.vehicleId) || (link.deviceId != null && v.deviceId === link.deviceId));
+  return linked ?? list[0] ?? null;
+}
 
 export const IR_SENSOR_SUB_ID = 3;
 /** Alcohol sensor (docs/contracts/alcohol-detection-api.txt): sensorData "1" = detected, "0" = not detected. */

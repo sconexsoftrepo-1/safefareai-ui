@@ -10,11 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { fleetService } from "@/features/drive-vision/api/fleet-service";
 import type { DeviceDto, DeviceModelDto, GroupDto, ObjectTypeDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
+import { useAccess } from "@/features/drive-vision/access/use-access";
+import { canViewWidget } from "@/features/drive-vision/access/access-policy";
 import { FormField, fieldA11y } from "../shared/form-field";
 import { SlideOverPanel } from "../shared/slide-over-panel";
 import { toast } from "../shared/toast-provider";
 import { EDITABLE_FIELDS, MAX_LENGTH, type EditableField } from "./device-edit-model";
 import { EMPTY_CREATE_FORM, buildCreate, describeCreateError, protocolChoices, validateCreate, type CreateField, type CreateForm } from "./device-create-model";
+import { holderLabel, needsReassignConfirm, type VehicleOption } from "./device-vehicle-model";
+import { ReassignConfirmDialog, VehicleAssignField, useVehicleChoices } from "./vehicle-assign-field";
 
 const LABELS: Record<EditableField, string> = {
   name: "Device name",
@@ -36,6 +40,9 @@ const DATES = new Set<EditableField>(["insuranceDueAt", "maintenanceDueAt"]);
 /**
  * Register a device (POST /api/v1/devices). Opened only when the resolver allows `devices.create` (device.create,
  * and a selected tenant for the Safe-Fare Admin). Nothing is reported as created until the server answers.
+ * Assign Vehicle (optional; vehicle.read): GET /vehicles lists assigned and unassigned vehicles; the chosen vehicle's
+ * id goes in the POST as `vehicleId` with `unlinkVehicle: false`. Picking an assigned vehicle asks for confirmation
+ * first; the server decides whether it may move.
  */
 export function DeviceCreatePanel({ groups, models, onClose, onCreated, onUncertain }: { groups: readonly GroupDto[]; models: readonly DeviceModelDto[] | undefined; onClose: () => void; onCreated: (d: DeviceDto) => void; onUncertain: () => void }) {
   const protocolsQ = useApiQuery("ref:protocols", () => fleetService.protocols());
@@ -47,6 +54,11 @@ export function DeviceCreatePanel({ groups, models, onClose, onCreated, onUncert
   // Set when the server asks to confirm a chargeable registration; the user must tick the box to resend.
   const [chargeNotice, setChargeNotice] = useState<string | null>(null);
   const [chargeAccepted, setChargeAccepted] = useState(false);
+  const canPickVehicle = canViewWidget(useAccess(), "devices.vehicleChoices");
+  const vehicles = useVehicleChoices(canPickVehicle);
+  // An assigned vehicle the user picked, waiting for "Confirm Reassignment" (nothing is chosen until then).
+  const [pendingVehicle, setPendingVehicle] = useState<VehicleOption | null>(null);
+  const chosenVehicle = vehicles.options.find((o) => String(o.vehicleId) === form.vehicleId);
 
   const model = models?.find((m) => String(m.id) === form.modelId);
   const protocols = useMemo(() => protocolChoices(model, protocolsQ.data?.items ?? []), [model, protocolsQ.data]);
@@ -58,6 +70,12 @@ export function DeviceCreatePanel({ groups, models, onClose, onCreated, onUncert
     setChargeNotice(null);
     setChargeAccepted(false);
   };
+
+  function pickVehicle(o: VehicleOption | null) {
+    if (o && needsReassignConfirm(o)) setPendingVehicle(o);
+    else set({ vehicleId: o ? String(o.vehicleId) : "" });
+    if (errors.vehicleId) setErrors((p) => ({ ...p, vehicleId: undefined }));
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +91,8 @@ export function DeviceCreatePanel({ groups, models, onClose, onCreated, onUncert
     setSaving(true);
     try {
       const created = await fleetService.createDevice(buildCreate(form, models, chargeNotice !== null && chargeAccepted));
-      toast.success(`${created.name ?? form.name.trim()} registered`, { description: created.terminalNo ?? form.terminalNo.trim() });
+      const terminal = created.terminalNo ?? form.terminalNo.trim();
+      toast.success(`${created.name ?? form.name.trim()} registered`, { description: chosenVehicle ? `${terminal} · assigned to ${chosenVehicle.vehicleNumber}` : terminal });
       onCreated(created);
     } catch (err) {
       const outcome = describeCreateError(err);
@@ -177,6 +196,18 @@ export function DeviceCreatePanel({ groups, models, onClose, onCreated, onUncert
           <FormField id="dc-cameraCount" label="Cameras" error={errors.cameraCount} required>
             <Input {...fieldA11y("dc-cameraCount", errors.cameraCount)} type="number" min={0} max={16} inputMode="numeric" value={form.cameraCount} onChange={(e) => set({ cameraCount: e.target.value })} disabled={saving} />
           </FormField>
+          <VehicleAssignField
+            id="dc-vehicleId"
+            label="Assign Vehicle"
+            permitted={canPickVehicle}
+            choices={vehicles}
+            value={form.vehicleId}
+            onPick={pickVehicle}
+            allowNone
+            disabled={saving}
+            error={errors.vehicleId}
+            hint={chosenVehicle && needsReassignConfirm(chosenVehicle) ? `Currently assigned to ${holderLabel(chosenVehicle)}. The server decides whether it can move to this device.` : "Optional. The device can be registered without a vehicle."}
+          />
           {EDITABLE_FIELDS.slice(1, 7).map(text)}
         </div>
         <fieldset className="space-y-3">
@@ -197,6 +228,15 @@ export function DeviceCreatePanel({ groups, models, onClose, onCreated, onUncert
           </div>
         ) : null}
       </form>
+      <ReassignConfirmDialog
+        option={pendingVehicle}
+        target="adding"
+        onCancel={() => setPendingVehicle(null)}
+        onConfirm={() => {
+          if (pendingVehicle) set({ vehicleId: String(pendingVehicle.vehicleId) });
+          setPendingVehicle(null);
+        }}
+      />
     </SlideOverPanel>
   );
 }

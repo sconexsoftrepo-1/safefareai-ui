@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { VehiclesPage } from "@/components/drive-vision/vehicles/vehicles-page";
 import { LoadingSkeleton } from "@/components/drive-vision/shared/feedback";
 
-export const metadata: Metadata = { title: "Vehicles & Assets" };
+export const metadata: Metadata = { title: "Devices & Assets" };
 
 export default function Page() {
   return (

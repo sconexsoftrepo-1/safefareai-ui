@@ -10,6 +10,11 @@
 /* The app has one light theme. Without this, dark: utilities in the shared UI components follow the OS setting. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Plus Jakarta Sans Variable is loaded locally by @fontsource-variable/plus-jakarta-sans (imported in app/layout.tsx). */
+:root {
+  --font-plus-jakarta-sans: "Plus Jakarta Sans Variable";
+}
+
 @theme inline {
   --font-sans: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;

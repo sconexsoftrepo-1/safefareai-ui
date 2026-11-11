@@ -1,5 +1,6 @@
 "use client";
 
+import { alertIstRelative, formatAlertIstTime } from "@/features/drive-vision/utils/alert-ist-time";
 import { useEffect, useState, type RefObject } from "react";
 import { CheckCheck, CircleSlash, FileVideo, MessageSquarePlus, RotateCcw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { RESOLVE_OUTCOMES, type AlarmTypeDto, type AlertDetailDto, type AlertRow
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { usePolledQuery } from "@/features/drive-vision/hooks/use-polled-query";
 import { canAccessScreen } from "@/features/drive-vision/access/access-policy";
-import { formatLocalDateTime, formatRelative } from "@/features/drive-vision/utils/format";
+import { formatLocalDateTime } from "@/features/drive-vision/utils/format";
 import { DataTable, type DataTableColumn } from "../shared/data-table";
 import { LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState } from "../shared/api-states";
@@ -127,8 +128,8 @@ export function IncidentsList({
       cell: (a) =>
         a.alarmTime ? (
           <div>
-            <p className="whitespace-nowrap tabular">{formatLocalDateTime(a.alarmTime)}</p>
-            <p className="text-xs text-ink-muted">{formatRelative(a.alarmTime, shownAt)}</p>
+            <p className="whitespace-nowrap tabular">{formatAlertIstTime(a.alarmTime)}</p>
+            <p className="text-xs text-ink-muted">{alertIstRelative(a.alarmTime, shownAt)}</p>
           </div>
         ) : (
           "—"
@@ -255,7 +256,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
         open={id !== null}
         onOpenChange={(o) => !o && (onClose(), setUpdated(null))}
         title={alert ? alarmLabel(alert, typeById) : id !== null ? `Alert ${id}` : ""}
-        description={alert ? `${deviceLabel(alert)}${alert.alarmTime ? ` · ${formatLocalDateTime(alert.alarmTime)}` : ""}` : undefined}
+        description={alert ? `${deviceLabel(alert)}${alert.alarmTime ? ` · ${formatAlertIstTime(alert.alarmTime)}` : ""}` : undefined}
         footer={
           alert && canHandle ? (
             <div className="flex flex-wrap justify-end gap-2">
@@ -298,7 +299,7 @@ export function AlertWorkflowDrawer({ id, typeById, onClose, onChanged }: { id: 
                   <span className="font-mono text-xs">{alert.terminalNo}</span>
                 </DetailRow>
               ) : null}
-              <DetailRow label="Alarm time">{alert.alarmTime ? formatLocalDateTime(alert.alarmTime) : "—"}</DetailRow>
+              <DetailRow label="Alarm time">{alert.alarmTime ? formatAlertIstTime(alert.alarmTime) : "—"}</DetailRow>
               <DetailRow label="Driver (server)">
                 <span title="As reported by the server for this alert. The app never derives an alarm's driver from the vehicle's current assignment.">{alert.driverName ?? "—"}</span>
               </DetailRow>

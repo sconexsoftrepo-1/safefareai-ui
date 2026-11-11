@@ -1,47 +1,53 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { ArrowUp, Bell, CalendarClock, ChevronRight, CircleAlert, IdCard, Lock, RotateCcw, ShieldAlert, Sparkles, Truck, UsersRound, WifiOff, X, type LucideIcon } from "lucide-react";
+import { ArrowUp, Bell, CircleAlert, KeyRound, Lock, MessageSquarePlus, RotateCcw, ShieldCheck, Truck, UsersRound, Video, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { assistantService } from "@/features/drive-vision/api/assistant-service";
-import { apiErrorMeta, describeApiError } from "@/features/drive-vision/api/errors";
-import type { AnswerDto, AssistantIntent } from "@/features/drive-vision/api/types";
+import { apiErrorMeta } from "@/features/drive-vision/api/errors";
+import { IRIS_MAX_MESSAGE, describeIrisError, irisChatService, isIrisOutage } from "@/features/drive-vision/api/iris-chat-service";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
-import { usePreferences } from "@/features/drive-vision/hooks/use-preferences";
 import { useMediaQuery } from "@/features/drive-vision/hooks/use-media-query";
-import { useAccess } from "@/features/drive-vision/access/use-access";
-import { canAccessPath } from "@/features/drive-vision/access/access-policy";
 import { useShell } from "../app-shell/shell-context";
 import { EASE_OUT, transitions } from "../shared/motion";
+import { formatIrisTime, initialIrisChat, irisChatReducer, type IrisMessage } from "./iris-chat-model";
+import { IrisMarkdown } from "./iris-markdown";
 
-interface Message {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  answer?: AnswerDto;
-  /** The request failed: `text` is the error, never a made-up answer. */
-  failed?: boolean;
-  meta?: string | null;
+/** Starters only: each one sends a real request, and the answer comes from the server. */
+const SUGGESTED_QUESTIONS: { text: string; icon: LucideIcon }[] = [
+  { text: "What is a safety score?", icon: ShieldCheck },
+  { text: "How do I add a vehicle?", icon: Truck },
+  { text: "How do I assign a driver?", icon: UsersRound },
+  { text: "How can I view live video?", icon: Video },
+  { text: "How do I manage driver permissions?", icon: KeyRound },
+  { text: "How do I view alerts and events?", icon: Bell },
+];
+
+const STATUS_DOT = { checking: "bg-ink-subtle", online: "bg-success", offline: "bg-danger" };
+const STATUS_LABEL = { checking: "Checking connection…", online: "Connected", offline: "Unavailable" };
+
+function MessageTime({ at, onDark = false }: { at: number; onDark?: boolean }) {
+  const date = new Date(at);
+  return (
+    <time dateTime={date.toISOString()} title={date.toLocaleString()} className={cn("mt-1 block text-[10.5px]", onDark ? "text-right text-white/70" : "text-ink-subtle")}>
+      {formatIrisTime(at)}
+    </time>
+  );
 }
 
-/** Max question length (AskRequest.question). */
-const MAX_QUESTION = 500;
-
-const INTENT_META: Record<AssistantIntent, { icon: LucideIcon; link?: { label: string; href: string } }> = {
-  LICENCE_EXPIRY: { icon: IdCard, link: { label: "Open licence expiries", href: "/drive-vision/drivers?licence=expiring" } },
-  RISKY_DRIVERS: { icon: ShieldAlert, link: { label: "Open Safety Analytics", href: "/drive-vision/safety" } },
-  DRIVER_AVAILABILITY: { icon: UsersRound, link: { label: "Open availability", href: "/drive-vision/workforce?tab=availability" } },
-  ACTIVE_TRIPS: { icon: Truck, link: { label: "Open Trips", href: "/drive-vision/trips" } },
-  OPEN_ALERTS: { icon: Bell, link: { label: "Open incidents", href: "/drive-vision/alerts?kind=incidents" } },
-  DEVICE_HEALTH: { icon: WifiOff, link: { label: "Open Vehicles", href: "/drive-vision/vehicles" } },
-  FLEET_STATUS: { icon: CalendarClock, link: { label: "Open Live Monitoring", href: "/drive-vision/monitoring" } },
-  OVERVIEW: { icon: Sparkles, link: { label: "Open Fleet Overview", href: "/drive-vision/overview" } },
-  HELP: { icon: Sparkles },
-};
+function MessageBubble({ message }: { message: IrisMessage }) {
+  const mine = message.role === "user";
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={transitions.fast} className={cn("flex", mine ? "justify-end" : "justify-start")} data-role={message.role}>
+      <div className={cn("max-w-[92%] min-w-0 rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed", mine ? "rounded-br-md bg-ink text-white" : "rounded-bl-md bg-surface-muted text-ink")}>
+        {mine ? <p className="break-words whitespace-pre-wrap">{message.text}</p> : <IrisMarkdown text={message.text} />}
+        <MessageTime at={message.at} onDark={mine} />
+      </div>
+    </motion.div>
+  );
+}
 
 /** Soft lavender → coral orb with two smiling eyes (brand-integrated, no perpetual animation). */
 function AssistantOrb({ size = 30, glow = false }: { size?: number; glow?: boolean }) {
@@ -65,72 +71,59 @@ function AssistantOrb({ size = 30, glow = false }: { size?: number; glow?: boole
 }
 
 /**
- * Iris — the fleet assistant on GET /assistant/prompts and POST /assistant/ask. Answers are the
- * server's; a failed request is shown as an error, never replaced by a local answer. When the
- * server marks an answer `simulated`, it is labelled so. Docked beside the page on wide screens
- * (non-modal; the page reflows), a modal sheet with overlay on smaller screens.
- * The launcher stays mounted so focus returns to it on close.
+ * Iris — application help from the Iris chat service (POST /api/chat/message on the Python API, called directly from
+ * the browser: api/iris-chat-service.ts, api/python-client.ts). Answers are the server's; a failed request is shown as an error with Retry, never
+ * replaced by a local answer. Docked beside the page on wide screens (non-modal; the page reflows), a modal
+ * sheet with overlay on smaller screens. The launcher stays mounted so focus returns to it on close.
  */
 export function DriveVisionAIAssistant() {
   const { assistantOpen: open, setAssistantOpen: setOpen, pendingQuestion, clearPendingQuestion } = useShell();
-  const prefs = usePreferences();
   const wide = useMediaQuery("(min-width: 1280px)");
-  const firstName = prefs.displayName.split(" ").slice(-1)[0] || "there";
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [chat, dispatch] = useReducer(irisChatReducer, initialIrisChat);
   const [draft, setDraft] = useState("");
-  const [thinking, setThinking] = useState(false);
-  const nextId = useRef(1);
   const inflight = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const pathname = usePathname();
-  const access = useAccess();
   // Map/video workspaces keep their bottom-right controls clear; Iris opens from the header there.
   const hideLauncherOnDesktop = /\/drive-vision\/(monitoring|video|trips|geofences)/.test(pathname);
-  const promptsQ = useApiQuery(open ? "assistant:prompts" : null, () => assistantService.prompts());
-  const prompts = (promptsQ.data?.items ?? [])
-    .filter((p): p is typeof p & { text: string } => typeof p.text === "string" && p.text.trim() !== "")
-    .map((p) => ({ text: p.text, icon: (p.intent && INTENT_META[p.intent]?.icon) || Sparkles }));
-  const linkFor = (intent?: AssistantIntent) => {
-    const link = intent ? INTENT_META[intent]?.link : undefined;
-    return link && canAccessPath(access, link.href) ? link : null;
-  };
+  const healthQ = useApiQuery(open ? "iris:health" : null, () => irisChatService.health());
+  const status = chat.reachable === true || (chat.reachable === null && healthQ.data === true) ? "online" : chat.reachable === false || healthQ.data === false || healthQ.error ? "offline" : "checking";
 
   useEffect(() => () => inflight.current?.abort(), []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, thinking]);
+  }, [chat.messages, chat.pending, chat.failure]);
 
-  async function ask(question: string) {
-    const text = question.trim().slice(0, MAX_QUESTION);
-    if (!text || thinking) return;
-    setMessages((m) => [...m, { id: nextId.current++, role: "user", text }]);
-    setDraft("");
-    setThinking(true);
+  /** Sends one request. `inflight` is set synchronously, so a second Enter before the re-render is ignored. */
+  async function deliver(question: string) {
     const controller = new AbortController();
     inflight.current = controller;
     try {
-      const answer = await assistantService.ask({ question: text }, controller.signal);
-      if (controller.signal.aborted) return;
-      const reply = answer.answer?.trim();
-      setMessages((m) => [
-        ...m,
-        reply
-          ? { id: nextId.current++, role: "assistant", text: reply, answer }
-          : { id: nextId.current++, role: "assistant", text: "The server returned no answer text for this question.", answer, failed: true },
-      ]);
+      const reply = await irisChatService.send({ message: question, conversationUuid: chat.conversationUuid }, controller.signal);
+      if (!controller.signal.aborted) dispatch({ type: "reply", reply });
     } catch (err) {
-      if (controller.signal.aborted) return;
-      setMessages((m) => [...m, { id: nextId.current++, role: "assistant", text: `Couldn't get an answer: ${describeApiError(err)}`, failed: true, meta: apiErrorMeta(err) }]);
+      if (!controller.signal.aborted) dispatch({ type: "fail", failure: { question, text: describeIrisError(err), meta: apiErrorMeta(err) }, reachable: !isIrisOutage(err) });
     } finally {
-      if (inflight.current === controller) {
-        inflight.current = null;
-        setThinking(false);
-      }
+      if (inflight.current === controller) inflight.current = null;
     }
+  }
+
+  function ask(question: string) {
+    const text = question.trim().slice(0, IRIS_MAX_MESSAGE);
+    if (!text || inflight.current) return;
+    dispatch({ type: "send", text, at: Date.now() });
+    setDraft("");
+    deliver(text);
+  }
+
+  function retry() {
+    if (!chat.failure || inflight.current) return;
+    dispatch({ type: "retry" });
+    deliver(chat.failure.question);
   }
 
   // Contextual "Ask Iris about it" questions are sent once the panel has opened.
@@ -148,14 +141,14 @@ export function DriveVisionAIAssistant() {
     return () => clearTimeout(t);
   }, [open, pendingQuestion, clearPendingQuestion]);
 
+  /** New chat: the next message goes without a conversation_uuid, so the server starts a new conversation. */
   function reset() {
     inflight.current?.abort();
     inflight.current = null;
-    setThinking(false);
-    setMessages([]);
+    dispatch({ type: "reset" });
   }
 
-  const empty = messages.length === 0 && !thinking;
+  const empty = chat.messages.length === 0 && !chat.pending;
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={setOpen} modal={!wide}>
@@ -234,11 +227,11 @@ export function DriveVisionAIAssistant() {
                   <div className="min-w-0 flex-1">
                     <DialogPrimitive.Title className="text-sm font-semibold text-ink">Iris AI</DialogPrimitive.Title>
                     <DialogPrimitive.Description className="flex items-center gap-1.5 text-[11.5px] text-ink-muted">
-                      <span className="size-1.5 rounded-full bg-success" aria-hidden /> Answers from the SafeFare server
+                      <span className={cn("size-1.5 rounded-full", STATUS_DOT[status])} aria-hidden /> {STATUS_LABEL[status]}
                     </DialogPrimitive.Description>
                   </div>
-                  <button type="button" onClick={reset} disabled={empty} className="grid size-8 place-items-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-surface-sunken hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none active:scale-95" aria-label="Clear conversation">
-                    <RotateCcw className="size-4" />
+                  <button type="button" onClick={reset} disabled={empty} className="grid size-8 place-items-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-surface-sunken hover:text-ink disabled:pointer-events-none disabled:opacity-40 focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none active:scale-95" aria-label="New chat" title="New chat">
+                    <MessageSquarePlus className="size-4" />
                   </button>
                   <DialogPrimitive.Close asChild>
                     <button type="button" className="grid size-8 place-items-center rounded-full text-ink-muted transition-colors duration-150 hover:bg-surface-muted hover:text-ink focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none active:scale-95" aria-label="Close assistant">
@@ -252,18 +245,17 @@ export function DriveVisionAIAssistant() {
                     {empty ? (
                       <motion.div key="hero" className="flex flex-col items-center pt-8 text-center" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={transitions.base}>
                         <AssistantOrb size={68} glow />
-                        <p className="mt-6 text-lg font-semibold tracking-tight text-ink">
-                          Hi {firstName}, I&apos;m <span className="text-ai-ink">Iris</span>
+                        <p className="mt-5 text-lg font-semibold tracking-tight text-ink">
+                          Hello! I&apos;m <span className="text-ai-ink">Iris</span>
                         </p>
-                        <p className="mt-1.5 max-w-[290px] text-[13px] leading-relaxed text-ink-muted">Ask about the fleet. Your question is sent to the SafeFare server, which answers from your fleet data.</p>
-                        {promptsQ.error ? <p className="mt-4 text-xs text-ink-muted">Suggested prompts unavailable: {describeApiError(promptsQ.error)}</p> : null}
+                        <p className="mt-1.5 max-w-[290px] text-[13px] leading-relaxed text-ink-muted">Your Safe-Fare AI assistant. Ask me anything about using the application.</p>
                         <ul className="mt-6 grid w-full grid-cols-2 gap-2 text-left">
-                          {prompts.map((p) => (
+                          {SUGGESTED_QUESTIONS.map((p) => (
                             <li key={p.text}>
                               <button
                                 type="button"
                                 onClick={() => ask(p.text)}
-                                className="flex h-full w-full items-start gap-2.5 rounded-2xl bg-surface-muted/80 p-3 text-[12px] leading-snug text-ink transition-[background-color,transform] duration-150 ease-dv hover:-translate-y-px hover:bg-lavender/70 focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none"
+                                className="flex h-full w-full items-start gap-2.5 rounded-2xl bg-surface-muted/80 p-3 text-[12px] leading-snug text-ink transition-[background-color,transform] duration-150 ease-dv hover:-translate-y-px hover:bg-powder/70 focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none"
                               >
                                 <span className="grid size-6 shrink-0 place-items-center rounded-full bg-surface text-brand-deep">
                                   <p.icon className="size-3.5" aria-hidden />
@@ -276,41 +268,28 @@ export function DriveVisionAIAssistant() {
                       </motion.div>
                     ) : (
                       <motion.div key="thread" className="space-y-3 pt-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={transitions.fast}>
-                        {messages.map((m) => (
-                          <motion.div key={m.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={transitions.fast} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                            <div className={cn("max-w-[88%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed", m.role === "user" ? "rounded-br-md bg-ink text-white" : m.failed ? "rounded-bl-md bg-danger-soft text-danger" : "rounded-bl-md bg-surface-muted text-ink")}>
-                              {m.failed ? (
-                                <p className="flex items-start gap-1.5">
-                                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {m.text}
-                                </p>
-                              ) : (
-                                <p className="whitespace-pre-line">{m.text}</p>
-                              )}
-                              {m.meta ? <p className="mt-1 font-mono text-[10.5px] opacity-75">{m.meta}</p> : null}
-                              {m.answer?.simulated ? <p className="mt-1.5 text-[11px] font-medium text-warning">The server marked this answer as simulated.</p> : null}
-                              {m.answer && !m.failed && linkFor(m.answer.intent) ? (
-                                <Link href={linkFor(m.answer.intent)!.href} onClick={() => !wide && setOpen(false)} className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-ai-ink hover:underline">
-                                  {linkFor(m.answer.intent)!.label} <ChevronRight className="size-3.5" />
-                                </Link>
-                              ) : null}
-                              {m.answer?.suggestions && m.answer.suggestions.length > 0 ? (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {m.answer.suggestions.slice(0, 4).map((s) => (
-                                    <button key={s} type="button" onClick={() => ask(s)} disabled={thinking} className="rounded-full border border-line bg-surface px-2.5 py-1 text-[11.5px] text-ink hover:bg-lavender/60 disabled:opacity-45">
-                                      {s}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </motion.div>
+                        {chat.messages.map((m) => (
+                          <MessageBubble key={m.id} message={m} />
                         ))}
-                        {thinking ? (
-                          <div className="flex justify-start" aria-label="Iris is thinking">
+                        {chat.pending ? (
+                          <div className="flex justify-start" role="status" aria-label="Iris is thinking">
                             <div className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-surface-muted px-3.5 py-3">
                               {[0, 1, 2].map((i) => (
                                 <motion.span key={i} className="size-1.5 rounded-full bg-ink-muted" animate={{ opacity: [0.3, 1, 0.3] }} transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15 }} />
                               ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {chat.failure ? (
+                          <div className="flex justify-start" role="alert">
+                            <div className="max-w-[92%] min-w-0 rounded-2xl rounded-bl-md bg-danger-soft px-3.5 py-2.5 text-[13px] leading-relaxed text-danger">
+                              <p className="flex items-start gap-1.5">
+                                <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden /> {chat.failure.text}
+                              </p>
+                              {chat.failure.meta ? <p className="mt-1 font-mono text-[10.5px] opacity-75">{chat.failure.meta}</p> : null}
+                              <button type="button" onClick={retry} className="mt-2 inline-flex items-center gap-1 rounded-full border border-danger/30 bg-surface px-2.5 py-1 text-[12px] font-semibold text-danger transition-colors duration-150 hover:bg-danger-soft focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none">
+                                <RotateCcw className="size-3" aria-hidden /> Retry
+                              </button>
                             </div>
                           </div>
                         ) : null}
@@ -320,43 +299,35 @@ export function DriveVisionAIAssistant() {
                 </div>
 
                 <div className="px-4 pt-2 pb-3">
-                  {!empty ? (
-                    <div className="scrollbar-thin -mx-1 mb-2.5 flex gap-1.5 overflow-x-auto px-1 pb-1">
-                      {prompts.map((p) => (
-                        <button
-                          key={p.text}
-                          type="button"
-                          onClick={() => ask(p.text)}
-                          disabled={thinking}
-                          className="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] whitespace-nowrap text-ink transition-colors duration-150 hover:border-line-strong hover:bg-lavender/60 focus-visible:ring-[3px] focus-visible:ring-brand/30 focus-visible:outline-none active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45"
-                        >
-                          {p.text}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       ask(draft);
                     }}
-                    className="flex items-center gap-2 rounded-full border border-line bg-surface py-1 pr-1 pl-4 transition-[border-color,box-shadow] duration-150 focus-within:border-brand/50 focus-within:ring-[3px] focus-within:ring-brand/15"
+                    className="flex items-end gap-2 rounded-[22px] border border-line bg-surface py-1 pr-1 pl-4 transition-[border-color,box-shadow] duration-150 focus-within:border-brand/50 focus-within:ring-[3px] focus-within:ring-brand/15"
                   >
-                    <input
+                    <textarea
                       ref={inputRef}
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Ask about vehicles, alerts, trips…"
-                      className="h-9 min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-subtle"
+                      onKeyDown={(e) => {
+                        // isComposing: Enter that confirms IME text doesn't send.
+                        if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                        e.preventDefault();
+                        ask(draft);
+                      }}
+                      rows={1}
+                      placeholder="Ask about using SafeFare…"
+                      className="field-sizing-content scrollbar-thin max-h-32 min-h-9 min-w-0 flex-1 resize-none bg-transparent py-2 text-[13px] leading-5 text-ink outline-none placeholder:text-ink-subtle"
                       aria-label="Message Iris"
-                      maxLength={MAX_QUESTION}
+                      maxLength={IRIS_MAX_MESSAGE}
                     />
-                    <button type="submit" disabled={!draft.trim() || thinking} className="grid size-9 shrink-0 place-items-center rounded-full bg-ink text-white transition-[opacity,transform,background-color] duration-150 ease-dv hover:bg-ink/85 focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none active:scale-95 active:duration-75 disabled:pointer-events-none disabled:opacity-30" aria-label="Send">
+                    <button type="submit" disabled={!draft.trim() || chat.pending} className="grid size-9 shrink-0 place-items-center rounded-full bg-brand text-white transition-[opacity,transform,background-color] duration-150 ease-dv hover:bg-brand-hover focus-visible:ring-[3px] focus-visible:ring-brand/35 focus-visible:outline-none active:scale-95 active:duration-75 disabled:pointer-events-none disabled:opacity-30" aria-label="Send">
                       <ArrowUp className="size-4" />
                     </button>
                   </form>
                   <p className="mt-2 flex items-center justify-center gap-1 text-[10.5px] text-ink-subtle">
-                    <Lock className="size-3" aria-hidden /> Questions are sent to the SafeFare server (POST /assistant/ask).
+                    <Lock className="size-3" aria-hidden /> Don&apos;t enter passwords or private information.
                   </p>
                 </div>
               </motion.aside>
