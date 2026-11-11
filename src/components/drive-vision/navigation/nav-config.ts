@@ -37,6 +37,8 @@ export interface NavItem {
   description: string;
   /** Header subtitle shown under the page title. */
   subtitle: string;
+  /** Page heading when it should differ from the (short) navigation label. */
+  title?: string;
 }
 
 export interface NavGroup {
@@ -76,13 +78,13 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Trips & Tracking", screen: "trips", href: SCREEN_ROUTES.trips, icon: Route, description: "Trip history and route playback", subtitle: "Trip history with route playback, stops and events" },
       { label: "Reports", screen: "reports", href: SCREEN_ROUTES.reports, icon: FileChartColumn, description: "Mileage, driving, parking and media reports", subtitle: "Mileage, driving, parking and media reports by device and date" },
       { label: "Vehicles", screen: "vehicleRegistry", href: SCREEN_ROUTES.vehicleRegistry, icon: BusFront, description: "Vehicle registry: numbers, make, model and fitted device", subtitle: "Registered vehicles and the tracking device fitted in each" },
-      { label: "Sensors", screen: "sensors", href: SCREEN_ROUTES.sensors, icon: Activity, description: "Passenger counts: IR sensor vs BMS by stop", subtitle: "Stop-wise passenger counts, sensor vs BMS reconciliation and bus capacity" },
+      { label: "Sensors", screen: "sensors", href: SCREEN_ROUTES.sensors, icon: Activity, description: "Sensor alerts (proximity, smoking, alcohol) and passenger counts: IR sensor vs BMS by stop", subtitle: "Monitor vehicle sensor activity, passenger counts, BMS reconciliation and safety alerts.", title: "Sensors & Safety Monitoring" },
     ],
   },
   {
     label: "Fleet",
     items: [
-      { label: "Vehicles & Assets", screen: "vehicles", href: SCREEN_ROUTES.vehicles, icon: Truck, description: "Vehicles, devices and groups", subtitle: "Vehicles, tracking devices and groups" },
+      { label: "Devices & Assets", screen: "vehicles", href: SCREEN_ROUTES.vehicles, icon: Truck, description: "Tracking devices, device groups and maintenance reminders", subtitle: "Manage registered vehicles, tracking devices, device groups and maintenance reminders." },
       { label: "Drivers", screen: "drivers", href: SCREEN_ROUTES.drivers, icon: UserRound, description: "Driver records and assignments", subtitle: "Driver records, licences and vehicle assignments" },
       { label: "Dispatch", screen: "dispatch", href: SCREEN_ROUTES.dispatch, icon: ClipboardList, description: "Trip dispatch, conflicts and swaps", subtitle: "Dispatched trips, conflict checks and driver swaps" },
       { label: "Workforce", screen: "workforce", href: SCREEN_ROUTES.workforce, icon: CalendarCheck2, description: "Availability, shifts, leave and checklists", subtitle: "Driver availability, shifts, leave and pre-trip checklists" },
@@ -173,5 +175,5 @@ export function getPageMeta(pathname: string, displayName: string, now: Date, pl
   if (item.href.endsWith("/overview")) {
     return { title: `${greeting(now)}, ${displayName || "there"}`, subtitle: item.subtitle, nested, item };
   }
-  return { title: item.label, subtitle: item.subtitle, nested, item };
+  return { title: item.title ?? item.label, subtitle: item.subtitle, nested, item };
 }

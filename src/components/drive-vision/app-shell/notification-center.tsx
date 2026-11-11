@@ -20,9 +20,14 @@ import { canPerform, reachableHref } from "@/features/drive-vision/access/access
 import { useAccess } from "@/features/drive-vision/access/use-access";
 import { severityLabel } from "../alerts/alerts-model";
 import { notificationHref, notificationTime, readNotificationPoll, type NotificationTab } from "./notifications-model";
+import { canUseMaintenance, maintenanceTenant } from "@/features/drive-vision/access/maintenance-access";
+import { maintenanceService } from "@/features/drive-vision/api/maintenance-service";
+import { FeedNotes, MaintenanceList, MaintenanceReadNote } from "./maintenance-notifications";
 
 const POLL_LIMIT = 20;
 const PAGE_SIZE = 20;
+/** Maintenance rows shown at the top of the All tab (the Maintenance tab has them all). */
+const ALL_TAB_MAINTENANCE = 3;
 
 /**
  * Header bell. GET /notifications/poll runs every 5 seconds while signed in (this component lives in the
@@ -31,6 +36,9 @@ const PAGE_SIZE = 20;
  * (a driver's dispatch and leave notices). Read-state changes re-poll at once. Links follow the user's role and are
  * dropped when the user can't open the target; read-state buttons need the `notifications.markRead` action.
  * The Safe-Fare Admin receives no notifications, so the backend answers empty and the panel says so.
+ * Maintenance (Safe-Fare Admin and Fleet Owner only): Python vehicle / tyre maintenance alerts, aggregated per tenant
+ * on the server (/api/maintenance/notifications) and fetched only while the popover shows them. They have no read
+ * state: never in the unread badge, no Mark read buttons, Mark all read doesn't apply to them.
  */
 export function NotificationCenter() {
   const router = useRouter();
@@ -43,22 +51,34 @@ export function NotificationCenter() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState<number | "all" | null>(null);
+  const maintenance = canUseMaintenance(access);
+  const maintenanceScope = maintenanceTenant(access);
 
   const pollQ = usePolledQuery("notifications:poll", (signal) => alertService.pollNotifications(POLL_LIMIT, signal));
   const poll = useMemo(() => readNotificationPoll(pollQ.data), [pollQ.data]);
   const tab = chosenTab ?? (poll.ai.unread > 0 ? "AI_EVENT" : poll.alarm.unread > 0 ? "ALARM" : "ALL");
-  const fullList = tab === "ALL" || seeMore;
+  const isMaintenance = tab === "MAINTENANCE";
+  const fullList = !isMaintenance && (tab === "ALL" || seeMore);
   const listQ = useApiQuery(open && fullList ? `notifications:list:${tab}:${unreadOnly}:${page}` : null, () =>
     alertService.listNotifications({ type: tab === "ALL" ? undefined : tab, unreadOnly: unreadOnly || undefined, pageNumber: page, pageSize: PAGE_SIZE })
   );
+  // Only while the popover shows maintenance rows (its tab, or page 1 of All), for users with a tenant to read.
+  const showMaintenanceOnAll = maintenance && tab === "ALL" && page === 1 && !unreadOnly;
+  const maintenanceQ = useApiQuery(open && maintenance && maintenanceScope.ok && (isMaintenance || showMaintenanceOnAll) ? `notifications:maintenance:${maintenanceScope.tenantId}` : null, () => maintenanceService.notifications(maintenanceScope.ok ? maintenanceScope.tenantId : null));
+  const maintenanceItems = maintenanceQ.data?.items ?? [];
   const unread = pollQ.data ? poll.unreadTotal : undefined;
-  const tabUnread = tab === "AI_EVENT" ? poll.ai.unread : tab === "ALARM" ? poll.alarm.unread : poll.unreadTotal;
+  const tabUnread = tab === "AI_EVENT" ? poll.ai.unread : tab === "ALARM" ? poll.alarm.unread : isMaintenance ? 0 : poll.unreadTotal;
   const items = fullList ? (listQ.data?.items ?? []) : tab === "AI_EVENT" ? poll.ai.items : poll.alarm.items;
   const total = listQ.data?.total ?? 0;
 
   function refresh() {
     pollQ.refetch();
     if (fullList) listQ.refetch();
+  }
+
+  function openMaintenance(href: string) {
+    setOpen(false);
+    router.push(href);
   }
 
   function chooseTab(next: NotificationTab) {
@@ -84,7 +104,8 @@ export function NotificationCenter() {
   }
 
   async function markAll() {
-    if (!canMark || busy !== null) return;
+    // Maintenance alerts have no read state: "Mark all read" must never reach the BFF from that tab.
+    if (!canMark || busy !== null || isMaintenance) return;
     setBusy("all");
     try {
       await alertService.markAllRead(tab === "ALL" ? undefined : tab);
@@ -106,6 +127,7 @@ export function NotificationCenter() {
 
   const label = typeof unread === "number" ? `Notifications, ${unread} unread` : "Notifications";
   const emptyText = tab === "AI_EVENT" ? "No unread AI events." : tab === "ALARM" ? "No unread alarms." : "You're all caught up.";
+  const maintenancePages = Math.max(1, Math.ceil(maintenanceItems.length / PAGE_SIZE));
 
   return (
     <Popover
@@ -137,7 +159,7 @@ export function NotificationCenter() {
             {typeof unread === "number" ? <span className="ml-1.5 text-xs font-normal text-ink-muted">{unread} unread</span> : null}
           </p>
           {canMark ? (
-            <button type="button" onClick={markAll} disabled={busy !== null || tabUnread === 0} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50" data-testid="notification-read-all">
+            <button type="button" onClick={markAll} disabled={busy !== null || tabUnread === 0 || isMaintenance} title={isMaintenance ? "Maintenance alerts have no read state" : undefined} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-ink-muted hover:bg-surface-muted hover:text-ink disabled:opacity-50" data-testid="notification-read-all">
               {busy === "all" ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <CheckCheck className="size-3.5" aria-hidden />} Mark all read
             </button>
           ) : null}
@@ -145,6 +167,7 @@ export function NotificationCenter() {
         <div role="tablist" aria-label="Notification type" className="flex gap-1 border-b border-line px-3 py-2">
           <TabButton label="AI Events" count={poll.ai.unread} active={tab === "AI_EVENT"} onClick={() => chooseTab("AI_EVENT")} />
           <TabButton label="Alarm" count={poll.alarm.unread} active={tab === "ALARM"} onClick={() => chooseTab("ALARM")} />
+          {maintenance ? <TabButton label="Maintenance" active={isMaintenance} onClick={() => chooseTab("MAINTENANCE")} /> : null}
           <TabButton label="All" active={tab === "ALL"} onClick={() => chooseTab("ALL")} />
         </div>
         {pollQ.stale ? (
@@ -152,7 +175,36 @@ export function NotificationCenter() {
             Couldn&apos;t refresh. Showing the last update{pollQ.updatedAt ? ` from ${formatLocalDateTime(new Date(pollQ.updatedAt))}` : ""}.
           </p>
         ) : null}
+        {isMaintenance ? <MaintenanceReadNote /> : null}
+        {(isMaintenance || showMaintenanceOnAll) && maintenanceQ.data ? <FeedNotes feed={maintenanceQ.data} /> : null}
         <div className="scrollbar-thin max-h-[55vh] overflow-y-auto" role="tabpanel">
+          {isMaintenance ? (
+            !maintenanceScope.ok ? (
+              <EmptyState icon={Bell} title="Select a tenant" description="Maintenance alerts belong to one organisation. Choose a tenant in the header to see them." className="py-8" />
+            ) : maintenanceQ.error && !maintenanceQ.data ? (
+              <ApiErrorState error={maintenanceQ.error} onRetry={maintenanceQ.refetch} compact title="Couldn't load maintenance alerts" />
+            ) : !maintenanceQ.data ? (
+              <LoadingSkeleton variant="list" rows={4} />
+            ) : (
+              <MaintenanceList items={maintenanceItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)} access={access} onOpen={openMaintenance} />
+            )
+          ) : (
+            <>
+              {showMaintenanceOnAll && maintenanceScope.ok && maintenanceItems.length > 0 ? (
+                <section aria-label="Maintenance" className="border-b border-line" data-testid="all-tab-maintenance">
+                  <p className="flex items-center justify-between px-4 pt-2.5 text-[11px] font-semibold tracking-wide text-ink-subtle uppercase">
+                    Maintenance
+                    <button type="button" onClick={() => chooseTab("MAINTENANCE")} className="rounded-lg px-1.5 py-0.5 text-[11px] font-medium tracking-normal text-ink-muted normal-case hover:bg-surface-muted hover:text-ink">
+                      View all ({maintenanceItems.length})
+                    </button>
+                  </p>
+                  <MaintenanceList items={maintenanceItems.slice(0, ALL_TAB_MAINTENANCE)} access={access} onOpen={openMaintenance} />
+                </section>
+              ) : showMaintenanceOnAll && maintenanceScope.ok && maintenanceQ.error ? (
+                <p className="border-b border-line px-4 py-2 text-[11.5px] text-ink-muted" role="status" data-testid="all-tab-maintenance-error">
+                  Maintenance alerts couldn&apos;t be loaded: {describeApiError(maintenanceQ.error)}
+                </p>
+              ) : null}
           {pollQ.error && !pollQ.data && !fullList ? (
             <ApiErrorState error={pollQ.error} onRetry={pollQ.refetch} compact />
           ) : fullList && listQ.error && !listQ.data ? (
@@ -195,9 +247,23 @@ export function NotificationCenter() {
               })}
             </ul>
           )}
+            </>
+          )}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line p-1.5">
-          {fullList ? (
+          {isMaintenance ? (
+            <span className="flex items-center gap-1 px-1 text-xs text-ink-muted">
+              <button type="button" onClick={() => setPage((p) => p - 1)} disabled={page <= 1} className="rounded-lg px-2 py-1 font-medium hover:bg-surface-muted hover:text-ink disabled:opacity-50">
+                Previous
+              </button>
+              <span className="tabular">
+                Page {page} of {maintenancePages}
+              </span>
+              <button type="button" onClick={() => setPage((p) => p + 1)} disabled={page >= maintenancePages} className="rounded-lg px-2 py-1 font-medium hover:bg-surface-muted hover:text-ink disabled:opacity-50">
+                Next
+              </button>
+            </span>
+          ) : fullList ? (
             <>
               <label className="flex items-center gap-1.5 px-2 text-xs text-ink-muted">
                 <input

@@ -75,8 +75,10 @@ test("SN access: screen on sensor.read; readings and recalculation need sensor.i
   const acts = (codes) => [...only(codes).actions].filter((k) => k.startsWith("sensors.")).sort();
   same(acts(["sensor.read"]), []);
   same(acts(["sensor.read", "sensor.ingest"]), ["sensors.ingest", "sensors.recalculate"]);
-  assert.equal(p.canViewWidget(only(["sensor.read"]), "sensors.deviceChoices"), false, "bus picker needs device.read");
-  assert.equal(p.canViewWidget(only(["sensor.read", "device.read"]), "sensors.deviceChoices"), true);
+  // The vehicle picker reads GET /vehicles?assigned=true, so it needs vehicle.read (device.read alone isn't enough).
+  assert.equal(p.canViewWidget(only(["sensor.read"]), "sensors.deviceChoices"), false, "vehicle picker needs vehicle.read");
+  assert.equal(p.canViewWidget(only(["sensor.read", "device.read"]), "sensors.deviceChoices"), false);
+  assert.equal(p.canViewWidget(only(["sensor.read", "vehicle.read"]), "sensors.deviceChoices"), true);
   const sfa = access(IDENTITIES.platformAdmin);
   assert.equal(sfa.screens.has("sensors"), true);
   assert.equal(p.actionBlock(sfa, "sensors.ingest"), "tenant");

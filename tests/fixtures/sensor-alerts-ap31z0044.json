@@ -1,0 +1,40 @@
+{
+  "success": true,
+  "filters": {
+    "tenant_id": 1,
+    "vehicle_number": "AP31Z0044"
+  },
+  "count": 21,
+  "alerts": [
+    {
+      "tenant_id": 1,
+      "vehicle_number": "AP31Z0044",
+      "iot_kit": "IOT-KIT-001",
+      "timestamp": "2026-11-08T17:45:13",
+      "iot_kit_id": "ULT",
+      "sensor_sub_id": 2,
+      "sensor_data": "distance:3,reading:no_echo",
+      "is_alert": true
+    },
+    {
+      "tenant_id": 1,
+      "vehicle_number": "AP31Z0044",
+      "iot_kit": "IOT-KIT-001",
+      "timestamp": "2026-11-08T17:45:13",
+      "iot_kit_id": "SMK",
+      "sensor_sub_id": 3,
+      "sensor_data": "value:2,reading:alert",
+      "is_alert": true
+    },
+    {
+      "tenant_id": 1,
+      "vehicle_number": "AP31Z0044",
+      "iot_kit": "IOT-KIT-001",
+      "timestamp": "2026-11-08T17:45:13",
+      "iot_kit_id": "ALC",
+      "sensor_sub_id": 4,
+      "sensor_data": "value:3,reading:alert",
+      "is_alert": true
+    }
+  ]
+}

@@ -1,0 +1,124 @@
+﻿============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\iris\chat\route.ts
+============================================================
+import { forwardIrisChat } from "@/features/drive-vision/api/iris-chat-proxy";
+
+export async function POST(request: Request) {
+  return forwardIrisChat(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\iris\health\route.ts
+============================================================
+import { forwardIrisHealth } from "@/features/drive-vision/api/iris-chat-proxy";
+
+export async function GET(request: Request) {
+  return forwardIrisHealth(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\notifications\route.ts
+============================================================
+import { forwardMaintenanceNotifications } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request) {
+  return forwardMaintenanceNotifications(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\tyre\[vehicleNumber]\complete\route.ts
+============================================================
+import { forwardTyreWrite } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function POST(request: Request, { params }: { params: Promise<{ vehicleNumber: string }> }) {
+  return forwardTyreWrite("complete", request, (await params).vehicleNumber);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\tyre\[vehicleNumber]\register\route.ts
+============================================================
+import { forwardTyreWrite } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function POST(request: Request, { params }: { params: Promise<{ vehicleNumber: string }> }) {
+  return forwardTyreWrite("register", request, (await params).vehicleNumber);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\tyre\[vehicleNumber]\route.ts
+============================================================
+import { forwardTyreVehicle } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request, { params }: { params: Promise<{ vehicleNumber: string }> }) {
+  return forwardTyreVehicle(request, (await params).vehicleNumber);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\tyre\alerts\route.ts
+============================================================
+import { forwardTyreAlerts } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request) {
+  return forwardTyreAlerts(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\tyre\route.ts
+============================================================
+import { forwardTyreList } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request) {
+  return forwardTyreList(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\vehicle\[vehicleNumber]\route.ts
+============================================================
+import { forwardSchedule } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request, { params }: { params: Promise<{ vehicleNumber: string }> }) {
+  return forwardSchedule(request, (await params).vehicleNumber);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\vehicle\alerts\route.ts
+============================================================
+import { forwardVehicleAlerts } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request) {
+  return forwardVehicleAlerts(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\maintenance\vehicle\route.ts
+============================================================
+import { forwardCreateSchedule, forwardScheduleList } from "@/features/drive-vision/api/maintenance-proxy";
+
+export async function GET(request: Request) {
+  return forwardScheduleList(request);
+}
+
+export async function POST(request: Request) {
+  return forwardCreateSchedule(request);
+}
+
+
+============================================================
+FILE: C:\Sconex-Projects\Drive-Vision\src\app\api\sensors\alerts\route.ts
+============================================================
+import { forwardSensorAlerts } from "@/features/drive-vision/api/sensor-alerts-proxy";
+
+export async function GET(request: Request) {
+  return forwardSensorAlerts(request);
+}
+
+

@@ -38,7 +38,7 @@ function NotFound({ message }: { message: string }) {
         action={
           <Button asChild variant="outline">
             <Link href="/drive-vision/vehicles">
-              <ArrowLeft /> Back to vehicles
+              <ArrowLeft /> Back to Devices &amp; Assets
             </Link>
           </Button>
         }

@@ -1,5 +1,6 @@
 "use client";
 
+import { alertIstIso, alertIstRelative, formatAlertIstTime } from "@/features/drive-vision/utils/alert-ist-time";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowUpRight, Bell, Building2, Cpu, Gauge, Globe2, Layers3, RefreshCw, ShieldAlert, Siren, UserRound, UsersRound } from "lucide-react";
@@ -13,7 +14,7 @@ import { platformService } from "@/features/drive-vision/api/platform-service";
 import type { AlertRow, TenantDto } from "@/features/drive-vision/api/types";
 import type { DateRangeKey } from "@/features/drive-vision/types";
 import { DATE_RANGE_OPTIONS, resolveDateRange } from "@/features/drive-vision/utils/time";
-import { formatDateTime, formatNumber, formatRelative, formatTime } from "@/features/drive-vision/utils/format";
+import { formatNumber, formatTime } from "@/features/drive-vision/utils/format";
 import { useApiQuery, type ApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { PageHeader } from "../shared/page-header";
 import { MetricCard } from "../shared/metric-card";
@@ -376,8 +377,8 @@ function RecentEvents({ rows, now }: { rows: AlertRow[]; now: Date }) {
               </StatusBadge>
             ) : null}
             {a.alarmTime ? (
-              <time dateTime={a.alarmTime} title={formatDateTime(a.alarmTime)} className="text-[11px] text-ink-subtle">
-                {formatRelative(a.alarmTime, now)}
+              <time dateTime={alertIstIso(a.alarmTime)} title={formatAlertIstTime(a.alarmTime)} className="text-[11px] text-ink-subtle">
+                {alertIstRelative(a.alarmTime, now)}
               </time>
             ) : null}
           </span>

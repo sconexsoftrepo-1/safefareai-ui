@@ -133,6 +133,11 @@ const OFF_SPEC_QUERY = [
   /POST \/api\/v1\/notifications\/read-all \?type: query parameter sent by the frontend is not a V10 parameter/,
   // docs/contracts/polling-apis.txt 3.1 (`details` on a notification).
   /\/api\/v1\/notifications[^ ]* data(\[\])?\.details: field read by the frontend is not in the V10 response schema/,
+  // docs/contracts/vehicle-api.txt ("Device responses include vehicleId"); used by the Sensors screen's Sensor Alerts tab.
+  /\/api\/v1\/devices[^ ]* data(\[\])?\.vehicleId: field read by the frontend is not in the V10 response schema/,
+  // Device ↔ vehicle mapping: DeviceRequest.vehicleId / unlinkVehicle (latest Swagger DeviceRequest and
+  // docs/contracts/vehicle-api.txt "FITTING A DEVICE IN A VEHICLE"); not in the api-docs-v10.json snapshot.
+  /^(POST \/api\/v1\/devices|PUT \/api\/v1\/devices\/\{id\}) body\.(vehicleId|unlinkVehicle): field sent by the frontend is not in the V10 request schema/,
 ];
 
 test("every call site matches a V10 operation (method + path), except the documented off-spec calls", () => {

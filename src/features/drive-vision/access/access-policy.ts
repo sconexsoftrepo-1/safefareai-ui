@@ -44,7 +44,7 @@ export const SCREEN_ROUTES = {
   vehicleRegistry: `${DV_BASE}/vehicle-registry`,
   /** Sensors: stop-wise passenger counts and the sensor vs BMS reconciliation (server routePath /sensors). */
   sensors: `${DV_BASE}/sensors`,
-  /** Devices ("Vehicles & Assets", server menu_key "vehicles_assets"). */
+  /** Devices ("Devices & Assets", server menu_key "vehicles_assets"; route unchanged). */
   vehicles: `${DV_BASE}/vehicles`,
   drivers: `${DV_BASE}/drivers`,
   dispatch: `${DV_BASE}/dispatch`,
@@ -180,7 +180,12 @@ export type FeatureKey = "assistant" | "recordSearch";
 export const ALL_FEATURES: FeatureKey[] = ["assistant", "recordSearch"];
 
 export const FEATURES: Readonly<Record<FeatureKey, Requirement>> = {
-  assistant: { anyOf: ["device.read"], operations: ["GET /api/v1/assistant/prompts", "POST /api/v1/assistant/ask"] },
+  /** Application-usage help for every signed-in role. Protecting tenant data is the chat service's job. */
+  assistant: {
+    signedIn: true,
+    operations: ["POST /api/chat/message"],
+    offSpec: { operations: ["POST /api/chat/message"], source: "Iris AI chat service OpenAPI 1.0.0, see docs/iris-chatbot-integration-report.md" },
+  },
   recordSearch: { anyOf: ["device.read"], operations: ["GET /api/v1/search"] },
 };
 
@@ -201,8 +206,9 @@ export type WidgetKey =
   | "drivers.safety"
   | "drivers.deviceChoices"
   | "vehicles.driverAssignments"
-  | "sensors.deviceChoices";
-export const ALL_WIDGETS: WidgetKey[] = ["platform.tenants", "dashboard.fleet", "dashboard.safety", "dashboard.groups", "roles.permissions", "permissions.catalog", "roleMenu.roles", "roleMenu.matrix", "drivers.safety", "drivers.deviceChoices", "vehicles.driverAssignments", "sensors.deviceChoices"];
+  | "sensors.deviceChoices"
+  | "devices.vehicleChoices";
+export const ALL_WIDGETS: WidgetKey[] = ["platform.tenants", "dashboard.fleet", "dashboard.safety", "dashboard.groups", "roles.permissions", "permissions.catalog", "roleMenu.roles", "roleMenu.matrix", "drivers.safety", "drivers.deviceChoices", "vehicles.driverAssignments", "sensors.deviceChoices", "devices.vehicleChoices"];
 /** Widgets that are platform administration: they also need platform === true. */
 const PLATFORM_WIDGETS: ReadonlySet<WidgetKey> = new Set<WidgetKey>(["roles.permissions", "permissions.catalog"]);
 
@@ -225,8 +231,21 @@ export const WIDGETS: Readonly<Record<WidgetKey, Requirement>> = {
   "drivers.deviceChoices": { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] },
   /** Phase 8 — a vehicle's driver assignments (vehicle detail, assign dialog). */
   "vehicles.driverAssignments": { anyOf: ["driver.read"], operations: ["GET /api/v1/devices/{id}/driver-assignments"] },
-  /** The bus picker on the Sensors screen. */
-  "sensors.deviceChoices": { anyOf: ["device.read"], operations: ["GET /api/v1/devices"] },
+  /**
+   * The vehicle picker on the Sensors screen: GET /vehicles?assigned=true. Each entry carries the vehicle number
+   * (Sensor Alerts' vehicle_number) and its device id (the device-based sensor, BMS and stops paths).
+   */
+  "sensors.deviceChoices": {
+    anyOf: ["vehicle.read"],
+    operations: ["GET /api/v1/vehicles"],
+    offSpec: { operations: ["GET /api/v1/vehicles"], source: VEHICLE_CONTRACT },
+  },
+  /** The Assign Vehicle picker in the Add / Edit device forms: GET /vehicles (assigned and unassigned). */
+  "devices.vehicleChoices": {
+    anyOf: ["vehicle.read"],
+    operations: ["GET /api/v1/vehicles"],
+    offSpec: { operations: ["GET /api/v1/vehicles"], source: VEHICLE_CONTRACT },
+  },
 };
 
 export interface ActionDef {

@@ -1,6 +1,7 @@
 import type { DeviceModelDto, DeviceRequest, ProtocolDto } from "@/features/drive-vision/api/types";
 import { isApiError } from "@/features/drive-vision/api/errors";
 import { EDITABLE_FIELDS, MAX_LENGTH, dateInputToIso, type EditableField } from "./device-edit-model";
+import { withCreateVehicle } from "./device-vehicle-model";
 
 /**
  * Register a device (POST /api/v1/devices, V10 DeviceRequest; permission device.create). Pure: unit-tested.
@@ -10,7 +11,7 @@ import { EDITABLE_FIELDS, MAX_LENGTH, dateInputToIso, type EditableField } from 
  * an explicit acknowledgement of the server's message, is the same request resent with it set to true.
  */
 
-export type CreateField = EditableField | "terminalNo" | "groupId" | "modelId" | "protocol" | "objectTypeId" | "cameraCount";
+export type CreateField = EditableField | "terminalNo" | "groupId" | "modelId" | "protocol" | "objectTypeId" | "cameraCount" | "vehicleId";
 
 export type CreateForm = Record<EditableField, string> & {
   terminalNo: string;
@@ -20,6 +21,8 @@ export type CreateForm = Record<EditableField, string> & {
   protocol: string;
   objectTypeId: string;
   cameraCount: string;
+  /** Assign Vehicle: the vehicle registry id as a string; "" = no vehicle (the device is created unassigned). */
+  vehicleId: string;
 };
 
 export const EMPTY_CREATE_FORM: CreateForm = {
@@ -30,6 +33,7 @@ export const EMPTY_CREATE_FORM: CreateForm = {
   protocol: "",
   objectTypeId: "",
   cameraCount: "0",
+  vehicleId: "",
 };
 
 /** V10: ^[0-9A-Za-z]{11,20}$ */
@@ -53,6 +57,7 @@ export function validateCreate(form: CreateForm, models: readonly DeviceModelDto
   if (!/^[1-3]$/.test(form.protocol)) e.protocol = "Choose a protocol.";
   if (!/^\d+$/.test(form.objectTypeId)) e.objectTypeId = "Choose an object type.";
   if (!/^\d+$/.test(form.cameraCount) || Number(form.cameraCount) > 16) e.cameraCount = "0–16 cameras.";
+  if (form.vehicleId !== "" && !/^[1-9]\d*$/.test(form.vehicleId)) e.vehicleId = "Choose a vehicle from the list, or none.";
   for (const f of EDITABLE_FIELDS) {
     const max = MAX_LENGTH[f];
     if (max !== undefined && form[f].trim().length > max && !e[f]) e[f] = `Use ${max} characters or fewer.`;
@@ -64,6 +69,7 @@ export function validateCreate(form: CreateForm, models: readonly DeviceModelDto
 /**
  * The POST body: the seven required fields plus the optional ones that were filled in. modelName comes from the
  * catalogue entry the user chose. `confirmChargeableChange` only when `confirmCharge` (see the module note).
+ * A chosen vehicle adds `vehicleId` (its registry id) and `unlinkVehicle: false`; with none, neither is sent.
  */
 export function buildCreate(form: CreateForm, models: readonly DeviceModelDto[], confirmCharge = false): DeviceRequest {
   const model = models.find((m) => String(m.id) === form.modelId);
@@ -83,7 +89,7 @@ export function buildCreate(form: CreateForm, models: readonly DeviceModelDto[],
     (body as unknown as Record<string, unknown>)[f] = DATE_FIELDS.has(f) ? dateInputToIso(v) : v;
   }
   if (confirmCharge) body.confirmChargeableChange = true;
-  return body;
+  return withCreateVehicle(body, form.vehicleId);
 }
 
 export type CreateOutcome =
@@ -97,11 +103,16 @@ export function describeCreateError(err: unknown): CreateOutcome {
   const map = err.fieldErrorMap();
   for (const f of [...EDITABLE_FIELDS, "terminalNo", "groupId", "protocol", "objectTypeId", "cameraCount"] as CreateField[]) if (map[f]) fieldErrors[f] = map[f];
   if (map.modelName) fieldErrors.modelId = map.modelName;
+  if (map.vehicleId) fieldErrors.vehicleId = map.vehicleId;
   const msg = err.message || "";
   if (err.errorCode === "CHARGEABLE_CHANGE" || err.errorCode === "CONFIRMATION_REQUIRED") {
     return { kind: "confirm", message: msg || "The server says registering this device is a chargeable change." };
   }
   if (err.errorCode === "TENANT_REQUIRED") return { kind: "error", uncertain: false, fieldErrors, message: "Select a tenant first." };
+  if (err.errorCode === "RESOURCE_IN_USE" || err.errorCode === "OPERATION_NOT_ALLOWED" || err.errorCode === "INVALID_REFERENCE") {
+    if (!fieldErrors.vehicleId) fieldErrors.vehicleId = msg || "The server refused this vehicle.";
+    return { kind: "error", uncertain: false, fieldErrors, message: `The device wasn't registered: ${msg || `the server refused the vehicle (${err.errorCode}).`}` };
+  }
   if (err.errorCode === "DUPLICATE" && !fieldErrors.terminalNo) fieldErrors.terminalNo = msg || "This terminal number is already registered.";
   if (err.errorCode === "VENDOR_OUTCOME_UNKNOWN" || err.kind === "timeout" || err.kind === "network" || (err.kind === "http" && (err.status === 502 || err.status === 504))) {
     return { kind: "error", uncertain: true, fieldErrors, message: "No clear answer from the server or vendor: the device may or may not have been registered. The list is reloaded — check it before trying again." };

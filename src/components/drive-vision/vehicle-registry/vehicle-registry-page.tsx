@@ -15,6 +15,8 @@ import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { formatDateTime, formatNumber } from "@/features/drive-vision/utils/format";
 import { useAccess, useActionGate, useCan } from "@/features/drive-vision/access/use-access";
 import { SCREEN_ROUTES, dataScope } from "@/features/drive-vision/access/access-policy";
+import { canUseMaintenance, maintenanceActions, maintenanceTenant } from "@/features/drive-vision/access/maintenance-access";
+import { cleanMaintenanceVehicleNumber } from "@/features/drive-vision/api/maintenance";
 import { PageHeader } from "../shared/page-header";
 import { Panel } from "../shared/panel";
 import { DataTable, type DataTableColumn } from "../shared/data-table";
@@ -44,6 +46,7 @@ import {
   type VehicleForm,
   type VehicleTextField,
 } from "./vehicle-registry-model";
+import { DrawerTabs, MaintenanceAlertsTab, TenantNotice, TyreMaintenanceTab, VehicleMaintenanceTab, readDrawerTab, type DrawerTab } from "./vehicle-maintenance-panels";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -51,7 +54,7 @@ type Tab = "all" | "available";
 type StatusFilter = "all" | "ACTIVE" | "INACTIVE";
 type DeviceFilter = "all" | "fitted" | "none";
 
-/** Device detail lives on the devices screen ("Vehicles & Assets"). */
+/** Device detail lives on the devices screen ("Devices & Assets", route /vehicles). */
 const deviceHref = (id: number) => `${SCREEN_ROUTES.vehicles}/${id}`;
 
 function VehicleStatusBadge({ status }: { status?: string }) {
@@ -96,6 +99,23 @@ export function VehicleRegistryPage() {
   });
   const [formMode, setFormMode] = useState<"create" | "edit" | null>(null);
   const [savedVersion, setSavedVersion] = useState(0);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>(() => readDrawerTab(params.get("tab")));
+
+  // ?vehicleNumber=AP31Z0044&tab=alerts (from a maintenance notification): the Python services know vehicles by
+  // number, so the number is looked up in this tenant's registry and the drawer opens on that vehicle when found.
+  const linkedNumber = cleanMaintenanceVehicleNumber(params.get("vehicleNumber"));
+  const linkKey = linkedNumber ? `${linkedNumber}|${params.get("tab") ?? ""}|${params.get("alert") ?? ""}` : null;
+  const linkQ = useApiQuery(linkedNumber ? `vehicles:by-number:${linkedNumber}` : null, () => vehicleRegistryService.listVehicles({ keyword: linkedNumber!, pageNumber: 1, pageSize: 100 }));
+  const linkedId = linkQ.data?.items.find((v) => v.vehicleNumber?.trim().toUpperCase() === linkedNumber?.toUpperCase())?.id ?? null;
+  const linkTarget = linkKey !== null && linkedId !== null ? `${linkKey}#${linkedId}` : null;
+  const [appliedLink, setAppliedLink] = useState<string | null>(null);
+  if (linkTarget !== null && linkTarget !== appliedLink) {
+    // Adjusting state while rendering (a new link arrived): opens the vehicle once per link.
+    setAppliedLink(linkTarget);
+    setOpenId(linkedId);
+    setDrawerTab(readDrawerTab(params.get("tab")));
+  }
+  const linkMissing = linkedNumber !== null && !!linkQ.data && linkedId === null;
 
   useEffect(() => {
     const next = searchInput.trim();
@@ -228,6 +248,16 @@ export function VehicleRegistryPage() {
       </div>
 
 
+      {linkMissing ? (
+        <p className="mb-3 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] text-ink-muted" role="status" data-testid="vehicle-link-missing">
+          Vehicle <span className="font-mono">{linkedNumber}</span> isn&apos;t in this organisation&apos;s vehicle registry, so its maintenance details can&apos;t be opened.
+        </p>
+      ) : linkQ.error && linkedNumber ? (
+        <p className="mb-3 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] text-ink-muted" role="status" data-testid="vehicle-link-missing">
+          Vehicle <span className="font-mono">{linkedNumber}</span> couldn&apos;t be looked up: {describeApiError(linkQ.error)}
+        </p>
+      ) : null}
+
       <Panel className="overflow-hidden">
         {activeQ.error ? (
           <ApiErrorState error={activeQ.error} onRetry={activeQ.refetch} />
@@ -255,7 +285,12 @@ export function VehicleRegistryPage() {
       <VehicleDrawer
         id={openId}
         version={savedVersion}
-        onClose={() => setOpenId(null)}
+        tab={drawerTab}
+        onTabChange={setDrawerTab}
+        onClose={() => {
+          setOpenId(null);
+          setDrawerTab("overview");
+        }}
         onEdit={() => setFormMode("edit")}
         onDeleted={() => {
           setOpenId(null);
@@ -279,7 +314,23 @@ export function VehicleRegistryPage() {
 
 // ── Detail + delete ─────────────────────────────────────────────────────────
 
-function VehicleDrawer({ id, version, onClose, onEdit, onDeleted }: { id: number | null; version: number; onClose: () => void; onEdit: () => void; onDeleted: () => void }) {
+function VehicleDrawer({
+  id,
+  version,
+  tab,
+  onTabChange,
+  onClose,
+  onEdit,
+  onDeleted,
+}: {
+  id: number | null;
+  version: number;
+  tab: DrawerTab;
+  onTabChange: (t: DrawerTab) => void;
+  onClose: () => void;
+  onEdit: () => void;
+  onDeleted: () => void;
+}) {
   // `version` changes after a save, so the drawer re-reads the record the form just wrote.
   const detailQ = useApiQuery(id !== null ? `vehicles:detail:${id}:${version}` : null, () => vehicleRegistryService.getVehicle(id!));
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -287,6 +338,13 @@ function VehicleDrawer({ id, version, onClose, onEdit, onDeleted }: { id: number
   const canDelete = useCan("vehicleRegistry.delete");
   const vehicle = detailQ.data;
   const fitted = deviceLabel(vehicle ?? {});
+  // Maintenance tabs: Safe-Fare Admin and Fleet Owner only. Everyone else sees the drawer exactly as before.
+  const access = useAccess();
+  const maintenance = canUseMaintenance(access);
+  const maintenanceScope = maintenanceTenant(access);
+  const maintenanceCan = maintenanceActions(access);
+  const activeTab: DrawerTab = maintenance ? tab : "overview";
+  const maintenanceNumber = cleanMaintenanceVehicleNumber(vehicle?.vehicleNumber);
 
   async function remove() {
     if (id === null) return;
@@ -329,8 +387,24 @@ function VehicleDrawer({ id, version, onClose, onEdit, onDeleted }: { id: number
           <ApiErrorState error={detailQ.error} onRetry={detailQ.refetch} />
         ) : !vehicle ? (
           <LoadingSkeleton variant="list" rows={8} />
+        ) : activeTab !== "overview" ? (
+          <>
+            <DrawerTabs value={activeTab} onChange={onTabChange} />
+            {!maintenanceNumber ? (
+              <p className="text-[13px] text-ink-muted">This vehicle has no usable vehicle number, which the maintenance services need.</p>
+            ) : !maintenanceScope.ok ? (
+              <TenantNotice />
+            ) : activeTab === "vehicle" ? (
+              <VehicleMaintenanceTab key={maintenanceNumber} tenantId={maintenanceScope.tenantId} vehicleNumber={maintenanceNumber} canCreate={maintenanceCan.createSchedule} />
+            ) : activeTab === "tyre" ? (
+              <TyreMaintenanceTab key={maintenanceNumber} tenantId={maintenanceScope.tenantId} vehicleNumber={maintenanceNumber} canWrite={maintenanceCan.registerTyres} />
+            ) : (
+              <MaintenanceAlertsTab key={maintenanceNumber} tenantId={maintenanceScope.tenantId} vehicleNumber={maintenanceNumber} />
+            )}
+          </>
         ) : (
           <div className="space-y-5">
+            {maintenance ? <DrawerTabs value={activeTab} onChange={onTabChange} /> : null}
             <dl className="divide-y divide-line">
               <DetailRow label="Status">
                 <VehicleStatusBadge status={vehicle.status} />
@@ -375,7 +449,7 @@ function VehicleDrawer({ id, version, onClose, onEdit, onDeleted }: { id: number
                 </div>
               ) : (
                 <p className="text-[13px] text-ink-muted">
-                  No device fitted. {vehicle.status === "ACTIVE" ? "Fit one from the device's edit form on Vehicles & Assets." : "Only active vehicles can have a device fitted."}
+                  No device fitted. {vehicle.status === "ACTIVE" ? "Fit one from the device's edit form on Devices & Assets." : "Only active vehicles can have a device fitted."}
                 </p>
               )}
             </section>

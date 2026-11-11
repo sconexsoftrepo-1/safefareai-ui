@@ -1,10 +1,15 @@
-import { reachableHref, type Access } from "@/features/drive-vision/access/access-policy";
+import { SCREEN_ROUTES, reachableHref, type Access } from "@/features/drive-vision/access/access-policy";
+import type { MaintenanceNotification } from "@/features/drive-vision/api/maintenance";
 import type { NotificationDto, NotificationPollDto, NotificationTabDto } from "@/features/drive-vision/api/types";
 import { formatLocalDateTime } from "@/features/drive-vision/utils/format";
 import { notificationLink } from "./search-model";
 
-/** The bell's panels. AI_EVENT and ALARM are the poll's tabs; ALL is GET /notifications, for every other type. */
-export type NotificationTab = "AI_EVENT" | "ALARM" | "ALL";
+/**
+ * The bell's panels. AI_EVENT and ALARM are the poll's tabs; ALL is GET /notifications, for every other type.
+ * MAINTENANCE is the Python Vehicle / Tyre Maintenance alerts (Safe-Fare Admin and Fleet Owner only), read through
+ * /api/maintenance/notifications. Those alerts have no read state anywhere, so they never count as unread.
+ */
+export type NotificationTab = "AI_EVENT" | "ALARM" | "MAINTENANCE" | "ALL";
 
 export interface PollTab {
   unread: number;
@@ -41,3 +46,20 @@ export function notificationHref(access: Access, n: NotificationDto): string | n
   if (typeof alarmId === "number" && Number.isSafeInteger(alarmId) && alarmId > 0) return reachableHref(access, `/drive-vision/alerts?kind=incidents&alarm=${alarmId}`);
   return notificationLink(access, n.refType, n.refId);
 }
+
+/**
+ * Where a maintenance notification opens: the vehicle's Maintenance Alerts tab in the Vehicles drawer, found by
+ * vehicle number in the user's own tenant (the page says so when the vehicle isn't there). Null when the user can't
+ * open the Vehicles screen.
+ */
+export function maintenanceNotificationHref(access: Access, n: Pick<MaintenanceNotification, "vehicleNumber" | "id">): string | null {
+  const q = new URLSearchParams({ vehicleNumber: n.vehicleNumber, tab: "alerts", alert: n.id });
+  return reachableHref(access, `${SCREEN_ROUTES.vehicleRegistry}?${q.toString()}`);
+}
+
+/**
+ * Maintenance alerts have no read / unread state: the Python APIs offer none, and the Safe-Fare notification
+ * service only stores read state for its own notifications. So they add nothing to the unread badge, have no
+ * Mark read buttons, and Mark all read never runs on the Maintenance tab.
+ */
+export const MAINTENANCE_HAS_READ_STATE = false;

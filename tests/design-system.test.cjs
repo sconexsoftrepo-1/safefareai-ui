@@ -50,11 +50,12 @@ test("selected states use tint and deep coral, because white on coral is under 4
 test("there is one token system and one font", () => {
   assert.equal(fs.existsSync(path.join(SRC, "styles")) && fs.readdirSync(path.join(SRC, "styles")).length, 1);
   assert.doesNotMatch(theme + globals, /--sf-/);
-  assert.match(layout, /Plus_Jakarta_Sans\(/);
-  assert.match(layout, /weight: \["400", "500", "600", "700"\]/);
-  assert.match(layout, /variable: "--font-plus-jakarta-sans"/);
+  // Plus Jakarta Sans is self-hosted via Fontsource (variable, 200–800), not next/font/google.
+  assert.match(layout, /import "@fontsource-variable\/plus-jakarta-sans\/wght\.css";/);
+  assert.doesNotMatch(layout, /next\/font\/google"/);
+  assert.match(globals, /--font-plus-jakarta-sans: "Plus Jakarta Sans Variable";/);
   assert.match(globals, /--font-sans: var\(--font-plus-jakarta-sans\)/);
-  assert.doesNotMatch(read("components/drive-vision/auth/login-screen.tsx"), /font-extrabold/, "800 isn't loaded");
+  assert.doesNotMatch(read("components/drive-vision/auth/login-screen.tsx"), /font-extrabold/, "the design tops out at 700");
 });
 
 test("no banned font is used anywhere in the app", () => {

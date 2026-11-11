@@ -33,8 +33,8 @@ export function DriveVisionAppShell({ children }: { children: React.ReactNode })
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const prefs = usePreferences();
-  // Iris (GET /assistant/prompts, POST /assistant/ask) needs its V10 permission (device.read), not a default.
-  const assistantAllowed = canUseFeature(useAccess(), "assistant");
+  const access = useAccess();
+  const assistantAllowed = canUseFeature(access, "assistant");
   // Map/video workspaces fill the viewport on desktop (Iris opens from the header there), so no launcher clearance.
   const pathname = usePathname();
   const workspace = isWorkspaceRoute(pathname);
@@ -93,7 +93,8 @@ export function DriveVisionAppShell({ children }: { children: React.ReactNode })
             </div>
           </div>
           <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
-          {prefs.assistantEnabled && assistantAllowed ? <DriveVisionAIAssistant /> : null}
+          {/* Keyed so a tenant switch or another user discards the conversation and aborts its request. */}
+          {prefs.assistantEnabled && assistantAllowed ? <DriveVisionAIAssistant key={`${tenantScope}|${access.identity?.userId ?? "none"}`} /> : null}
           <ToastProvider />
         </TooltipProvider>
       </MotionConfig>

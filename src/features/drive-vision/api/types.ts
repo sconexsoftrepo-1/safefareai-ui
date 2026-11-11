@@ -269,6 +269,8 @@ export interface DeviceDto {
   insuranceDueAt?: string;
   maintenanceDueAt?: string;
   driver?: DriverInfo;
+  /** Vehicle registry id of the vehicle this device is fitted in; null when none (docs/contracts/vehicle-api.txt). */
+  vehicleId?: number | null;
   /** Added to the spec 2026-10-29. */
   terminal?: TerminalInfo;
   vendorCreatedAt?: string;
@@ -302,6 +304,13 @@ export interface DeviceRequest {
   drivingLicense?: string;
   driverRemark?: string;
   confirmChargeableChange?: boolean;
+  /**
+   * Vehicle registry id to fit this device in (Swagger DeviceRequest; docs/contracts/vehicle-api.txt). Omitted →
+   * the current vehicle is kept. Sent with `unlinkVehicle: false` when assigning.
+   */
+  vehicleId?: number;
+  /** true → remove the device from its vehicle (sent with `vehicleId: 0`). */
+  unlinkVehicle?: boolean;
 }
 
 /** GET /devices query (pageNumber ≥ 1, default 1; pageSize 1–100, default 20). No sort parameter. */

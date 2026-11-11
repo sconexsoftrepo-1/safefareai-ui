@@ -1,0 +1,762 @@
+﻿============================================================
+FILE: .\src\features\drive-vision\api\iris-chat-proxy.ts
+============================================================
+import { IRIS_MAX_MESSAGE, isConversationUuid } from "./iris-chat-service";
+import { PYTHON_API_PATHS, pythonApiUrl, type PythonApiPath } from "./python-api";
+import { CALLER_STATUS, isCrossSite, verifyCaller, type CallerError } from "./safefare-caller";
+
+/**
+ * Same-origin proxy to the Iris chat service, used by the route handlers under app/api/iris. Server only.
+ *
+ * Why it exists: the chat service sends no CORS headers (its OPTIONS preflight answers 405) and is plain HTTP,
+ * so a browser can't call it directly. See docs/iris-chatbot-integration-report.md.
+ *
+ * - Signed-in Safe-Fare users only: the caller's own access token is checked with the BFF (safefare-caller.ts) and
+ *   the centralized resolver must grant the `assistant` feature. Without this, anyone reaching the Next.js server
+ *   could relay messages to the chat service.
+ * - Forwards only the documented ChatRequest fields. Incoming headers, including Authorization and Cookie, are
+ *   never forwarded, so the Safe-Fare token never reaches the Python service.
+ * - Upstream errors are reduced to a status and a fixed code. Their bodies are not returned or logged.
+ * - The service is on the shared Python backend: PYTHON_API_URL (python-api.ts), read per request and never
+ *   NEXT_PUBLIC_, so it stays out of the browser bundle.
+ */
+const UPSTREAM_TIMEOUT_MS = 60_000;
+/** Enough for IRIS_MAX_MESSAGE characters fully JSON-escaped (\uXXXX). */
+const MAX_BODY_CHARS = IRIS_MAX_MESSAGE * 6 + 256;
+
+export type IrisProxyEnv = Record<string, string | undefined>;
+
+type ProxyErrorCode = CallerError | "forbidden" | "invalid_request" | "unreachable" | "timeout" | "upstream";
+
+const NO_STORE = { "Cache-Control": "no-store" };
+const fail = (status: number, error: ProxyErrorCode) => Response.json({ error }, { status, headers: NO_STORE });
+
+
+/** The fields the contract defines, or null when the body doesn't satisfy it. Anything else is dropped. */
+export function readChatRequest(raw: unknown): { message: string; conversation_uuid?: string } | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const { message, conversation_uuid: uuid } = raw as Record<string, unknown>;
+  if (typeof message !== "string" || !message.trim() || message.length > IRIS_MAX_MESSAGE) return null;
+  if (uuid === undefined || uuid === null) return { message };
+  return isConversationUuid(uuid) ? { message, conversation_uuid: uuid } : null;
+}
+
+/** Configured Python URL + a verified caller allowed to use Iris, or the error response. */
+async function authorize(path: PythonApiPath, request: Request, env: IrisProxyEnv): Promise<{ url: string } | Response> {
+  const url = pythonApiUrl(path, env);
+  if (!url) return fail(503, "not_configured");
+  const caller = await verifyCaller(request, env);
+  if (!caller.ok) return fail(CALLER_STATUS[caller.error], caller.error);
+  if (!caller.access.features.has("assistant")) return fail(403, "forbidden");
+  return { url };
+}
+
+async function callUpstream(path: PythonApiPath, init: RequestInit, request: Request, env: IrisProxyEnv): Promise<Response> {
+  const allowed = await authorize(path, request, env);
+  if (allowed instanceof Response) return allowed;
+  const { url } = allowed;
+  const timeout = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...init, signal: AbortSignal.any([request.signal, timeout]), cache: "no-store" });
+    const text = await res.text();
+    if (!res.ok) {
+      console.warn(`[iris-proxy] ${path} answered ${res.status}`);
+      return fail(res.status >= 400 && res.status <= 599 ? res.status : 502, "upstream");
+    }
+    return new Response(text, { status: res.status, headers: { ...NO_STORE, "Content-Type": "application/json" } });
+  } catch {
+    console.warn(`[iris-proxy] ${path} ${timeout.aborted ? "timed out" : "unreachable"}`);
+    return timeout.aborted ? fail(504, "timeout") : fail(502, "unreachable");
+  }
+}
+
+/** POST /api/iris/chat â†’ POST <PYTHON_API_URL>/api/chat/message */
+export async function forwardIrisChat(request: Request, env: IrisProxyEnv = process.env): Promise<Response> {
+  // Browsers set this header themselves; it stops other sites from using this route as a relay.
+  if (isCrossSite(request)) return fail(403, "cross_site");
+
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_CHARS) return fail(413, "invalid_request");
+  const text = await request.text();
+  if (text.length > MAX_BODY_CHARS) return fail(413, "invalid_request");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return fail(400, "invalid_request");
+  }
+  const body = readChatRequest(raw);
+  if (!body) return fail(400, "invalid_request");
+
+  return callUpstream(PYTHON_API_PATHS.irisChat, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) }, request, env);
+}
+
+/** GET /api/iris/health â†’ GET <PYTHON_API_URL>/health. Reports only up or down; same caller rules as chat. */
+export async function forwardIrisHealth(request: Request, env: IrisProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const res = await callUpstream(PYTHON_API_PATHS.irisHealth, { method: "GET", headers: { Accept: "application/json" } }, request, env);
+  return res.ok ? Response.json({ ok: true }, { headers: NO_STORE }) : res;
+}
+
+
+============================================================
+FILE: .\src\features\drive-vision\api\maintenance-proxy.ts
+============================================================
+import { maintenanceRole, maintenanceTenant, type MaintenanceRole } from "../access/maintenance-access";
+import {
+  TYRE_ALERT_LIMIT,
+  cleanMaintenanceVehicleNumber,
+  fromTyreAlert,
+  fromVehicleAlert,
+  parseScheduleList,
+  parseTyreAlerts,
+  parseVehicleAlerts,
+  readCreateSchedule,
+  readScheduleListQuery,
+  readTyreComplete,
+  readTyreRegister,
+  readUpstreamError,
+  sortNotifications,
+  tenantIdsIn,
+  toSearch,
+  type MaintenanceFeed,
+  type MaintenanceNotification,
+} from "./maintenance";
+import { PYTHON_API_PATHS, pythonApiUrl, type PythonApiPath } from "./python-api";
+import { CALLER_STATUS, bearerToken, bffBase, isCrossSite, verifyCaller, type CallerError } from "./safefare-caller";
+import { DEFAULT_TENANT_HEADER } from "./tenant-context";
+
+/**
+ * Same-origin proxy to the Python Vehicle Maintenance and Tyre Maintenance services (app/api/maintenance/**).
+ * SERVER ONLY. Same architecture as the Sensor Alerts and Iris proxies (python-api.ts, safefare-caller.ts):
+ *
+ * - Caller: the browser's Safe-Fare token is verified with the Java BFF; the token never goes to Python.
+ * - Role: Safe-Fare Admin or Fleet Owner only (maintenance-access.ts). Drivers and other tenant roles get 403.
+ * - Tenant, decided here: a Fleet Owner always works in the tenant of their own token (a different requested tenant
+ *   is refused, 403 cross_tenant); the Safe-Fare Admin names the selected tenant in X-Tenant-Id, honoured only for a
+ *   verified platform identity, and must name one (400 tenant_required). Python receives it as X-Tenant-ID.
+ * - Tenant check on every answer: any `tenant_id` in a Python response that isn't the decided tenant makes the
+ *   proxy withhold the body (502 tenant_mismatch). The Vehicle Maintenance Swagger declares no tenant header, so
+ *   this is what stops another tenant's data from being shown if that service resolves the tenant some other way.
+ * - Writes (create schedule, register tyres, complete replacement) first confirm with the BFF that the vehicle
+ *   number is registered in the decided tenant (404 vehicle_not_found otherwise).
+ * - Paths come only from the allowlist; {vehicle_number} is validated and encoded. Only documented query
+ *   parameters and body fields are forwarded. Postpone / complete vehicle maintenance (driver-only) aren't proxied.
+ * - Errors keep the upstream status. The body is reduced to `{error, message?, fields?}`, with the message taken
+ *   from FastAPI's `detail` (or the envelope's `message`), cleaned and capped. A 404 whose detail is FastAPI's
+ *   generic "Not Found" means the route isn't deployed (error "upstream_route_missing"), not "no record".
+ */
+const UPSTREAM_TIMEOUT_MS = 20_000;
+const BFF_TIMEOUT_MS = 15_000;
+const MAX_BODY_CHARS = 4096;
+
+export type MaintenanceProxyEnv = Record<string, string | undefined>;
+
+export type MaintenanceProxyError =
+  | CallerError
+  | "forbidden"
+  | "cross_tenant"
+  | "tenant_required"
+  | "no_tenant"
+  | "invalid_request"
+  | "vehicle_not_found"
+  | "vehicle_check_failed"
+  | "not_found"
+  | "upstream_route_missing"
+  | "tenant_mismatch"
+  | "upstream_invalid"
+  | "unreachable"
+  | "timeout"
+  | "upstream";
+
+const NO_STORE = { "Cache-Control": "no-store" };
+const fail = (status: number, error: MaintenanceProxyError, extra: { message?: string | null; fields?: { field: string; message: string }[] } = {}) =>
+  Response.json({ error, ...(extra.message ? { message: extra.message } : {}), ...(extra.fields?.length ? { fields: extra.fields } : {}) }, { status, headers: NO_STORE });
+
+// â”€â”€ Caller, role and tenant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export interface Authorized {
+  tenantId: number;
+  role: MaintenanceRole;
+  platform: boolean;
+  token: string;
+}
+
+/** The X-Tenant-Id the browser sent: absent â†’ null, invalid â†’ undefined. */
+function requestedTenant(request: Request): number | null | undefined {
+  const raw = request.headers.get(DEFAULT_TENANT_HEADER);
+  if (raw === null) return null;
+  return /^\d{1,12}$/.test(raw) && Number(raw) > 0 && Number.isSafeInteger(Number(raw)) ? Number(raw) : undefined;
+}
+
+export async function authorizeMaintenance(request: Request, env: MaintenanceProxyEnv): Promise<Authorized | Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const requested = requestedTenant(request);
+  if (requested === undefined) return fail(400, "invalid_request");
+  const caller = await verifyCaller(request, env, requested);
+  if (!caller.ok) return fail(CALLER_STATUS[caller.error], caller.error);
+  const access = caller.access;
+  const role = maintenanceRole(access);
+  if (!role) return fail(403, "forbidden");
+  // A tenant user can never choose a tenant: naming another one is refused rather than silently replaced.
+  if (!access.platform && requested !== null && requested !== access.identity!.tenantId) return fail(403, "cross_tenant");
+  const tenant = maintenanceTenant(access);
+  if (!tenant.ok) return tenant.reason === "tenant_required" ? fail(400, "tenant_required") : fail(403, tenant.reason === "no_tenant" ? "no_tenant" : "forbidden");
+  return { tenantId: tenant.tenantId, role, platform: access.platform, token: bearerToken(request)! };
+}
+
+// â”€â”€ Python calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+type PythonResult =
+  | { ok: true; status: number; json: unknown; text: string }
+  | { ok: false; status: number; error: MaintenanceProxyError; message?: string | null; fields?: { field: string; message: string }[] };
+
+interface PythonCall {
+  path: PythonApiPath;
+  vehicleNumber?: string;
+  search?: string;
+  method?: "GET" | "POST";
+  body?: unknown;
+  tenantId: number;
+}
+
+/**
+ * One allowlisted Python request with the tenant header, reduced to a result. Never throws. HTTP header names are
+ * case-insensitive, so the shared DEFAULT_TENANT_HEADER satisfies the documented X-Tenant-ID.
+ */
+export async function callPython(call: PythonCall, signal: AbortSignal, env: MaintenanceProxyEnv): Promise<PythonResult> {
+  const { path } = call;
+  const base = pythonApiUrl(path, env, call.vehicleNumber !== undefined ? { vehicleNumber: call.vehicleNumber } : {});
+  if (!base) return { ok: false, status: 503, error: "not_configured" };
+  const headers: Record<string, string> = { Accept: "application/json", [DEFAULT_TENANT_HEADER]: String(call.tenantId) };
+  if (call.body !== undefined) headers["Content-Type"] = "application/json";
+  const timeout = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(`${base}${call.search ?? ""}`, {
+      method: call.method ?? "GET",
+      headers,
+      body: call.body !== undefined ? JSON.stringify(call.body) : undefined,
+      signal: AbortSignal.any([signal, timeout]),
+      cache: "no-store",
+    });
+    text = await res.text();
+  } catch {
+    console.warn(`[maintenance-proxy] ${path} ${timeout.aborted ? "timed out" : "unreachable"}`);
+    return timeout.aborted ? { ok: false, status: 504, error: "timeout" } : { ok: false, status: 502, error: "unreachable" };
+  }
+  let json: unknown = undefined;
+  try {
+    json = text ? JSON.parse(text) : undefined;
+  } catch {
+    json = undefined;
+  }
+  if (!res.ok) {
+    console.warn(`[maintenance-proxy] ${path} answered ${res.status}`);
+    const status = res.status >= 400 && res.status <= 599 ? res.status : 502;
+    const detail = readUpstreamError(json);
+    if (status === 404 && detail.message === "Not Found") return { ok: false, status: 404, error: "upstream_route_missing" };
+    return { ok: false, status, error: status === 404 ? "not_found" : "upstream", message: detail.message, fields: detail.fields };
+  }
+  if (json === undefined) return { ok: false, status: 502, error: "upstream_invalid" };
+  const foreign = [...tenantIdsIn(json)].filter((t) => t !== call.tenantId);
+  if (foreign.length) {
+    console.warn(`[maintenance-proxy] ${path} answered with data of another tenant; withheld`);
+    return { ok: false, status: 502, error: "tenant_mismatch" };
+  }
+  return { ok: true, status: res.status, json, text };
+}
+
+const respond = (r: PythonResult) => (r.ok ? new Response(r.text, { status: r.status, headers: { ...NO_STORE, "Content-Type": "application/json" } }) : fail(r.status, r.error, r));
+
+/**
+ * Whether `vehicleNumber` is registered in the tenant, asked of the BFF with the caller's own token (and, for the
+ * Safe-Fare Admin, the selected tenant). GET /api/v1/vehicles?keyword= is a contains-search, so the match is exact
+ * (case-insensitive) on vehicleNumber.
+ */
+export async function vehicleInTenant(auth: Authorized, vehicleNumber: string, request: Request, env: MaintenanceProxyEnv): Promise<"yes" | "no" | "error"> {
+  const bff = bffBase(env);
+  if (!bff) return "error";
+  const headers: Record<string, string> = { Authorization: `Bearer ${auth.token}`, Accept: "application/json" };
+  if (auth.platform) headers[DEFAULT_TENANT_HEADER] = String(auth.tenantId);
+  const timeout = AbortSignal.timeout(BFF_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${bff}/api/v1/vehicles${toSearch({ keyword: vehicleNumber, pageNumber: 1, pageSize: 100 })}`, { headers, signal: AbortSignal.any([request.signal, timeout]), cache: "no-store" });
+    if (!res.ok) return "error";
+    const body = (await res.json()) as { data?: unknown };
+    const rows = Array.isArray(body?.data) ? body.data : [];
+    const want = vehicleNumber.toUpperCase();
+    return rows.some((r) => r && typeof r === "object" && typeof (r as { vehicleNumber?: unknown }).vehicleNumber === "string" && (r as { vehicleNumber: string }).vehicleNumber.trim().toUpperCase() === want) ? "yes" : "no";
+  } catch {
+    return "error";
+  }
+}
+
+async function readJsonBody(request: Request): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_CHARS) return { ok: false };
+  const text = await request.text();
+  if (text.length > MAX_BODY_CHARS) return { ok: false };
+  if (!text.trim()) return { ok: true, value: undefined };
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** The vehicle number of a dynamic route segment, or null. */
+export function readVehicleSegment(raw: string | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  let v = raw;
+  if (v.includes("%")) {
+    try {
+      v = decodeURIComponent(v);
+    } catch {
+      return null;
+    }
+  }
+  const clean = cleanMaintenanceVehicleNumber(v);
+  return clean !== null && clean === v ? clean : null;
+}
+
+async function writeGuard(auth: Authorized, vehicleNumber: string, request: Request, env: MaintenanceProxyEnv): Promise<Response | null> {
+  const member = await vehicleInTenant(auth, vehicleNumber, request, env);
+  if (member === "no") return fail(404, "vehicle_not_found", { message: `Vehicle ${vehicleNumber} isn't registered in this organisation.` });
+  if (member === "error") return fail(502, "vehicle_check_failed");
+  return null;
+}
+
+// â”€â”€ Vehicle Maintenance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/** GET /api/maintenance/vehicle â†’ GET /api/vehicle-maintenance (documented filters only). */
+export async function forwardScheduleList(request: Request, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const q = readScheduleListQuery(new URL(request.url).searchParams);
+  if (!q) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  return respond(await callPython({ path: PYTHON_API_PATHS.vehicleMaintenanceList, search: toSearch({ ...q }), tenantId: auth.tenantId }, request.signal, env));
+}
+
+/** POST /api/maintenance/vehicle â†’ POST /api/vehicle-maintenance {vehicle_number, previous_vehicle_maintenance_date, reason?}. */
+export async function forwardCreateSchedule(request: Request, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const raw = await readJsonBody(request);
+  const body = raw.ok ? readCreateSchedule(raw.value) : null;
+  if (!body) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  const blocked = await writeGuard(auth, body.vehicle_number, request, env);
+  if (blocked) return blocked;
+  return respond(await callPython({ path: PYTHON_API_PATHS.vehicleMaintenanceList, method: "POST", body, tenantId: auth.tenantId }, request.signal, env));
+}
+
+/** GET /api/maintenance/vehicle/{n} â†’ GET /api/vehicle-maintenance/{vehicle_number}. */
+export async function forwardSchedule(request: Request, segment: string | undefined, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const vehicleNumber = readVehicleSegment(segment);
+  if (!vehicleNumber) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  return respond(await callPython({ path: PYTHON_API_PATHS.vehicleMaintenanceSchedule, vehicleNumber, tenantId: auth.tenantId }, request.signal, env));
+}
+
+/** GET /api/maintenance/vehicle/alerts?vehicle_number= â†’ GET /api/vehicle-maintenance/alerts. vehicle_number is required. */
+export async function forwardVehicleAlerts(request: Request, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const vehicleNumber = cleanMaintenanceVehicleNumber(new URL(request.url).searchParams.get("vehicle_number"));
+  if (!vehicleNumber) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  return respond(await callPython({ path: PYTHON_API_PATHS.vehicleMaintenanceAlerts, search: toSearch({ vehicle_number: vehicleNumber }), tenantId: auth.tenantId }, request.signal, env));
+}
+
+// â”€â”€ Tyre Maintenance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/** GET /api/maintenance/tyre â†’ GET /api/v1/tyre-maintenance. */
+export async function forwardTyreList(request: Request, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  return respond(await callPython({ path: PYTHON_API_PATHS.tyreMaintenanceList, tenantId: auth.tenantId }, request.signal, env));
+}
+
+/** `limit` 1â€“500 (absent â†’ omitted; the service defaults to 50), optional vehicle_number. Null when invalid. */
+export function readTyreAlertsQuery(search: URLSearchParams): { vehicle_number?: string; limit?: number } | null {
+  const out: { vehicle_number?: string; limit?: number } = {};
+  const v = search.get("vehicle_number");
+  if (v !== null) {
+    const clean = cleanMaintenanceVehicleNumber(v);
+    if (!clean) return null;
+    out.vehicle_number = clean;
+  }
+  const l = search.get("limit");
+  if (l !== null) {
+    if (!/^\d{1,3}$/.test(l) || Number(l) < TYRE_ALERT_LIMIT.min || Number(l) > TYRE_ALERT_LIMIT.max) return null;
+    out.limit = Number(l);
+  }
+  return out;
+}
+
+/** GET /api/maintenance/tyre/alerts â†’ GET /api/v1/tyre-maintenance/alerts ?vehicle_number ?limit. */
+export async function forwardTyreAlerts(request: Request, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const q = readTyreAlertsQuery(new URL(request.url).searchParams);
+  if (!q) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  return respond(await callPython({ path: PYTHON_API_PATHS.tyreMaintenanceAlerts, search: toSearch(q), tenantId: auth.tenantId }, request.signal, env));
+}
+
+/** GET /api/maintenance/tyre/{n} â†’ GET /api/v1/tyre-maintenance/vehicle/{vehicle_number}. */
+export async function forwardTyreVehicle(request: Request, segment: string | undefined, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const vehicleNumber = readVehicleSegment(segment);
+  if (!vehicleNumber) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  return respond(await callPython({ path: PYTHON_API_PATHS.tyreMaintenanceVehicle, vehicleNumber, tenantId: auth.tenantId }, request.signal, env));
+}
+
+/** POST /api/maintenance/tyre/{n}/register {installation_date} and POST â€¦/complete {replacement_date?}. */
+export async function forwardTyreWrite(kind: "register" | "complete", request: Request, segment: string | undefined, env: MaintenanceProxyEnv = process.env): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const vehicleNumber = readVehicleSegment(segment);
+  if (!vehicleNumber) return fail(400, "invalid_request");
+  const raw = await readJsonBody(request);
+  const body = !raw.ok ? null : kind === "register" ? readTyreRegister(raw.value) : readTyreComplete(raw.value);
+  if (!body) return fail(400, "invalid_request");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  const blocked = await writeGuard(auth, vehicleNumber, request, env);
+  if (blocked) return blocked;
+  const path = kind === "register" ? PYTHON_API_PATHS.tyreMaintenanceRegister : PYTHON_API_PATHS.tyreMaintenanceComplete;
+  return respond(await callPython({ path, vehicleNumber, method: "POST", body, tenantId: auth.tenantId }, request.signal, env));
+}
+
+// â”€â”€ Notifications feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/**
+ * Bounds for the Vehicle Maintenance part of the feed. Its alerts endpoint needs a vehicle_number and returns that
+ * vehicle's latest three alerts, so there is no tenant-wide call. The feed lists the tenant's schedules (one page of
+ * up to SCHEDULE_PAGE_SIZE: only vehicles with a schedule can have maintenance alerts), then asks for the alerts of
+ * at most MAX_VEHICLES distinct vehicles, FEED_CONCURRENCY at a time. The result is cached per tenant for
+ * FEED_TTL_MS and concurrent requests share one build, so opening the popover repeatedly doesn't fan out again.
+ */
+export const FEED_LIMITS = { TYRE_LIMIT: 50, SCHEDULE_PAGE_SIZE: 100, MAX_VEHICLES: 25, FEED_CONCURRENCY: 4, FEED_TTL_MS: 60_000, MIN_REFRESH_MS: 10_000 } as const;
+
+type FeedFailure = { failed: true; status: number; error: MaintenanceProxyError; message?: string | null };
+const feedCache = new Map<number, { at: number; feed?: MaintenanceFeed; building?: Promise<MaintenanceFeed | FeedFailure> }>();
+/** A shared build isn't tied to the request that started it, so one closed popover can't cancel it for others. */
+const FEED_BUILD_TIMEOUT_MS = 45_000;
+
+/** For tests. */
+export const resetMaintenanceFeedCache = () => feedCache.clear();
+
+async function mapLimited<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+async function buildFeed(tenantId: number, env: MaintenanceProxyEnv): Promise<MaintenanceFeed | FeedFailure> {
+  const signal = AbortSignal.timeout(FEED_BUILD_TIMEOUT_MS);
+  const tyreP = callPython({ path: PYTHON_API_PATHS.tyreMaintenanceAlerts, search: toSearch({ limit: FEED_LIMITS.TYRE_LIMIT }), tenantId }, signal, env);
+  const listP = callPython({ path: PYTHON_API_PATHS.vehicleMaintenanceList, search: toSearch({ page: 1, page_size: FEED_LIMITS.SCHEDULE_PAGE_SIZE }), tenantId }, signal, env);
+  const [tyreR, listR] = await Promise.all([tyreP, listP]);
+
+  const items: MaintenanceNotification[] = [];
+  const sources: MaintenanceFeed["sources"] = {
+    tyre: { ok: false, count: 0 },
+    vehicle: { ok: false, vehiclesChecked: 0, vehiclesWithSchedules: 0, failedVehicles: 0, truncated: false },
+  };
+
+  if (tyreR.ok) {
+    const parsed = parseTyreAlerts(tyreR.json);
+    if (parsed.ok) {
+      parsed.value.items.forEach((a, i) => items.push(fromTyreAlert(a, i)));
+      sources.tyre = { ok: true, count: parsed.value.items.length };
+    } else sources.tyre = { ok: false, status: 502, error: "upstream_invalid", count: 0 };
+  } else sources.tyre = { ok: false, status: tyreR.status, error: tyreR.error, count: 0 };
+
+  if (listR.ok) {
+    const list = parseScheduleList(listR.json);
+    if (list.ok) {
+      const numbers = [...new Set(list.value.items.map((s) => cleanMaintenanceVehicleNumber(s.vehicle_number)).filter((n): n is string => n !== null))];
+      const chosen = numbers.slice(0, FEED_LIMITS.MAX_VEHICLES);
+      const total = list.value.pagination.total;
+      const results = await mapLimited(chosen, FEED_LIMITS.FEED_CONCURRENCY, (n) =>
+        callPython({ path: PYTHON_API_PATHS.vehicleMaintenanceAlerts, search: toSearch({ vehicle_number: n }), tenantId }, signal, env).then((r) => ({ n, r }))
+      );
+      let failed = 0;
+      for (const { n, r } of results) {
+        const parsed = r.ok ? parseVehicleAlerts(r.json) : null;
+        if (!parsed?.ok) {
+          // 404 = no alerts / no schedule for this vehicle, not a failure.
+          if (!(!r.ok && r.error === "not_found")) failed += 1;
+          continue;
+        }
+        parsed.value.forEach((a, i) => items.push(fromVehicleAlert(a, n, i)));
+      }
+      sources.vehicle = {
+        ok: true,
+        vehiclesChecked: chosen.length,
+        vehiclesWithSchedules: total ?? numbers.length,
+        failedVehicles: failed,
+        truncated: numbers.length > chosen.length || (typeof total === "number" && total > list.value.items.length),
+      };
+    } else sources.vehicle = { ...sources.vehicle, ok: false, status: 502, error: "upstream_invalid" };
+  } else sources.vehicle = { ...sources.vehicle, ok: false, status: listR.status, error: listR.error };
+
+  if (!sources.tyre.ok && !sources.vehicle.ok) {
+    const first = !tyreR.ok ? tyreR : !listR.ok ? listR : null;
+    return { failed: true, status: first?.status ?? 502, error: first?.error ?? "upstream_invalid", message: first?.message };
+  }
+  return { items: sortNotifications(items), sources, generatedAt: new Date().toISOString() };
+}
+
+/** GET /api/maintenance/notifications[?refresh=1] â†’ the tenant's maintenance alerts, both sources, newest first. */
+export async function forwardMaintenanceNotifications(request: Request, env: MaintenanceProxyEnv = process.env, now: () => number = Date.now): Promise<Response> {
+  if (isCrossSite(request)) return fail(403, "cross_site");
+  const auth = await authorizeMaintenance(request, env);
+  if (auth instanceof Response) return auth;
+  const refresh = new URL(request.url).searchParams.get("refresh") === "1";
+  const entry = feedCache.get(auth.tenantId);
+  const age = entry ? now() - entry.at : Infinity;
+  const send = (r: MaintenanceFeed | FeedFailure) => ("failed" in r ? fail(r.status, r.error, { message: r.message }) : Response.json(r, { headers: NO_STORE }));
+  if (entry?.building) return send(await entry.building);
+  if (entry?.feed && (age < FEED_LIMITS.MIN_REFRESH_MS || (!refresh && age < FEED_LIMITS.FEED_TTL_MS))) return Response.json(entry.feed, { headers: NO_STORE });
+
+  const building = buildFeed(auth.tenantId, env);
+  feedCache.set(auth.tenantId, { at: entry?.at ?? 0, feed: entry?.feed, building });
+  const result = await building;
+  // Errors aren't cached; the previous feed (if any) stays for the next call.
+  feedCache.set(auth.tenantId, "failed" in result ? { at: entry?.at ?? 0, feed: entry?.feed } : { at: now(), feed: result });
+  return send(result);
+}
+
+
+============================================================
+FILE: .\src\features\drive-vision\api\sensor-alerts-proxy.ts
+============================================================
+import { PYTHON_API_PATHS, pythonApiUrl } from "./python-api";
+import { CALLER_STATUS, isCrossSite, verifyCaller } from "./safefare-caller";
+import { cleanVehicleNumber, isSensorTenantId, sensorAlertsSearch } from "./sensor-alerts";
+
+/**
+ * Same-origin proxy to the Python Sensor Alerts service, used by app/api/sensors/alerts/route.ts. Server only.
+ *
+ * Why a proxy: the service is plain HTTP on its own port, so an HTTPS page can't call it (mixed content), and it
+ * is a different origin (CORS). It also has no authentication of its own, so the browser must not be the one that
+ * decides tenant_id. See docs/sensor-alerts-api-integration-report.md.
+ *
+ * - The caller sends its Safe-Fare access token. The proxy checks it with the BFF (safefare-caller.ts) and the
+ *   centralized resolver must grant the Sensors screen (sensor.read). The token goes only to the BFF, never to
+ *   the sensor service.
+ * - tenant_id is decided here. Tenant users always get their own tenant from the token (a different requested
+ *   tenant is refused). The Safe-Fare Admin may name a tenant or omit it (all tenants).
+ * - Only tenant_id and vehicle_number are forwarded. Upstream errors are reduced to a status and a fixed code;
+ *   their bodies, the token and the URLs are never returned or logged.
+ * - The service is on the shared Python backend: PYTHON_API_URL (python-api.ts), read per request and never
+ *   NEXT_PUBLIC_, so it stays out of the browser bundle.
+ */
+const UPSTREAM_TIMEOUT_MS = 20_000;
+
+export type SensorAlertsProxyEnv = Record<string, string | undefined>;
+
+export type SensorAlertsProxyError =
+  | "cross_site"
+  | "invalid_request"
+  | "unauthenticated"
+  | "forbidden"
+  | "cross_tenant"
+  | "no_tenant"
+  | "not_configured"
+  | "identity_unavailable"
+  | "unreachable"
+  | "timeout"
+  | "upstream";
+
+const NO_STORE = { "Cache-Control": "no-store" };
+const fail = (status: number, error: SensorAlertsProxyError) => Response.json({ error }, { status, headers: NO_STORE });
+
+type Requested = { tenantId: number | null; vehicleNumber: string | null };
+
+/** The two documented parameters, or null when one is present but invalid. Other parameters are ignored. */
+export function readSensorAlertsParams(search: URLSearchParams): Requested | null {
+  const rawTenant = search.get("tenant_id");
+  const rawVehicle = search.get("vehicle_number");
+  let tenantId: number | null = null;
+  if (rawTenant !== null) {
+    if (!/^\d{1,12}$/.test(rawTenant) || !isSensorTenantId(Number(rawTenant))) return null;
+    tenantId = Number(rawTenant);
+  }
+  let vehicleNumber: string | null = null;
+  if (rawVehicle !== null) {
+    vehicleNumber = cleanVehicleNumber(rawVehicle);
+    if (!vehicleNumber) return null;
+  }
+  return { tenantId, vehicleNumber };
+}
+
+/** Which tenant the request may read, from the verified identity. */
+export function decideSensorTenant(identity: { platform: boolean; tenantId: number | null }, requested: number | null): { ok: true; tenantId: number | null } | { ok: false; status: number; error: SensorAlertsProxyError } {
+  if (identity.platform) return { ok: true, tenantId: requested };
+  if (!isSensorTenantId(identity.tenantId)) return { ok: false, status: 403, error: "no_tenant" };
+  if (requested !== null && requested !== identity.tenantId) return { ok: false, status: 403, error: "cross_tenant" };
+  return { ok: true, tenantId: identity.tenantId };
+}
+
+/** GET /api/sensors/alerts â†’ GET <PYTHON_API_URL>/api/sensors/alerts */
+export async function forwardSensorAlerts(request: Request, env: SensorAlertsProxyEnv = process.env): Promise<Response> {
+  // Browsers set this header themselves; it stops other sites from using this route as a relay.
+  if (isCrossSite(request)) return fail(403, "cross_site");
+
+  const requested = readSensorAlertsParams(new URL(request.url).searchParams);
+  if (!requested) return fail(400, "invalid_request");
+
+  const upstreamBase = pythonApiUrl(PYTHON_API_PATHS.sensorAlerts, env);
+  if (!upstreamBase) return fail(503, "not_configured");
+
+  // Verified with the Java BFF (NEXT_PUBLIC_API_BASE_URL); the resolver is the one the UI uses.
+  const caller = await verifyCaller(request, env);
+  if (!caller.ok) return fail(CALLER_STATUS[caller.error], caller.error);
+  if (!caller.access.screens.has("sensors")) return fail(403, "forbidden");
+  const identity = caller.access.identity!;
+
+  const tenant = decideSensorTenant(identity, requested.tenantId);
+  if (!tenant.ok) return fail(tenant.status, tenant.error);
+
+  const url = `${upstreamBase}${sensorAlertsSearch({ tenantId: tenant.tenantId, vehicleNumber: requested.vehicleNumber })}`;
+  const timeout = AbortSignal.timeout(UPSTREAM_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: AbortSignal.any([request.signal, timeout]), cache: "no-store" });
+    const text = await res.text();
+    if (!res.ok) {
+      console.warn(`[sensor-alerts-proxy] upstream answered ${res.status}`);
+      return fail(res.status >= 400 && res.status <= 599 ? res.status : 502, "upstream");
+    }
+    // Passed through as text; the client validates the shape (parseSensorAlertsResponse).
+    return new Response(text, { status: 200, headers: { ...NO_STORE, "Content-Type": "application/json" } });
+  } catch {
+    console.warn(`[sensor-alerts-proxy] upstream ${timeout.aborted ? "timed out" : "unreachable"}`);
+    return timeout.aborted ? fail(504, "timeout") : fail(502, "unreachable");
+  }
+}
+
+
+============================================================
+FRONTEND API REFERENCES
+============================================================
+C:\Sconex-Projects\Drive-Vision\src\components\drive-vision\app-shell\notification-center.tsx:40
+* on the server (/api/maintenance/notifications) and fetched only while the popover shows them. They have no read
+
+C:\Sconex-Projects\Drive-Vision\src\components\drive-vision\app-shell\notifications-model.ts:10
+* /api/maintenance/notifications. Those alerts have no read state anywhere, so they never count as unread.
+
+C:\Sconex-Projects\Drive-Vision\src\components\drive-vision\sensors\sensors-page.tsx:110
+* Sensor Alerts tab (first and default): GET /api/sensors/alerts (same-origin proxy to the Python service) for the
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\iris-chat-proxy.ts:70
+/** POST /api/iris/chat → POST <PYTHON_API_URL>/api/chat/message */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\iris-chat-proxy.ts:90
+/** GET /api/iris/health → GET <PYTHON_API_URL>/health. Reports only up or down; same caller rules as chat. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\iris-chat-service.ts:14
+export const IRIS_CHAT_ENDPOINT = "/api/iris/chat";
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\iris-chat-service.ts:15
+export const IRIS_HEALTH_ENDPOINT = "/api/iris/health";
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:228
+/** GET /api/maintenance/vehicle → GET /api/vehicle-maintenance (documented filters only). */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:238
+/** POST /api/maintenance/vehicle → POST /api/vehicle-maintenance {vehicle_number, previous_vehicle_maintenance_date, reason?}. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:251
+/** GET /api/maintenance/vehicle/{n} → GET /api/vehicle-maintenance/{vehicle_number}. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:261
+/** GET /api/maintenance/vehicle/alerts?vehicle_number= → GET /api/vehicle-maintenance/alerts. vehicle_number is required. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:273
+/** GET /api/maintenance/tyre → GET /api/v1/tyre-maintenance. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:298
+/** GET /api/maintenance/tyre/alerts → GET /api/v1/tyre-maintenance/alerts ?vehicle_number ?limit. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:308
+/** GET /api/maintenance/tyre/{n} → GET /api/v1/tyre-maintenance/vehicle/{vehicle_number}. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:318
+/** POST /api/maintenance/tyre/{n}/register {installation_date} and POST …/complete {replacement_date?}. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance-proxy.ts:422
+/** GET /api/maintenance/notifications[?refresh=1] → the tenant's maintenance alerts, both sources, newest first. */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:15
+vehicleList: "/api/maintenance/vehicle",
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:16
+vehicleAlerts: "/api/maintenance/vehicle/alerts",
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:17
+vehicleSchedule: (n: string) => `/api/maintenance/vehicle/${seg(n)}`,
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:18
+tyreList: "/api/maintenance/tyre",
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:19
+tyreAlerts: "/api/maintenance/tyre/alerts",
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:20
+tyreVehicle: (n: string) => `/api/maintenance/tyre/${seg(n)}`,
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:21
+tyreRegister: (n: string) => `/api/maintenance/tyre/${seg(n)}/register`,
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:22
+tyreComplete: (n: string) => `/api/maintenance/tyre/${seg(n)}/complete`,
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:23
+notifications: "/api/maintenance/notifications",
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\maintenance.ts:546
+/** /api/maintenance/notifications response (built by the proxy). */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\python-api.ts:18
+sensorAlerts: "/api/sensors/alerts",
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\python-api.ts:65
+* "/api/sensors/alerts" gives ".../api/sensors/alerts".
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts-proxy.ts:6
+* Same-origin proxy to the Python Sensor Alerts service, used by app/api/sensors/alerts/route.ts. Server only.
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts-proxy.ts:69
+/** GET /api/sensors/alerts → GET <PYTHON_API_URL>/api/sensors/alerts */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts-service.ts:7
+* Sensor alerts, read through the same-origin proxy (app/api/sensors/alerts). Separate from sensorService: it
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts-service.ts:49
+* GET /api/sensors/alerts ?tenant_id ?vehicle_number. Omitted values are left out of the URL entirely.
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts.ts:4
+*   GET <PYTHON_API_URL>/api/sensors/alerts ?tenant_id ?vehicle_number   (both optional)
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts.ts:12
+/** Same-origin proxy route (app/api/sensors/alerts/route.ts). */
+
+C:\Sconex-Projects\Drive-Vision\src\features\drive-vision\api\sensor-alerts.ts:13
+export const SENSOR_ALERTS_ROUTE = "/api/sensors/alerts";
+

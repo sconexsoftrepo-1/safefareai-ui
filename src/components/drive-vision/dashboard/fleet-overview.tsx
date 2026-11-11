@@ -38,7 +38,7 @@ import { CURRENT_REPORT_MS, EXPIRING_DAYS, LOW_BATTERY_PCT, deviceReminders, dev
 
 const QUICK_LINKS = [
   { label: "Live Monitoring", hint: "Map & vehicle status", href: "/drive-vision/monitoring", icon: Radar, tone: "bg-powder" },
-  { label: "Vehicles", hint: "Devices & groups", href: "/drive-vision/vehicles", icon: Truck, tone: "bg-powder" },
+  { label: "Devices & Assets", hint: "Devices & groups", href: "/drive-vision/vehicles", icon: Truck, tone: "bg-powder" },
   { label: "Historical Video", hint: "Camera playback", href: "/drive-vision/video", icon: Cctv, tone: "bg-powder" },
   { label: "Trips", hint: "Routes & playback", href: "/drive-vision/trips", icon: Route, tone: "bg-peach" },
   { label: "Alerts", hint: "Events to review", href: "/drive-vision/alerts", icon: Bell, tone: "bg-brand-soft" },
@@ -241,7 +241,7 @@ export function FleetOverview() {
                   </Button>
                   <Button asChild variant="outline">
                     <Link href="/drive-vision/vehicles">
-                      <Truck /> Vehicles
+                      <Truck /> Devices &amp; Assets
                     </Link>
                   </Button>
                 </div>
