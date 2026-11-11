@@ -43,7 +43,6 @@ export interface NavItem {
 
 export interface NavGroup {
   label: string;
-  /** Label in the topbar section switcher (defaults to `label`). */
   short?: string;
   items: NavItem[];
 }
