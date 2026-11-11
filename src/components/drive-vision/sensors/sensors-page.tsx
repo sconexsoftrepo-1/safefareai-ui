@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Activity, BellRing, BusFront, Gauge, Info, Loader2, Plus, RefreshCw, RotateCw, ScanLine, TriangleAlert, Users, Wine } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { sensorAlertsService } from "@/features/drive-vision/api/sensor-alerts-s
 import { cleanVehicleNumber } from "@/features/drive-vision/api/sensor-alerts";
 import { vehicleRegistryService } from "@/features/drive-vision/api/vehicle-registry-service";
 import { describeApiError, isApiError } from "@/features/drive-vision/api/errors";
-import type { AlcoholDetectionDto, BmsRowDto, ComparisonStopDto, SensorReadingDto, StopVisitDto } from "@/features/drive-vision/api/types";
+import type { AlcoholDetectionDto, ComparisonStopDto, SensorReadingDto, StopVisitDto } from "@/features/drive-vision/api/types";
 import { useApiQuery, type ApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { useAccess, useActionGate } from "@/features/drive-vision/access/use-access";
 import { canViewWidget } from "@/features/drive-vision/access/access-policy";
@@ -56,6 +56,10 @@ import {
   type ReadingForm,
   type WindowPreset,
 } from "./sensors-model";
+import { DEMO_JOURNEY, demoDateLabel, passengerDemoEnabled, passengerDemoSource, type BmsTableRow } from "./passenger-demo";
+
+// Demo-only charts: loaded when the demo journey shows them, so the live screen's code and imports are unchanged.
+const PassengerDemoCharts = lazy(() => import("./passenger-demo-charts").then((m) => ({ default: m.PassengerDemoCharts })));
 
 type Tab = "comparison" | "stops" | "bms" | "readings" | "alerts";
 /** The Bus dropdown's "All vehicles" choice: Sensor Alerts for every vehicle; the per-bus views need a bus. */
@@ -123,6 +127,10 @@ export function SensorsPage() {
   const recalcGate = useActionGate("sensors.recalculate");
   // The chosen vehicle's id (never its device id), "all", or null = not chosen yet.
   const [chosenId, setVehicleId] = useState<number | typeof ALL_VEHICLES | null>(null);
+  // Passenger Analytics sample journey (NEXT_PUBLIC_PASSENGER_DEMO_MODE=true only, no switch on screen): the four
+  // passenger tabs read the sample journey. Sensor Alerts never does — it keeps the live vehicle selection, requests and
+  // filters below exactly as without the flag. Off: the screen is exactly the live screen.
+  const demo = passengerDemoEnabled();
   const [preset, setPreset] = useState<WindowPreset>("24h");
   const [custom, setCustom] = useState(() => ({ from: dateToIstInput(new Date(Date.now() - 86_400_000)), to: dateToIstInput(new Date()) }));
   // "Now" for relative presets; Refresh moves it forward so "Last 24 hours" really is the last 24 hours.
@@ -150,18 +158,21 @@ export function SensorsPage() {
 
   const resolved = useMemo(() => resolveWindow(preset, custom, now), [preset, custom, now]);
   const win = resolved.window;
-  const key = deviceId !== null && win ? `${deviceId}:${win.fromUtc}:${win.toUtc}` : null;
-  const summaryQ = useApiQuery(key ? `sensors:summary:${key}` : null, () => sensorService.passengerSummary(deviceId!, win!));
-  const comparisonQ = useApiQuery(key && tab === "comparison" ? `sensors:comparison:${key}` : null, () => sensorService.comparison(deviceId!, win!));
-  const stopsQ = useApiQuery(key && tab === "stops" ? `sensors:stops:${key}` : null, () => sensorService.stops(deviceId!, win!));
-  const bmsQ = useApiQuery(key && tab === "bms" ? `sensors:bms:${key}` : null, () => sensorService.bms(deviceId!, win!));
-  const readingsQ = useApiQuery(key && tab === "readings" ? `sensors:readings:${key}:${sensorSubId}:${readingsPage}` : null, () =>
-    sensorService.readings(deviceId!, { ...win!, sensorSubId: sensorSubId === "all" ? undefined : Number(sensorSubId), pageNumber: readingsPage, pageSize: READINGS_PAGE_SIZE })
+  // Sample journey: one fixed journey, its own keys (never a device's), and the demo source — same shapes, no request.
+  // Only these passenger reads switch; the live vehicle above still drives Sensor Alerts.
+  const source = demo ? passengerDemoSource : sensorService;
+  const key = demo ? `demo:${DEMO_JOURNEY.id}` : deviceId !== null && win ? `${deviceId}:${win.fromUtc}:${win.toUtc}` : null;
+  const summaryQ = useApiQuery(key ? `sensors:summary:${key}` : null, () => source.passengerSummary(deviceId!, win!));
+  const comparisonQ = useApiQuery(key && tab === "comparison" ? `sensors:comparison:${key}` : null, () => source.comparison(deviceId!, win!));
+  const stopsQ = useApiQuery(key && tab === "stops" ? `sensors:stops:${key}` : null, () => source.stops(deviceId!, win!));
+  const bmsQ = useApiQuery(key && tab === "bms" ? `sensors:bms:${key}` : null, () => source.bms(deviceId!, win!));
+  const readingsQ = useApiQuery(key && tab === "readings" ? `sensors:readings:${key}:${demo ? "all" : sensorSubId}:${readingsPage}` : null, () =>
+    source.readings(deviceId!, { ...win!, sensorSubId: demo || sensorSubId === "all" ? undefined : Number(sensorSubId), pageNumber: readingsPage, pageSize: READINGS_PAGE_SIZE })
   );
   // On Sensor Alerts no per-bus table is shown; comparisonQ is idle there (its key needs tab === "comparison"), so
   // refreshing it is a no-op.
   const activeQ = { comparison: comparisonQ, stops: stopsQ, bms: bmsQ, readings: readingsQ }[tab === "alerts" ? "comparison" : tab];
-  const alcoholQ = useApiQuery(key ? `sensors:alcohol:${key}` : null, () => sensorService.alcohol(deviceId!, win!));
+  const alcoholQ = useApiQuery(key ? `sensors:alcohol:${key}` : null, () => source.alcohol(deviceId!, win!));
 
   // Sensor Alerts: vehicle_number is the chosen vehicle's vehicleNumber — never the vehicle id, device id, terminal
   // number or sensor kit. The caller's effective tenant (a tenant user's own; the Safe-Fare Admin's selected one)
@@ -196,7 +207,7 @@ export function SensorsPage() {
   /** The Refresh button reloads the active tab's data: Sensor Alerts, or the per-bus views (never both). */
   function refreshScreen() {
     if (!onAlerts) {
-      if (deviceId !== null) refreshAll();
+      if (deviceId !== null || demo) refreshAll();
       return;
     }
     if (vehiclesQ.error && vehiclesQ.data === undefined) vehiclesQ.refetch();
@@ -204,7 +215,7 @@ export function SensorsPage() {
   }
   const refreshBusy = onAlerts ? alertsQ.loading || alertsQ.refreshing : summaryQ.loading;
   const refreshSpinning = onAlerts ? alertsQ.refreshing : summaryQ.refreshing;
-  const refreshDisabled = onAlerts ? (!alertsKey && !(vehiclesQ.error && vehiclesQ.data === undefined)) || refreshBusy : deviceId === null || refreshBusy;
+  const refreshDisabled = onAlerts ? (!alertsKey && !(vehiclesQ.error && vehiclesQ.data === undefined)) || refreshBusy : (deviceId === null && !demo) || refreshBusy;
   const alertCount = useMemo(() => (alertsQ.data ? totalAlerts(alertsQ.data) : null), [alertsQ.data]);
 
   const s = summaryQ.data;
@@ -246,14 +257,14 @@ export function SensorsPage() {
     { id: "notes", header: "Notes", hideBelow: "xl", cell: (r) => <Notes notes={r.notes} /> },
   ];
 
-  const bmsColumns: DataTableColumn<BmsRowDto>[] = [
+  const bmsColumns: DataTableColumn<BmsTableRow>[] = [
     { id: "time", header: "Time", cell: (r) => <span className="whitespace-nowrap tabular">{r.stopVisitTime ? formatDateTime(r.stopVisitTime) : "—"}</span> },
     { id: "stop", header: "Stop", cell: (r) => <span className="font-medium">{r.stopName ?? `Stop ${r.stopId ?? "?"}`}</span> },
     { id: "seq", header: "Seq", align: "right", cell: (r) => showCount(r.stopSequence) },
     { id: "in", header: "Boarded", align: "right", cell: (r) => <span className="text-success tabular">{showCount(r.passengersBoarded)}</span> },
     { id: "out", header: "Alighted", align: "right", cell: (r) => <span className="text-danger tabular">{showCount(r.passengersAlighted)}</span> },
     { id: "count", header: "On board (BMS)", align: "right", cell: (r) => <span className="font-semibold tabular">{showCount(r.passengerCount)}</span> },
-    { id: "id", header: "BMS id", hideBelow: "md", cell: (r) => <span className="font-mono text-xs text-ink-muted">{r.bmsId ?? "—"}</span> },
+    { id: "id", header: "BMS id", hideBelow: "md", cell: (r) => <span className="font-mono text-xs text-ink-muted">{r.bmsLabel ?? r.bmsId ?? "—"}</span> },
   ];
 
   const readingColumns: DataTableColumn<SensorReadingDto>[] = [
@@ -275,6 +286,9 @@ export function SensorsPage() {
 
   const recalcWhy = recalcBlock(win);
 
+  // The passenger tabs show the sample journey's own context row instead of the vehicle picker and window.
+  const passengerDemo = demo && !onAlerts;
+
   const busLine = allVehicles
     ? "All vehicles"
     : bus
@@ -291,12 +305,12 @@ export function SensorsPage() {
             <Button variant="outline" onClick={refreshScreen} disabled={refreshDisabled}>
               <RefreshCw className={refreshSpinning ? "animate-spin" : undefined} /> Refresh
             </Button>
-            {!onAlerts && recalcGate.allowed ? (
+            {!onAlerts && !demo && recalcGate.allowed ? (
               <Button variant="outline" onClick={() => setRecalculating(true)} disabled={deviceId === null || recalcWhy !== null} title={recalcWhy ?? undefined}>
                 <RotateCw /> Recalculate
               </Button>
             ) : null}
-            {onAlerts ? null : ingestGate.allowed ? (
+            {onAlerts || demo ? null : ingestGate.allowed ? (
               <Button onClick={() => setAdding(true)} disabled={deviceId === null}>
                 <Plus /> Add reading
               </Button>
@@ -309,77 +323,85 @@ export function SensorsPage() {
 
       <Panel className="mb-4 p-4">
         <div className="flex flex-col gap-3 @3xl:flex-row @3xl:flex-wrap @3xl:items-end">
-          <FormField id="sn-bus" label="Vehicle" className="@3xl:w-72">
-            {!canPickBus ? (
-              <p className="text-xs text-ink-muted">All vehicles · choosing one vehicle needs vehicle.read.</p>
-            ) : vehiclesQ.error && !vehiclesQ.data ? (
-              <p className="text-xs text-danger" role="alert">
-                {describeApiError(vehiclesQ.error)} Showing all vehicles.{" "}
-                <button type="button" className="font-medium underline" onClick={vehiclesQ.refetch}>
-                  Retry
-                </button>
-              </p>
-            ) : vehiclesQ.data && vehicles.length === 0 ? (
-              <p className="text-xs text-ink-muted" data-testid="sensors-no-assigned-vehicles">
-                No vehicle has a device assigned yet. Assign one under Devices &amp; Assets. Showing all vehicles.
-              </p>
-            ) : (
-              <Select value={allVehicles ? ALL_VEHICLES : bus ? String(bus.vehicleId) : ""} onValueChange={(v) => (setVehicleId(v === ALL_VEHICLES ? ALL_VEHICLES : Number(v)), setReadingsPage(1))} disabled={!vehiclesQ.data}>
-                <SelectTrigger id="sn-bus" className="h-10 w-full">
-                  <SelectValue placeholder={vehiclesQ.data ? "Choose a vehicle" : "Loading vehicles…"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_VEHICLES}>All vehicles</SelectItem>
-                  {vehicles.map((v) => (
-                    <SelectItem key={v.vehicleId} value={String(v.vehicleId)}>
-                      {v.vehicleNumber}
-                      {v.deviceName || v.terminalNo ? <span className="ml-1.5 text-[11px] text-ink-muted">{v.deviceName ?? <span className="font-mono">{v.terminalNo}</span>}</span> : null}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {vehiclesQ.data?.truncated ? <p className="text-[11px] text-ink-muted">Showing the first {vehicles.length} of {vehiclesQ.data.total} vehicles.</p> : null}
-          </FormField>
-          {onAlerts ? (
-            <p className="flex items-start gap-2 rounded-inner bg-powder/60 px-3 py-2 text-[13px] text-ink @3xl:max-w-xl" data-testid="alerts-window-note">
-              <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
-              Sensor alerts show how long each sensor stayed active; filter them by date and time below. The time window applies to Sensor vs BMS, Stops, BMS records and Sensor readings only.
-            </p>
+          {passengerDemo ? (
+            <JourneyContext />
           ) : (
             <>
-              <div className="space-y-1.5" data-testid="time-window">
-                <p className="text-[13px] font-medium text-ink">Time window (IST)</p>
-                <SegmentedControl
-                  label="Time window"
-                  value={preset}
-                  onChange={(p) => (setPreset(p), setNow(new Date()), setReadingsPage(1))}
-                  options={[
-                    { value: "24h", label: "Last 24 h" },
-                    { value: "today", label: "Today" },
-                    { value: "yesterday", label: "Yesterday" },
-                    { value: "7d", label: "7 days" },
-                    { value: "custom", label: "Custom" },
-                  ]}
-                />
-              </div>
-              {preset === "custom" ? (
-                <div className="flex flex-wrap items-end gap-2">
-                  <FormField id="sn-from" label="From">
-                    <Input id="sn-from" type="datetime-local" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
-                  </FormField>
-                  <FormField id="sn-to" label="To">
-                    <Input id="sn-to" type="datetime-local" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
-                  </FormField>
-                </div>
-              ) : null}
+              <FormField id="sn-bus" label="Vehicle" className="@3xl:w-72">
+                {!canPickBus ? (
+                  <p className="text-xs text-ink-muted">All vehicles · choosing one vehicle needs vehicle.read.</p>
+                ) : vehiclesQ.error && !vehiclesQ.data ? (
+                  <p className="text-xs text-danger" role="alert">
+                    {describeApiError(vehiclesQ.error)} Showing all vehicles.{" "}
+                    <button type="button" className="font-medium underline" onClick={vehiclesQ.refetch}>
+                      Retry
+                    </button>
+                  </p>
+                ) : vehiclesQ.data && vehicles.length === 0 ? (
+                  <p className="text-xs text-ink-muted" data-testid="sensors-no-assigned-vehicles">
+                    No vehicle has a device assigned yet. Assign one under Devices &amp; Assets. Showing all vehicles.
+                  </p>
+                ) : (
+                  <Select value={allVehicles ? ALL_VEHICLES : bus ? String(bus.vehicleId) : ""} onValueChange={(v) => (setVehicleId(v === ALL_VEHICLES ? ALL_VEHICLES : Number(v)), setReadingsPage(1))} disabled={!vehiclesQ.data}>
+                    <SelectTrigger id="sn-bus" className="h-10 w-full">
+                      <SelectValue placeholder={vehiclesQ.data ? "Choose a vehicle" : "Loading vehicles…"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ALL_VEHICLES}>All vehicles</SelectItem>
+                      {vehicles.map((v) => (
+                        <SelectItem key={v.vehicleId} value={String(v.vehicleId)}>
+                          {v.vehicleNumber}
+                          {v.deviceName || v.terminalNo ? <span className="ml-1.5 text-[11px] text-ink-muted">{v.deviceName ?? <span className="font-mono">{v.terminalNo}</span>}</span> : null}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {vehiclesQ.data?.truncated ? <p className="text-[11px] text-ink-muted">Showing the first {vehicles.length} of {vehiclesQ.data.total} vehicles.</p> : null}
+              </FormField>
+              {onAlerts ? (
+                <p className="flex items-start gap-2 rounded-inner bg-powder/60 px-3 py-2 text-[13px] text-ink @3xl:max-w-xl" data-testid="alerts-window-note">
+                  <Info className="mt-0.5 size-4 shrink-0 text-info" aria-hidden />
+                  Sensor alerts show how long each sensor stayed active; filter them by date and time below. The time window applies to Sensor vs BMS, Stops, BMS records and Sensor readings only.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-1.5" data-testid="time-window">
+                    <p className="text-[13px] font-medium text-ink">Time window (IST)</p>
+                    <SegmentedControl
+                      label="Time window"
+                      value={preset}
+                      onChange={(p) => (setPreset(p), setNow(new Date()), setReadingsPage(1))}
+                      options={[
+                        { value: "24h", label: "Last 24 h" },
+                        { value: "today", label: "Today" },
+                        { value: "yesterday", label: "Yesterday" },
+                        { value: "7d", label: "7 days" },
+                        { value: "custom", label: "Custom" },
+                      ]}
+                    />
+                  </div>
+                  {preset === "custom" ? (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <FormField id="sn-from" label="From">
+                        <Input id="sn-from" type="datetime-local" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} />
+                      </FormField>
+                      <FormField id="sn-to" label="To">
+                        <Input id="sn-to" type="datetime-local" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} />
+                      </FormField>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </>
           )}
         </div>
-        <p className="mt-2 text-xs text-ink-muted tabular" data-testid="vehicle-scope-line">
-          {busLine}
-        </p>
-        {!onAlerts && resolved.error ? (
+        {passengerDemo ? null : (
+          <p className="mt-2 text-xs text-ink-muted tabular" data-testid="vehicle-scope-line">
+            {busLine}
+          </p>
+        )}
+        {!onAlerts && !demo && resolved.error ? (
           <p className="mt-2 text-xs text-danger" role="alert">
             {resolved.error}
           </p>
@@ -402,13 +424,13 @@ export function SensorsPage() {
       <div role="tabpanel" id={SENSORS_TABPANEL_ID} aria-labelledby={sensorsTabId(tab)}>
         {onAlerts ? (
           <SensorAlertsPanel key={alertsScopeKey ?? alertsScope.kind} scope={alertsScope} query={alertsQ} onRetry={alertsQ.refetch} filters={alertFilters} onFiltersChange={setAlertFilters} />
-        ) : deviceId === null ? (
+        ) : deviceId === null && !demo ? (
           <Panel>
             <EmptyState icon={BusFront} title="Choose a vehicle" description="Passenger counts, stops, BMS records and sensor readings are per bus. Choose one in the Vehicle list above; Sensor Alerts covers all vehicles." />
           </Panel>
         ) : (
           <>
-            <AlcoholCard query={alcoholQ} />
+            <AlcoholCard query={alcoholQ} missing={demo ? "Unavailable" : "—"} />
             {summaryQ.error && !s ? (
               <Panel className="mb-4">
                 <ApiErrorState error={summaryQ.error} onRetry={summaryQ.refetch} compact />
@@ -461,7 +483,7 @@ export function SensorsPage() {
               </div>
             ) : null}
 
-            {tab === "readings" ? (
+            {tab === "readings" && !demo ? (
               <FilterBar className="mb-3">
                 <FilterSelect
                   label="Sensor type"
@@ -472,6 +494,11 @@ export function SensorsPage() {
               </FilterBar>
             ) : null}
             {tab === "comparison" && comparisonQ.data?.summary ? <ComparisonStrip summary={comparisonQ.data.summary} /> : null}
+            {tab === "comparison" && demo && comparisonQ.data ? (
+              <Suspense fallback={<LoadingSkeleton variant="chart" className="mb-3 h-[240px]" />}>
+                <PassengerDemoCharts journey={DEMO_JOURNEY} />
+              </Suspense>
+            ) : null}
             {truncated ? (
               <p className="mb-3 rounded-xl bg-warning-soft px-3 py-2 text-xs text-warning" role="status">
                 Only the first 1000 rows are shown — narrow the time window.
@@ -507,7 +534,7 @@ export function SensorsPage() {
         )}
       </div>
 
-      {adding && deviceId !== null ? (
+      {adding && deviceId !== null && !demo ? (
         <AddReadingPanel
           deviceId={deviceId}
           busName={busLabel}
@@ -540,7 +567,7 @@ export function SensorsPage() {
 }
 
 /** Latest alcohol test of the bus in the window (GET /devices/{id}/sensors/alcohol). */
-function AlcoholCard({ query }: { query: ApiQuery<AlcoholDetectionDto> }) {
+function AlcoholCard({ query, missing }: { query: ApiQuery<AlcoholDetectionDto>; missing: string }) {
   const a = query.data;
   const meta = alcoholMeta(a?.detectionStatus);
   const detected = a?.detectionStatus === "DETECTED";
@@ -565,20 +592,54 @@ function AlcoholCard({ query }: { query: ApiQuery<AlcoholDetectionDto> }) {
           <dl className="flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
             <div>
               <dt className="text-xs text-ink-muted">Time</dt>
-              <dd className="font-medium tabular">{a.timestamp ? formatDateTime(a.timestamp) : "—"}</dd>
+              <dd className="font-medium tabular">{a.timestamp ? formatDateTime(a.timestamp) : missing}</dd>
             </div>
             <div>
               <dt className="text-xs text-ink-muted">Sensor</dt>
-              <dd className="font-mono">{a.sensorId ?? "—"}</dd>
+              <dd className="font-mono">{a.sensorId ?? missing}</dd>
             </div>
             <div>
               <dt className="text-xs text-ink-muted">Value</dt>
-              <dd className="font-mono">{a.sensorData ?? "—"}</dd>
+              <dd className="font-mono">{a.sensorData ?? missing}</dd>
             </div>
           </dl>
         </div>
       )}
     </Panel>
+  );
+}
+
+/**
+ * The sample journey's context on the four passenger tabs: one compact row (wraps on phones) with the bus, route and
+ * date, and a neutral "Sample journey" note so the values are never taken for live telemetry.
+ */
+function JourneyContext() {
+  const { bus } = DEMO_JOURNEY;
+  return (
+    <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px]" data-testid="journey-context" aria-label="Journey">
+      <span className="inline-flex items-center gap-2">
+        <span className="grid size-8 shrink-0 place-items-center rounded-control bg-surface-sunken text-ink-muted" aria-hidden>
+          <BusFront className="size-4" />
+        </span>
+        <span className="font-semibold text-ink tabular" data-testid="journey-bus">
+          {bus.busNumber}
+        </span>
+      </span>
+      <span className="text-ink-subtle" aria-hidden>
+        ·
+      </span>
+      <span className="text-ink">Route {bus.route}</span>
+      <span className="text-ink-muted">{bus.routeName}</span>
+      <span className="text-ink-subtle" aria-hidden>
+        ·
+      </span>
+      <span className="text-ink tabular" data-testid="journey-date">
+        {demoDateLabel(bus.date)}
+      </span>
+      <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-medium text-ink-muted" data-testid="sample-journey-note">
+        Sample journey
+      </span>
+    </div>
   );
 }
 

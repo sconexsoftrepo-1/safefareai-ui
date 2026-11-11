@@ -1,7 +1,7 @@
 "use client";
 
 import { alertIstRelative, formatAlertIstTime } from "@/features/drive-vision/utils/alert-ist-time";
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { CheckCheck, CircleSlash, FileVideo, MessageSquarePlus, RotateCcw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -96,6 +96,18 @@ export function IncidentsList({
 
   const items = listQ.data?.items ?? [];
   const noun = alertKind ? KIND_NAME[alertKind] : "alerts";
+  // A linked alert (?alarm=<id>, e.g. from Fleet Overview) is highlighted by the table; bring its row into view once,
+  // as soon as it is on the loaded page. Later polls don't scroll again.
+  const listRef = useRef<HTMLDivElement>(null);
+  const scrolledFor = useRef<number | null>(null);
+  const linkedOnPage = view.alarmId !== null && items.some((a) => a.id === view.alarmId);
+  useEffect(() => {
+    if (view.alarmId === null) scrolledFor.current = null;
+    if (!linkedOnPage || scrolledFor.current === view.alarmId) return;
+    scrolledFor.current = view.alarmId;
+    const row = listRef.current?.querySelector(`[data-row-id="${view.alarmId}"]`);
+    if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "nearest" });
+  }, [view.alarmId, linkedOnPage]);
   const shownAt = listQ.updatedAt ? new Date(listQ.updatedAt) : now;
 
   const columns: DataTableColumn<AlertRow>[] = [
@@ -158,18 +170,20 @@ export function IncidentsList({
       ) : !listQ.data ? (
         <LoadingSkeleton variant="table" rows={8} />
       ) : (
-        <DataTable
-          caption={alertKind ? KIND_NAME[alertKind] : "Incidents"}
-          data={items}
-          columns={columns}
-          getRowId={(a) => String(a.id)}
-          onRowClick={(a) => a.id !== undefined && onOpen(a.id)}
-          activeRowId={view.alarmId !== null ? String(view.alarmId) : null}
-          pageSize={ALARM_PAGE_SIZE}
-          serverPagination={{ page: view.page, total: listQ.data.total, onPageChange: onPage }}
-          emptyTitle={openOnly ? `No open ${noun}` : `No ${noun}`}
-          emptyDescription={`The server returned no ${noun} for these filters.`}
-        />
+        <div ref={listRef} className="contents">
+          <DataTable
+            caption={alertKind ? KIND_NAME[alertKind] : "Incidents"}
+            data={items}
+            columns={columns}
+            getRowId={(a) => String(a.id)}
+            onRowClick={(a) => a.id !== undefined && onOpen(a.id)}
+            activeRowId={view.alarmId !== null ? String(view.alarmId) : null}
+            pageSize={ALARM_PAGE_SIZE}
+            serverPagination={{ page: view.page, total: listQ.data.total, onPageChange: onPage }}
+            emptyTitle={openOnly ? `No open ${noun}` : `No ${noun}`}
+            emptyDescription={`The server returned no ${noun} for these filters.`}
+          />
+        </div>
       )}
       <AlertWorkflowDrawer id={view.alarmId} typeById={typeById} onClose={() => onOpen(null)} onChanged={refetch} />
     </>

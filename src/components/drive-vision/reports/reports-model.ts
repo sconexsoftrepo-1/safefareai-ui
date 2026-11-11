@@ -2,9 +2,9 @@ import type { MileageDto, ReportQuery } from "@/features/drive-vision/api/types"
 
 /** Report kinds and their request shapes (GET /reports/*). Pure: unit-tested. */
 
-export type ReportKind = "mileage" | "driving" | "parking" | "media";
-export const REPORT_KINDS: ReportKind[] = ["mileage", "driving", "parking", "media"];
-export const REPORT_LABEL: Record<ReportKind, string> = { mileage: "Mileage", driving: "Driving", parking: "Parking", media: "Media" };
+export type ReportKind = "mileage" | "driving" | "parking";
+export const REPORT_KINDS: ReportKind[] = ["mileage", "driving", "parking"];
+export const REPORT_LABEL: Record<ReportKind, string> = { mileage: "Mileage", driving: "Driving", parking: "Parking" };
 export const REPORT_PAGE_SIZE = 20;
 
 /** Mileage takes no paging parameters (the spec lists none); the other reports are server-paged. */

@@ -28,6 +28,8 @@ import { TenantRequiredButton } from "../shared/tenant-required";
 import type { Errors } from "../settings/settings-model";
 import { EMPTY_LEAVE_FORM, istDate, leaveRequestBody, validateLeaveForm, windowAround, type LeaveField, type LeaveForm } from "./operations-model";
 import { usePickers } from "./use-pickers";
+import { LeaveSwapDialog } from "./leave-swap-dialog";
+import { leaveActions } from "./leave-swap-workflow";
 
 const PAGE_SIZE = 20;
 type Tab = "availability" | "shifts" | "leave" | "checklists";
@@ -203,6 +205,11 @@ function LeavePanel({ version }: { version: number }) {
   const requestGate = useActionGate("leave.create");
   const canRequest = requestGate.allowed;
   const canDecide = useCan("leave.decide");
+  // Swap & Approve also requests and approves dispatch swaps, so it needs those permissions too.
+  const canUpdateDispatch = useCan("dispatch.update");
+  const canDecideSwap = useCan("swaps.decide");
+  const canSwap = canUpdateDispatch && canDecideSwap;
+  const [swapLeave, setSwapLeave] = useState<LeaveDto | null>(null);
   const refresh = () => setLocal((v) => v + 1);
 
   async function decide() {
@@ -246,23 +253,35 @@ function LeavePanel({ version }: { version: number }) {
       id: "decision",
       header: "Decision",
       align: "right",
-      cell: (l) =>
-        l.decidedAt ? (
-          <span className="text-xs text-ink-muted">
-            {l.decidedByName ?? "Decided"} · {time(l.decidedAt)}
-          </span>
-        ) : !canDecide ? (
-          <span className="text-xs text-ink-muted">Pending</span>
-        ) : (
-          <span className="inline-flex gap-1">
+      cell: (l) => {
+        // Decisions only while PENDING; with affected dispatches, Swap & Approve replaces Approve.
+        const actions = leaveActions(l);
+        if (actions === "none")
+          return l.decidedAt ? (
+            <span className="text-xs text-ink-muted">
+              {l.decidedByName ?? "Decided"} · {time(l.decidedAt)}
+            </span>
+          ) : (
+            <span className="text-xs text-ink-muted">—</span>
+          );
+        if (!canDecide) return <span className="text-xs text-ink-muted">Pending</span>;
+        return (
+          <span className="inline-flex gap-1" data-testid="leave-actions" data-actions={actions}>
             <Button size="sm" variant="outline" onClick={() => setPending({ leave: l, decision: "reject" })}>
               Reject
             </Button>
-            <Button size="sm" onClick={() => setPending({ leave: l, decision: "approve" })}>
-              Approve
-            </Button>
+            {actions === "approve" ? (
+              <Button size="sm" onClick={() => setPending({ leave: l, decision: "approve" })}>
+                Approve
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => setSwapLeave(l)} disabled={!canSwap} title={canSwap ? undefined : "Needs permission to update dispatches and decide swap requests"}>
+                Swap &amp; Approve
+              </Button>
+            )}
           </span>
-        ),
+        );
+      },
     },
   ];
 
@@ -315,6 +334,7 @@ function LeavePanel({ version }: { version: number }) {
           <Textarea id="lv-note" rows={2} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
         </FormField>
       </ConfirmDialog>
+      <LeaveSwapDialog leave={swapLeave} onOpenChange={(o) => !o && setSwapLeave(null)} onDone={() => (setSwapLeave(null), refresh())} />
       <LeaveFormPanel open={formOpen} onClose={() => setFormOpen(false)} onSaved={() => (setFormOpen(false), refresh())} />
     </Panel>
   );

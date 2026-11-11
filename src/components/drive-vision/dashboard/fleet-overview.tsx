@@ -15,6 +15,8 @@ import { reminderDaysFrom } from "../settings/settings-model";
 import { useAuth } from "@/features/drive-vision/store/auth-store";
 import { dataScope } from "@/features/drive-vision/access/access-policy";
 import { useAccess, useTenantContext } from "@/features/drive-vision/access/use-access";
+import { reachableHref } from "@/features/drive-vision/access/access-policy";
+import { activityAlertHref } from "./activity-links";
 import { bucketTrend } from "@/features/drive-vision/selectors";
 import { DATE_RANGE_OPTIONS, greeting, resolveDateRange } from "@/features/drive-vision/utils/time";
 import type { DateRangeKey } from "@/features/drive-vision/types";
@@ -75,7 +77,8 @@ export function FleetOverview() {
   const prefs = usePreferences();
   const user = useAuth((s) => s.user);
   // Tenant users: their own tenant (from the token). Safe-Fare Admin without a tenant: V10 reads cover every tenant.
-  const allTenants = dataScope(useAccess()) === "all-tenants";
+  const access = useAccess();
+  const allTenants = dataScope(access) === "all-tenants";
   const tenantCtx = useTenantContext();
   const [rangeKey, setRangeKey] = useState<DateRangeKey>("7d");
   const [trendView, setTrendView] = useState<TrendView>("chart");
@@ -490,7 +493,7 @@ export function FleetOverview() {
             ) : alarmsLoading || !alarms ? (
               <LoadingSkeleton variant="list" rows={5} />
             ) : (
-              <LiveActivityList alarms={alarms} now={now} />
+              <LiveActivityList alarms={alarms} now={now} hrefFor={(a) => reachableHref(access, activityAlertHref(a, rangeKey))} />
             )}
           </Panel>
         ) : null}

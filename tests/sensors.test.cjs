@@ -189,5 +189,6 @@ test("AL service: GET /devices/{id}/sensors/alcohol with the window; covered by 
   same(`${s.calls[0].method} ${s.calls[0].path}`, "GET /api/v1/devices/42/sensors/alcohol");
   same(s.calls[0].query, WIN);
   assert.ok(p.SCREENS.sensors.requires.operations.includes("GET /api/v1/devices/{id}/sensors/alcohol"));
-  assert.match(read("components/drive-vision/sensors/sensors-page.tsx"), /sensorService\.alcohol\(deviceId!, win!\)/);
+  // Live mode reads sensorService; only the explicit demo journey swaps in the demo source (passenger-demo.ts).
+  assert.match(read("components/drive-vision/sensors/sensors-page.tsx"), /const source = demo \? passengerDemoSource : sensorService;[\s\S]*source\.alcohol\(deviceId!, win!\)/);
 });

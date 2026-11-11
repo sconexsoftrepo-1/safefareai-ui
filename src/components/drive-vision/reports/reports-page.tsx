@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ExternalLink, Info, RefreshCw } from "lucide-react";
+import { Info, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fleetService, type ListResult } from "@/features/drive-vision/api/fleet-service";
 import { isApiError } from "@/features/drive-vision/api/errors";
-import type { ActivityDto, MediaDto, MileageDto } from "@/features/drive-vision/api/types";
+import type { ActivityDto, MileageDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import type { DateRangeKey } from "@/features/drive-vision/types";
 import { formatDate, formatDateTime, formatNumber, formatSeconds } from "@/features/drive-vision/utils/format";
@@ -16,9 +16,9 @@ import { DataTable, type DataTableColumn } from "../shared/data-table";
 import { FilterBar, FilterSelect, SegmentedControl } from "../shared/filter-bar";
 import { LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState, DataSourceBadge, DataSourceNotice } from "../shared/api-states";
-import { REPORT_KINDS, REPORT_LABEL, REPORT_PAGE_SIZE, isPaged, mileageTotal, reportQuery, safeHttpUrl, type ReportKind } from "./reports-model";
+import { REPORT_KINDS, REPORT_LABEL, REPORT_PAGE_SIZE, isPaged, mileageTotal, reportQuery, type ReportKind } from "./reports-model";
 
-type Row = MileageDto | ActivityDto | MediaDto;
+type Row = MileageDto | ActivityDto;
 
 const device = (r: { deviceName?: string; terminalNo?: string; deviceId?: number }) => (
   <div className="min-w-0">
@@ -44,34 +44,8 @@ const ACTIVITY_COLUMNS: DataTableColumn<ActivityDto>[] = [
   { id: "duration", header: "Duration", align: "right", cell: (r) => r.durationText ?? (typeof r.durationSeconds === "number" ? formatSeconds(r.durationSeconds) : "—") },
 ];
 
-const MEDIA_COLUMNS: DataTableColumn<MediaDto>[] = [
-  { id: "device", header: "Device", cell: device },
-  { id: "captured", header: "Captured", cell: (r) => time(r.capturedAt ?? r.startTime) },
-  { id: "channel", header: "Channel", align: "right", hideBelow: "sm", cell: (r) => r.channel ?? "—" },
-  { id: "codes", header: "Type · trigger", hideBelow: "md", cell: (r) => <span className="font-mono text-xs text-ink-muted" title="Raw codes; meanings aren't documented">{`${r.mediaType ?? "—"} · ${r.triggerType ?? "—"}`}</span> },
-  {
-    id: "open",
-    header: "File",
-    align: "right",
-    cell: (r) => {
-      const url = safeHttpUrl(r.previewUrl);
-      return url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-brand-deep hover:underline" onClick={(e) => e.stopPropagation()}>
-          Open <ExternalLink className="size-3.5" aria-hidden />
-        </a>
-      ) : r.previewUrl ? (
-        <span className="text-xs text-ink-subtle" title="The server returned a link that can't be opened (placeholder or non-web address)">
-          Link not usable
-        </span>
-      ) : (
-        <span className="text-ink-subtle">—</span>
-      );
-    },
-  },
-];
-
 /**
- * Reports on live BFF data: GET /reports/mileage, /driving, /parking, /media for a time window and
+ * Reports on live BFF data: GET /reports/mileage, /driving and /parking for a time window and
  * optional device. Mileage isn't paged by the API; the others are server-paged.
  */
 export function ReportsPage() {
@@ -85,7 +59,6 @@ export function ReportsPage() {
 
   const listQ = useApiQuery<ListResult<Row>>(`reports:${kind}:${JSON.stringify(query)}`, () => {
     if (kind === "mileage") return fleetService.mileageReport(query);
-    if (kind === "media") return fleetService.mediaReport(query);
     return fleetService.activityReport(kind, query);
   });
   const devicesQ = useApiQuery("reports:devices", () => fleetService.listAllDevices());
@@ -110,7 +83,6 @@ export function ReportsPage() {
     };
     const rowId = (r: Row) => String(r.id ?? `${r.deviceId}:${"startTime" in r ? r.startTime : ""}:${"periodStart" in r ? r.periodStart : ""}`);
     if (kind === "mileage") return <DataTable {...common} data={items as MileageDto[]} columns={MILEAGE_COLUMNS} getRowId={rowId} />;
-    if (kind === "media") return <DataTable {...common} data={items as MediaDto[]} columns={MEDIA_COLUMNS} getRowId={rowId} />;
     return <DataTable {...common} data={items as ActivityDto[]} columns={ACTIVITY_COLUMNS} getRowId={rowId} />;
   };
 

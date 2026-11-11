@@ -29,6 +29,7 @@ import { TenantRequiredButton } from "../shared/tenant-required";
 import type { Errors } from "../settings/settings-model";
 import { DISPATCH_MAX, EMPTY_DISPATCH_FORM, dispatchFormFrom, dispatchRequestBody, validateDispatchForm, windowAround, type DispatchField, type DispatchForm } from "./operations-model";
 import { usePickers } from "./use-pickers";
+import { IN_PROGRESS_MESSAGE, dispatchSwapState } from "./leave-swap-workflow";
 
 const PAGE_SIZE = 20;
 type Tab = "dispatches" | "conflicts" | "swaps";
@@ -129,7 +130,7 @@ export function DispatchPage() {
             </Button>
             {canCreate ? (
               <Button onClick={() => setFormMode("create")}>
-                <Plus /> New dispatch
+                <Plus /> Create Journey
               </Button>
             ) : createGate.tenantBlocked ? (
               <TenantRequiredButton label="New dispatch" />
@@ -329,9 +330,12 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
   const canUpdate = useCan("dispatch.update");
   const pickers = usePickers(pending?.kind === "swap");
   const d = detailQ.data;
+  const swapState = d ? dispatchSwapState(d) : null;
 
   async function run() {
     if (!pending || id === null) return;
+    // The server refuses IN_PROGRESS reassignment (409) and a second request would duplicate the pending one.
+    if (pending.kind === "swap" && swapState?.kind !== "eligible") return;
     try {
       if (pending.kind === "cancel") {
         const res = await operationsService.cancelDispatch(id, reason.trim() ? { reason: reason.trim() } : {});
@@ -363,9 +367,15 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
               <Button variant="outline" className="text-danger" onClick={() => setPending({ kind: "cancel" })}>
                 <CircleX /> Cancel dispatch
               </Button>
-              <Button variant="outline" onClick={() => setPending({ kind: "swap" })}>
-                <Repeat2 /> Request swap
-              </Button>
+              {swapState?.kind === "eligible" ? (
+                <Button variant="outline" onClick={() => setPending({ kind: "swap" })}>
+                  <Repeat2 /> Request swap
+                </Button>
+              ) : swapState?.kind === "in_progress" ? (
+                <Button variant="outline" disabled title={IN_PROGRESS_MESSAGE} aria-describedby="dp-swap-why">
+                  <Repeat2 /> Request swap
+                </Button>
+              ) : null}
               <Button onClick={onEdit}>
                 <Pencil /> Edit
               </Button>
@@ -381,7 +391,19 @@ function DispatchDrawer({ id, version, onClose, onEdit, onChanged }: { id: numbe
           <div className="space-y-5">
             <dl className="divide-y divide-line">
               <DetailRow label="Status">
-                <Status value={d.status} />
+                <span className="inline-flex flex-wrap items-center gap-1">
+                  <Status value={d.status} />
+                  {swapState?.kind === "pending" ? (
+                    <StatusBadge size="sm" tone="warning">
+                      Swap pending · request #{swapState.swapRequestId}
+                    </StatusBadge>
+                  ) : null}
+                </span>
+                {swapState?.kind === "in_progress" ? (
+                  <p id="dp-swap-why" className="mt-1 text-xs text-ink-muted">
+                    {IN_PROGRESS_MESSAGE}
+                  </p>
+                ) : null}
               </DetailRow>
               <DetailRow label="Driver">{d.driverName ?? "—"}</DetailRow>
               <DetailRow label="Vehicle">{d.deviceName ?? d.terminalNo ?? "—"}</DetailRow>
