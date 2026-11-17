@@ -1,6 +1,7 @@
 // Not-found handling under /drive-vision: the file-system routes plus the access policy that
-// RouteGuard applies to them. Unmatched paths must reach the drive-vision layout (catch-all page →
-// notFound() → segment not-found.tsx) so they render inside the shell, never Next's bare 404.
+// RouteGuard applies to them. Unmatched paths render the root app/not-found.tsx (404.html in a
+// static export), which wraps the drive-vision AuthGate + shell, so they never show Next's bare 404.
+// No catch-all route: static export can't pre-render one.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -29,15 +30,24 @@ function pageRoutes(dir = APP_DIR, url = "/drive-vision") {
   return out;
 }
 
-test("catch-all page calls notFound() and the segment has its own not-found.tsx", () => {
-  const catchAll = fs.readFileSync(path.join(APP_DIR, "[...slug]", "page.tsx"), "utf8");
-  assert.match(catchAll, /from "next\/navigation"/);
-  assert.match(catchAll, /\bnotFound\(\)/);
-  const notFound = fs.readFileSync(path.join(APP_DIR, "not-found.tsx"), "utf8");
-  assert.match(notFound, /<AccessStatePanel reason="unknown-route" \/>/);
+test("root not-found renders the in-shell panel; no catch-all route remains", () => {
+  const root = fs.readFileSync(path.join(APP_DIR, "..", "not-found.tsx"), "utf8");
+  assert.match(root, /<AuthGate>\s*<DriveVisionAppShell>\s*<AccessStatePanel reason="unknown-route" \/>\s*<\/DriveVisionAppShell>\s*<\/AuthGate>/);
+  assert.match(root, /title: "Page not found"/);
+  const segment = fs.readFileSync(path.join(APP_DIR, "not-found.tsx"), "utf8");
+  assert.match(segment, /<AccessStatePanel reason="unknown-route" \/>/);
+  const catchAlls = [];
+  (function walk(dir) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      if (/^\[\[?\.\.\./.test(e.name)) catchAlls.push(path.join(dir, e.name));
+      walk(path.join(dir, e.name));
+    }
+  })(path.join(APP_DIR, ".."));
+  same(catchAlls, []);
 });
 
-test("every real drive-vision page maps to a screen, so the catch-all only receives unmatched paths", () => {
+test("every real drive-vision page maps to a screen, so the not-found page only receives unmatched paths", () => {
   // /drive-vision and /drive-vision/devices are redirect-only pages with no screen of their own.
   const routes = pageRoutes().filter((r) => r !== "/drive-vision" && r !== "/drive-vision/devices");
   assert.ok(routes.length >= 13, `found only ${routes.length} pages`);
@@ -54,7 +64,7 @@ test("unknown paths: Page not found for admins, never a role-based allow", () =>
 });
 
 test("unmatched sub-paths of a screen stay behind that screen's grant", () => {
-  // Admin: allowed, so the catch-all's not-found.tsx renders (inside the shell).
+  // Admin: allowed, so the root not-found.tsx panel renders (inside the shell).
   same(decideRoute("authenticated", admin, "/drive-vision/vehicles/1/nope"), { kind: "allow", screen: "vehicles" });
   // No grant: the access-denied panel wins; the not-found page never mounts.
   same(decideRoute("authenticated", unmapped, "/drive-vision/users/nope"), { kind: "forbidden", screen: "users", reason: "no-permissions" });

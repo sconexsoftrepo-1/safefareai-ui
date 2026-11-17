@@ -6,6 +6,7 @@ import { Battery, Compass, Gauge, MapPin, Mountain, Route, Thermometer, Truck, X
 import { Button } from "@/components/ui/button";
 import type { DeviceStateDto } from "@/features/drive-vision/api/types";
 import { formatDateTime, formatNumber, formatRelative } from "@/features/drive-vision/utils/format";
+import { vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { StatusBadge } from "../shared/status-badge";
 import { transitions } from "../shared/motion";
 import { REPORT_AGE_META, checkPosition, reportAge, sensorEntries } from "./live-fleet-model";
@@ -109,7 +110,7 @@ export function LiveDevicePanel({ state, groupName, now, onClose }: { state: Dev
           </Link>
         </Button>
         <Button asChild size="sm">
-          <Link href={`/drive-vision/vehicles/${state.deviceId}`}>Details</Link>
+          <Link href={vehicleDetailHref(state.deviceId)}>Details</Link>
         </Button>
       </div>
     </motion.aside>

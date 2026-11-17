@@ -184,3 +184,91 @@ test("no password, token or Authorization header appears in console output", asy
     assert.ok(!line.includes(accessToken.split(".")[1]), line);
   }
 });
+
+// ── Return destination through login (/login?next=…) ─────────────────────────
+// AuthGate builds the login URL from the path and the complete `location.search`; the login screen reads it
+// back with params.get("next"), keeps only same-app paths (safeNext) and, once signed in, opens it through
+// the access check (postLoginRoute), exactly as login-screen.tsx does.
+
+const DETAIL = "/drive-vision/vehicles/detail/";
+
+/** The /login URL AuthGate sends a signed-out visitor of `pathname` + `search` to. */
+const gateHref = (lm, pathname, search, reason) => lm.loginHref(lm.loginReturnPath(pathname, search), reason);
+
+/** Where the login screen sends the user after a successful sign-in, given the URL it was opened with. */
+function afterLogin(tab, loginUrl) {
+  const params = new URL(loginUrl, "http://app.test").searchParams; // what useSearchParams() returns
+  const requested = tab.loginModel.safeNext(params.get("next"));
+  const a = tab.access();
+  return tab.policy.postLoginRoute(a, tab.store.mayResumeRoute(a.identity) ? requested : null) ?? "/drive-vision/overview";
+}
+
+test("return path: pathname plus the complete query string; no query → the path alone, as before", () => {
+  const lm = createRealm({ process: { env: {} } }).require("components/drive-vision/auth/login-model");
+  assert.equal(lm.loginReturnPath(DETAIL, "?vehicleId=469"), `${DETAIL}?vehicleId=469`);
+  assert.equal(lm.loginReturnPath(DETAIL, "?vehicleId=469&tab=trips"), `${DETAIL}?vehicleId=469&tab=trips`);
+  assert.equal(lm.loginReturnPath("/drive-vision/overview", ""), "/drive-vision/overview");
+  assert.equal(lm.loginReturnPath("/drive-vision/overview", "?"), "/drive-vision/overview");
+  // Unchanged shape for a query-less page: the same URL the old `new URLSearchParams({ next: pathname })` built.
+  assert.equal(gateHref(lm, "/drive-vision/overview", ""), "/login?next=%2Fdrive-vision%2Foverview");
+  assert.equal(gateHref(lm, "/drive-vision/overview", "", "expired"), "/login?next=%2Fdrive-vision%2Foverview&reason=expired");
+});
+
+test("login URL encodes the destination once: params.get('next') returns it byte for byte", () => {
+  const lm = createRealm({ process: { env: {} } }).require("components/drive-vision/auth/login-model");
+  const href = gateHref(lm, DETAIL, "?vehicleId=469");
+  assert.equal(href, "/login?next=%2Fdrive-vision%2Fvehicles%2Fdetail%2F%3FvehicleId%3D469");
+  const cases = ["?vehicleId=469", "?vehicleId=469&from=alerts&tab=trips", "?q=a%20b%26c&name=%E0%A4%AC%E0%A4%B8", "?driver=5#x"];
+  for (const search of cases) {
+    const next = new URL(gateHref(lm, DETAIL, search), "http://app.test").searchParams.get("next");
+    assert.equal(next, `${DETAIL}${search}`, search);
+    // The inner query still decodes to the original values: encoded once, not twice.
+    const inner = new URL(next, "http://app.test").searchParams;
+    if (search.startsWith("?q=")) same([inner.get("q"), inner.get("name")], ["a b&c", "बस"]);
+  }
+  // `%20` in the query becomes `%2520` (one encoding of the whole value), never `%252520` (encoded twice).
+  assert.match(gateHref(lm, DETAIL, "?q=a%20b"), /q%3Da%2520b$/);
+  assert.doesNotMatch(gateHref(lm, DETAIL, "?q=a%20b"), /%252520/);
+});
+
+test("unsafe next values stay rejected (no open redirect)", () => {
+  const lm = createRealm({ process: { env: {} } }).require("components/drive-vision/auth/login-model");
+  for (const bad of ["https://evil.example/drive-vision", "//evil.example/drive-vision", "/\evil.example", "javascript:alert(1)", "/login", "/", "", null, "drive-vision/overview"]) {
+    assert.equal(lm.safeNext(bad), null, String(bad));
+  }
+  assert.equal(lm.safeNext(`${DETAIL}?vehicleId=469&tab=trips`), `${DETAIL}?vehicleId=469&tab=trips`);
+  // An external URL smuggled into the query of a same-app path is just a query value; the destination stays in-app.
+  assert.equal(lm.safeNext("/drive-vision/overview?next=https://evil.example"), "/drive-vision/overview?next=https://evil.example");
+});
+
+test("signed-out visit to the vehicle detail → sign in → back on the same vehicle (pathname + query)", async () => {
+  const tab = openTab();
+  const loginUrl = gateHref(tab.loginModel, DETAIL, "?vehicleId=469");
+  await tab.store.signIn(tab.loginModel.buildLoginRequest("tenant", { tenantCode: "ACME", login: "ops", password: PASSWORD }));
+  assert.equal(tab.store.getAuthState().status, "authenticated");
+  assert.equal(afterLogin(tab, loginUrl), `${DETAIL}?vehicleId=469`);
+  assert.equal(afterLogin(tab, gateHref(tab.loginModel, DETAIL, "?vehicleId=469&tab=trips&q=a%20b")), `${DETAIL}?vehicleId=469&tab=trips&q=a%20b`);
+  assert.equal(afterLogin(tab, gateHref(tab.loginModel, "/drive-vision/drivers", "")), "/drive-vision/drivers", "no query: unchanged");
+  // Unsafe or unknown destinations fall back to the user's own landing page, as before.
+  const landing = tab.policy.defaultLanding(tab.access());
+  assert.equal(afterLogin(tab, "/login?next=https%3A%2F%2Fevil.example%2Fdrive-vision"), landing);
+  assert.equal(afterLogin(tab, "/login?next=%2F%2Fevil.example"), landing);
+  assert.equal(afterLogin(tab, "/login"), landing);
+});
+
+test("the query keeps the permission check: a page the user can't open still lands on their default", async () => {
+  const tab = openTab({ identity: IDENTITIES.platformAdmin, me: { id: 1, displayName: "Safe-Fare", platform: true } });
+  await tab.store.signIn(tab.loginModel.buildLoginRequest("platform", { tenantCode: "", login: "admin", password: PASSWORD }));
+  const a = tab.access();
+  const target = `${DETAIL}?vehicleId=469`;
+  assert.equal(afterLogin(tab, gateHref(tab.loginModel, DETAIL, "?vehicleId=469")), tab.policy.canAccessPath(a, target) ? target : tab.policy.defaultLanding(a));
+});
+
+test("AuthGate reads location.search only inside its effect (never during static generation)", () => {
+  const gate = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "components", "drive-vision", "auth", "auth-gate.tsx"), "utf8");
+  assert.match(gate, /useEffect\(\(\) => \{\s*if \(status !== "unauthenticated"\) return;[\s\S]*?loginHref\(loginReturnPath\(pathname, window\.location\.search\), endReason === "expired" \? "expired" : undefined\)/);
+  assert.equal(gate.match(/window\./g).length, 1, "no other window access");
+  const login = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "src", "components", "drive-vision", "auth", "login-screen.tsx"), "utf8");
+  assert.match(login, /const requested = safeNext\(params\.get\("next"\)\);/);
+  assert.doesNotMatch(login, /function safeNext/, "one shared implementation (login-model)");
+});

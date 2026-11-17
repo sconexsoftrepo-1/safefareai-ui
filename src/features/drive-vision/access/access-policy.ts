@@ -25,7 +25,7 @@ import { isTenantId } from "../api/tenant-context";
 
 export const DV_BASE = "/drive-vision";
 
-/** Every routed screen. Nested routes (e.g. /vehicles/[id]) belong to their parent screen. */
+/** Every routed screen. Nested routes (e.g. /vehicles/detail, /vehicles/new) belong to their parent screen. */
 export const SCREEN_ROUTES = {
   /** Safe-Fare Admin platform dashboard (Phase 4). First, so it is the platform admin's home screen. */
   platform: `${DV_BASE}/platform`,
@@ -57,6 +57,16 @@ export const SCREEN_ROUTES = {
   settings: `${DV_BASE}/settings`,
   myWork: `${DV_BASE}/my-work`,
 } as const;
+
+/**
+ * Link to one device's detail page. A static route with a query parameter (not /vehicles/[id]) so
+ * the app can be exported as static files; the page reads `vehicleId` on the client. The trailing
+ * slash matches `trailingSlash: true` in next.config.ts, so no redirect is needed. A missing id gives
+ * an empty `vehicleId`, which the page shows as "Vehicle not found" (as /vehicles/undefined did).
+ */
+export function vehicleDetailHref(vehicleId: number | string | null | undefined): string {
+  return `${SCREEN_ROUTES.vehicles}/detail/?vehicleId=${encodeURIComponent(String(vehicleId ?? ""))}`;
+}
 
 export type ScreenKey = keyof typeof SCREEN_ROUTES;
 export const ALL_SCREENS = Object.keys(SCREEN_ROUTES) as ScreenKey[];
@@ -810,14 +820,20 @@ export function decideRoute(status: AuthStatusInput, access: Access, pathname: s
   return { kind: "forbidden", screen, reason: access.screens.size === 0 ? "no-permissions" : "no-access" };
 }
 
+/** Redirect-only index above Device commands (app/drive-vision/devices/page.tsx renders nothing). */
+const DEVICES_INDEX = `${DV_BASE}/devices`;
+
 /**
- * Where the generic entry points go: `/drive-vision` always resolves to the user's default, and Overview does when
- * the user can't open it. Deep links to any other screen keep showing the access-denied panel, so a typed URL is
- * never silently rewritten.
+ * Where the generic entry points go: `/drive-vision` always resolves to the user's default, Overview does when
+ * the user can't open it, and `/drive-vision/devices` opens Device commands (the same for every user). Deep links
+ * to any other screen keep showing the access-denied panel, so a typed URL is never silently rewritten.
+ * RouteGuard applies this only after authentication and permissions have loaded.
  */
 export function landingRedirect(access: Access, pathname: string): string | null {
   const path = normalisePath(pathname);
   if (path === DV_BASE) return defaultLanding(access);
+  // /drive-vision/devices has no screen of its own: it always opens Device commands, whose own grant RouteGuard then checks.
+  if (path === DEVICES_INDEX) return SCREEN_ROUTES.commands;
   if (path === SCREEN_ROUTES.overview && !access.screens.has("overview")) return defaultLanding(access);
   return null;
 }

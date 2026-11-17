@@ -8,6 +8,7 @@ import { ALARM_TYPES, DEMO_NOW } from "./mock-data/catalog";
 import { isOpen } from "./services/alarm-service";
 import { DAY, HOUR, startOfFleetDay } from "./utils/time";
 import { dayKey, formatShortDate, formatWeekday } from "./utils/format";
+import { vehicleDetailHref } from "./access/access-policy";
 
 /* ───────────── Fleet status ───────────── */
 
@@ -155,7 +156,7 @@ export function upcomingReminders(vehicles: Vehicle[], drivers: Driver[], window
   };
   for (const v of vehicles) {
     const subject = `${v.vehicleName} · ${v.plate}`;
-    const href = `/drive-vision/vehicles/${v.vehicleId}`;
+    const href = vehicleDetailHref(v.vehicleId);
     push("service", "Device service", subject, href, v.expireDate);
     push("insurance", "Insurance", subject, `${href}#insurance`, v.insuranceDueDate);
     push("maintenance", "Maintenance", subject, `${href}#maintenance`, v.maintainDate);

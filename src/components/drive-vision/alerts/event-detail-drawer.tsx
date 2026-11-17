@@ -6,6 +6,7 @@ import { FileVideo, ImageIcon, MapPinOff, Route as RouteIcon } from "lucide-reac
 import type { AlarmDto, AlarmTypeDto } from "@/features/drive-vision/api/types";
 import { formatLocalDateTime, formatSeconds } from "@/features/drive-vision/utils/format";
 import { formatLatLon } from "@/features/drive-vision/utils/geo";
+import { vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { DetailRow, SlideOverPanel } from "../shared/slide-over-panel";
 import { StatusBadge } from "../shared/status-badge";
 import { EmptyState } from "../shared/feedback";
@@ -103,7 +104,7 @@ function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<n
         <dl className="divide-y divide-line">
           <DetailRow label="Device">
             {alarm.deviceId !== undefined ? (
-              <Link href={`/drive-vision/vehicles/${alarm.deviceId}`} className="hover:underline">
+              <Link href={vehicleDetailHref(alarm.deviceId)} className="hover:underline">
                 {deviceLabel(alarm)}
               </Link>
             ) : (

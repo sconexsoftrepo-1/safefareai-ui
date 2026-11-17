@@ -11,6 +11,7 @@ import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import type { DateRangeKey } from "@/features/drive-vision/types";
 import { DATE_RANGE_OPTIONS, resolveDateRange } from "@/features/drive-vision/utils/time";
 import { formatKm, formatNumber, formatShortDate } from "@/features/drive-vision/utils/format";
+import { vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "../shared/page-header";
 import { Panel, PanelHeader } from "../shared/panel";
@@ -91,7 +92,7 @@ export function SafetyAnalytics() {
   const totals = a?.totals;
   const byDay = (a?.byDay ?? []).filter((d) => d.day).map((d) => ({ label: formatShortDate(d.day!), count: d.count ?? 0, severe: d.severe ?? 0 }));
   const byHour = (a?.byHour ?? []).map((h) => ({ label: h.label || h.key || "", count: h.count ?? 0 }));
-  const hrefFor = (kind: "drivers" | "vehicles") => (id: number) => (kind === "drivers" ? `/drive-vision/drivers?driver=${id}` : `/drive-vision/vehicles/${id}`);
+  const hrefFor = (kind: "drivers" | "vehicles") => (id: number) => (kind === "drivers" ? `/drive-vision/drivers?driver=${id}` : vehicleDetailHref(id));
 
   const scoreColumns: DataTableColumn<ScoreDto>[] = [
     {

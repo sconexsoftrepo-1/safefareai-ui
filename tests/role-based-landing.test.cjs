@@ -167,7 +167,11 @@ test("/drive-vision goes to each user's own default", () => {
 });
 
 test("the root pages no longer send everyone to Fleet Overview", () => {
-  assert.match(read("app/page.tsx"), /redirect\("\/drive-vision"\)/);
+  // `/` opens /drive-vision on the client (static export); RouteGuard picks the landing there.
+  assert.match(read("app/page.tsx"), /<RootRedirect \/>/);
+  const rootRedirect = read("components/drive-vision/auth/root-redirect.tsx");
+  assert.match(rootRedirect, /router\.replace\("\/drive-vision"\)/);
+  assert.doesNotMatch(rootRedirect, /overview/);
   const index = read("app/drive-vision/page.tsx");
   assert.doesNotMatch(index, /redirect\(|overview/);
 });
@@ -270,7 +274,7 @@ test("the leak itself: Driver signs out, Safe-Fare Admin signs in, Platform Over
 test("after a sign-out AuthGate sends the user to a clean /login", () => {
   const gate = read("components/drive-vision/auth/auth-gate.tsx");
   assert.match(gate, /if \(endReason === "signed-out"\) \{\s*router\.replace\("\/login"\);\s*return;\s*\}/);
-  assert.match(gate, /new URLSearchParams\(\{ next: pathname \}\)/, "other cases still keep the page");
+  assert.match(gate, /loginHref\(loginReturnPath\(pathname, window\.location\.search\)/, "other cases still keep the page (path and query)");
 });
 
 test("the login screen decides only once authenticated, through the access check", () => {

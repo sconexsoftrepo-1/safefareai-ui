@@ -26,6 +26,7 @@ import type { LivePosition } from "@/features/drive-vision/hooks/use-live-simula
 import { DEMO_NOW } from "@/features/drive-vision/mock-data/catalog";
 import { formatDateTime, formatNumber, formatRelative } from "@/features/drive-vision/utils/format";
 import { formatLatLon } from "@/features/drive-vision/utils/geo";
+import { vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { cn } from "@/lib/utils";
 import { VehicleStateBadge, StatusBadge } from "../shared/status-badge";
 import { transitions } from "../shared/motion";
@@ -154,7 +155,7 @@ export function VehicleDetailsPanel({
           </Link>
         </Button>
         <Button asChild size="sm">
-          <Link href={`/drive-vision/vehicles/${vehicle.vehicleId}`}>Details</Link>
+          <Link href={vehicleDetailHref(vehicle.vehicleId)}>Details</Link>
         </Button>
       </div>
     </motion.aside>

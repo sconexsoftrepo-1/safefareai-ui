@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import type { Vehicle } from "@/features/drive-vision/types";
 import type { VehicleUsage } from "@/features/drive-vision/selectors";
 import { formatDuration, formatKm } from "@/features/drive-vision/utils/format";
+import { vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { SegmentedControl } from "../shared/filter-bar";
 import { EmptyState } from "../shared/feedback";
 import { EASE_OUT } from "../shared/motion";
@@ -38,7 +39,7 @@ export function UsageRanking({ usage, vehicles }: { usage: Map<string, VehicleUs
             const value = r[metric];
             return (
               <li key={r.vehicleId}>
-                <Link href={`/drive-vision/vehicles/${r.vehicleId}`} className="group block rounded-lg focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
+                <Link href={vehicleDetailHref(r.vehicleId)} className="group block rounded-lg focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none">
                   <div className="flex items-center gap-2 text-[13px]">
                     <span className="w-4 text-xs text-ink-subtle tabular">{i + 1}</span>
                     <span className="min-w-0 flex-1 truncate font-medium group-hover:underline">{v ? `${v.vehicleName} · ${v.plate}` : "Removed vehicle"}</span>

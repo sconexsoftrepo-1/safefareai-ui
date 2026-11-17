@@ -23,6 +23,7 @@ import { ExpiryBadge } from "./vehicle-cells";
 import { useFleetReference } from "./use-fleet-reference";
 import { DeviceCreatePanel } from "./device-create-panel";
 import { useActionGate } from "@/features/drive-vision/access/use-access";
+import { vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { TenantRequiredButton } from "../shared/tenant-required";
 
 type ExpiryFilter = "all" | "soon" | "expired";
@@ -223,7 +224,7 @@ export function VehiclesPage() {
                 data={needsAll ? devices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : devices}
                 columns={columns}
                 getRowId={(d) => String(d.id)}
-                onRowClick={(d) => router.push(`/drive-vision/vehicles/${d.id}`)}
+                onRowClick={(d) => router.push(vehicleDetailHref(d.id))}
                 pageSize={PAGE_SIZE}
                 serverPagination={{ page, total, onPageChange: setPage }}
                 emptyTitle="No vehicles match"
@@ -251,7 +252,7 @@ export function VehiclesPage() {
           onCreated={(d) => {
             setAdding(false);
             active.refetch();
-            if (d.id !== undefined) router.push(`/drive-vision/vehicles/${d.id}`);
+            if (d.id !== undefined) router.push(vehicleDetailHref(d.id));
           }}
           onUncertain={active.refetch}
         />
@@ -305,7 +306,7 @@ function AssetTree({
                 const state = stateById.get(d.id);
                 return (
                   <li key={d.id}>
-                    <Link href={`/drive-vision/vehicles/${d.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] hover:bg-surface-muted">
+                    <Link href={vehicleDetailHref(d.id)} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] hover:bg-surface-muted">
                       <span className="truncate font-medium">{d.name ?? `Device ${d.id}`}</span>
                       <span className="truncate font-mono text-[11px] text-ink-muted">{d.terminalNo}</span>
                       {state?.deviceTime ? <span className="ml-auto shrink-0 text-[11px] text-ink-subtle">{formatRelative(state.deviceTime, now)}</span> : null}

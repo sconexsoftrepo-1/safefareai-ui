@@ -47,7 +47,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The branded "not found" / "no access" panel. Also rendered by app/drive-vision/not-found.tsx for
+ * The branded "not found" / "no access" panel. Also rendered by app/not-found.tsx (and app/drive-vision/not-found.tsx) for
  * paths under an allowed screen that match no page (e.g. /drive-vision/vehicles/1/x).
  */
 export function AccessStatePanel({ reason }: { reason: "unknown-route" | "no-permissions" | "no-access" }) {

@@ -23,6 +23,7 @@ import type {
   VehicleState,
 } from "../types";
 import { createRng } from "../utils/random";
+import { vehicleDetailHref } from "../access/access-policy";
 import { addMs, DAY, HOUR, MINUTE, startOfFleetDay } from "../utils/time";
 import { ALARM_TYPES, CITY_AREAS, DEMO_NOW, TERMINAL_MODELS } from "./catalog";
 import { buildTrack, nearestAreaAddress, planStops, polylineKm, positionAt, routeGeometry } from "./routes";
@@ -548,7 +549,7 @@ function buildNotifications(vehicles: Vehicle[], alarms: Alarm[]): FleetNotifica
         body: `${v.vehicleName} · ${v.plate} — renewal required`,
         createdAt: iso(addMs(DEMO_NOW, -2 * HOUR)),
         read: false,
-        href: `/drive-vision/vehicles/${v.vehicleId}`,
+        href: vehicleDetailHref(v.vehicleId),
       })
     );
   vehicles

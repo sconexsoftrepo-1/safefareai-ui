@@ -28,7 +28,7 @@ import { FormField, fieldA11y } from "../shared/form-field";
 import { StatusBadge } from "../shared/status-badge";
 import { toast } from "../shared/toast-provider";
 import { useAccess, useActionGate, useCan } from "@/features/drive-vision/access/use-access";
-import { canViewWidget, dataScope } from "@/features/drive-vision/access/access-policy";
+import { canViewWidget, dataScope, vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { TenantRequiredButton } from "../shared/tenant-required";
 import type { Errors } from "../settings/settings-model";
 import {
@@ -411,7 +411,7 @@ function DriverDrawer({ id, onClose, onEdit, onChanged, onDeleted }: { id: numbe
               <DetailRow label="Current vehicle">
                 {driver.currentAssignment ? (
                   driver.currentAssignment.deviceId !== undefined ? (
-                    <Link className="font-medium text-brand-deep hover:underline" href={`/drive-vision/vehicles/${driver.currentAssignment.deviceId}`}>
+                    <Link className="font-medium text-brand-deep hover:underline" href={vehicleDetailHref(driver.currentAssignment.deviceId)}>
                       {vehicleOf(driver.currentAssignment)}
                     </Link>
                   ) : (

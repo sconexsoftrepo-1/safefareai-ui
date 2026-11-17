@@ -1,5 +1,5 @@
 import type { SearchHit } from "@/features/drive-vision/api/types";
-import { reachableHref, type Access } from "@/features/drive-vision/access/access-policy";
+import { reachableHref, vehicleDetailHref, type Access } from "@/features/drive-vision/access/access-policy";
 
 /**
  * GET /search returns `{ [group]: Hit[] }`; neither the group keys nor `Hit.type` values are
@@ -7,7 +7,7 @@ import { reachableHref, type Access } from "@/features/drive-vision/access/acces
  * this app has a screen for; anything else is listed without a link. Pure: unit-tested.
  */
 const ROUTES: { match: RegExp; href: (id: number) => string }[] = [
-  { match: /^(device|vehicle)s?$/i, href: (id) => `/drive-vision/vehicles/${id}` },
+  { match: /^(device|vehicle)s?$/i, href: (id) => vehicleDetailHref(id) },
   { match: /^drivers?$/i, href: (id) => `/drive-vision/drivers?driver=${id}` },
   { match: /^(alert|alarm)s?$/i, href: (id) => `/drive-vision/alerts?kind=incidents&alarm=${id}` },
   { match: /^dispatch(es)?$/i, href: (id) => `/drive-vision/dispatch?dispatch=${id}` },

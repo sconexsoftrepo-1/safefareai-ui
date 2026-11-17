@@ -13,14 +13,9 @@ import { useAccess } from "@/features/drive-vision/access/use-access";
 import { cn } from "@/lib/utils";
 import truck from "@/assets/truck.png";
 import { FormField, fieldA11y } from "../shared/form-field";
-import { LOGIN_LABELS as LABELS, LOGIN_MAX_LENGTH as MAX_LENGTH, buildLoginRequest, loginFields, validateLogin, type LoginErrors as FieldErrors, type LoginField as Field, type LoginForm, type LoginMode } from "./login-model";
+import { LOGIN_LABELS as LABELS, LOGIN_MAX_LENGTH as MAX_LENGTH, buildLoginRequest, loginFields, safeNext, validateLogin, type LoginErrors as FieldErrors, type LoginField as Field, type LoginForm, type LoginMode } from "./login-model";
 
 const FALLBACK_PATH = "/drive-vision/overview";
-
-/** Only same-app paths are accepted as a post-login destination (no open redirects). */
-function safeNext(raw: string | null): string | null {
-  return raw && raw.startsWith("/drive-vision") && !raw.startsWith("//") ? raw : null;
-}
 
 const MODES: { mode: LoginMode; label: string; icon: typeof Users }[] = [
   { mode: "tenant", label: "Tenant user", icon: Users },

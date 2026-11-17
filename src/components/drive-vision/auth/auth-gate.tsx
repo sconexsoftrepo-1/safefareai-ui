@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { bootstrapAuth, signOut, useAuth } from "@/features/drive-vision/store/auth-store";
 import { BrandGlyph } from "../app-shell/sidebar";
 import { Panel } from "../shared/panel";
+import { loginHref, loginReturnPath } from "./login-model";
 
 /** Centered status card on the canvas — used while the session is checked and on boot errors. */
 export function AuthScreenFrame({ children }: { children: React.ReactNode }) {
@@ -15,7 +16,7 @@ export function AuthScreenFrame({ children }: { children: React.ReactNode }) {
 
 /**
  * Protects /drive-vision/*: validates the stored session with GET /me, then renders the
- * shell. Without a valid session it redirects to /login, preserving the current path, except after a sign-out: that
+ * shell. Without a valid session it redirects to /login, preserving the current path and query string, except after a sign-out: that
  * page belongs to the account that just left, not to whoever signs in next.
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
@@ -35,9 +36,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    const params = new URLSearchParams({ next: pathname });
-    if (endReason === "expired") params.set("reason", "expired");
-    router.replace(`/login?${params}`);
+    // Effects run only in the browser, so `window` is never read during static generation.
+    router.replace(loginHref(loginReturnPath(pathname, window.location.search), endReason === "expired" ? "expired" : undefined));
   }, [status, endReason, pathname, router]);
 
   if (status === "authenticated") return <>{children}</>;

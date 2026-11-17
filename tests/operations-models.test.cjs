@@ -122,7 +122,7 @@ test("route geometry skips points without usable GPS, orders by time and never i
 
 test("search hits link only to known screens; unknown types and bad ids stay unlinked", () => {
   assert.equal(search.searchHitHref("drivers", { id: 5, title: "Ravi" }), "/drive-vision/drivers?driver=5");
-  assert.equal(search.searchHitHref("x", { id: 7, type: "DEVICE", title: "Bus" }), "/drive-vision/vehicles/7");
+  assert.equal(search.searchHitHref("x", { id: 7, type: "DEVICE", title: "Bus" }), "/drive-vision/vehicles/detail/?vehicleId=7");
   assert.equal(search.searchHitHref("alerts", { id: 9 }), "/drive-vision/alerts?kind=incidents&alarm=9");
   assert.equal(search.searchHitHref("geofences", { id: 3 }), null);
   assert.equal(search.searchHitHref("drivers", { id: -1 }), null);

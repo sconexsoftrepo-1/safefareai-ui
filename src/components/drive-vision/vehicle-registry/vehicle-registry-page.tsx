@@ -14,7 +14,7 @@ import type { VehicleDto, VehicleRow } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { formatDateTime, formatNumber } from "@/features/drive-vision/utils/format";
 import { useAccess, useActionGate, useCan } from "@/features/drive-vision/access/use-access";
-import { SCREEN_ROUTES, dataScope } from "@/features/drive-vision/access/access-policy";
+import { dataScope, vehicleDetailHref } from "@/features/drive-vision/access/access-policy";
 import { canUseMaintenance, maintenanceActions, maintenanceTenant } from "@/features/drive-vision/access/maintenance-access";
 import { cleanMaintenanceVehicleNumber } from "@/features/drive-vision/api/maintenance";
 import { PageHeader } from "../shared/page-header";
@@ -55,7 +55,7 @@ type StatusFilter = "all" | "ACTIVE" | "INACTIVE";
 type DeviceFilter = "all" | "fitted" | "none";
 
 /** Device detail lives on the devices screen ("Devices & Assets", route /vehicles). */
-const deviceHref = (id: number) => `${SCREEN_ROUTES.vehicles}/${id}`;
+const deviceHref = (id: number) => vehicleDetailHref(id);
 
 function VehicleStatusBadge({ status }: { status?: string }) {
   if (!status) return <span className="text-ink-subtle">—</span>;
