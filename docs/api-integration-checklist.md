@@ -147,17 +147,17 @@ Evidence: [evidence/phase4-followup-auth-basemap.md](evidence/phase4-followup-au
 | Genuine expiry | Verified (automated) + observed live | Rejected refresh → one call, no retry, signed out; expired refresh token → signed out with no request. Live: an old session signed out locally with no refresh request (`[auth] session expired`). | — |
 | Network failure during refresh | Verified (automated) | Session kept, no automatic retry; next request refreshes | — |
 | No tokens in logs | Verified (automated) | Every log line checked for token values / `eyJ` / `Bearer` | — |
-| Base map (MapLibre GL 6.14.0 + MapTiler `streets-v4`) — `map/geo-map.tsx` | Verified (browser) | Roads and labels render on Live Monitoring and Track history. Markers align with `map.project` to under 1 px. Selection, panel, track point and route layers work. 390 px: no horizontal scroll. Geofences and the alert drawer keep the legacy map. | Blank-map bug fixed: maplibre-gl.css overrode Tailwind's layered `absolute` (container 0 px high) → inline positioning. Real multi-point track line not observed (1-point data). |
-| Fallback without key | Verified (browser) | Coordinate grid + "Base map off — no map key configured"; 0 MapTiler requests; selection works | — |
-| Provider failure fallback | Verified (browser, missing style) | Coordinate grid + "the map style could not be loaded"; marker still plotted | 401 / 403 / 429 / no-WebGL2 / timeout paths not exercised live. |
+| Base map (Google Maps JavaScript API, dynamic library import) — `map/geo-map.tsx` | Verified (automated, mocked) — **not live-tested** | Roadmap (default) / Satellite / Hybrid via `setMapTypeId` without recreating the map; vehicle overlays, selection, clusters, focus/fit, route polylines (casing / line / played part), start/end/alarm pins, geofence outlines. All with a mocked `google.maps.importLibrary` (`tests/google-maps.test.cjs`). | No real key used yet; verify in a browser once the key is configured. |
+| Disabled / no key | Verified (automated) | "Google Maps is currently disabled." placeholder; no script, no `importLibrary` call, no map requests; panels rendered as map children (Live Monitoring vehicle panel) still show | — |
+| Load failure / key rejected | Verified (automated, mocked) | Load failure or timeout → "Map unavailable" with Retry; `gm_authFailure` → key-rejected message | — |
 
-#### Base map — provider notes
+#### Base map — Google Maps notes (migrated from MapTiler / MapLibre on 2026-11-17)
 
-- **Key is public.** The browser sends `NEXT_PUBLIC_MAPTILER_KEY` with every style/tile request; it is not a secret. In the MapTiler dashboard restrict it under *Allowed HTTP origins* (e.g. `localhost:3000`, the production domain). Do not add `?` (accepts requests with no Origin). Never use a MapTiler service token in the frontend.
-- **Privacy.** Every map view tells MapTiler which area (tile coordinates) is being viewed — for this app, where fleet vehicles are. Positions/markers themselves are drawn locally and are not sent.
-- **Usage limits / pricing (MapTiler pricing page, checked 2026-10-26).** Free: 5,000 map sessions and 100,000 API requests per month; service pauses for the rest of the month when exceeded; intended for testing / non-commercial use, and shows the MapTiler logo. Flex: from $30/month, overage billed, spending limit available. A map session = a page load that initialises a map. Re-check before production.
-- **Attribution.** MapLibre's attribution control shows the style's credits (© MapTiler © OpenStreetMap contributors); a MapTiler link is shown bottom-left.
-- **Self-hosting.** `NEXT_PUBLIC_MAP_STYLE_URL` replaces MapTiler with any MapLibre style URL; no key is then sent.
+- **Activation.** Google Maps loads only when `NEXT_PUBLIC_GOOGLE_MAPS_ENABLED=true` **and** `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` is non-empty at build time (static export inlines both). Either missing → placeholder, zero requests.
+- **Key is public.** The browser sends the key with every Maps request. In Google Cloud Console restrict it to *Websites* (`https://safefareai.sconexsoft.com/*`, plus `http://localhost:3000/*` only if wanted for development) and to the *Maps JavaScript API* only.
+- **Services.** Only the Maps JavaScript API (`maps` + `core` libraries). No Places, Directions, Geocoding, Street View or Elevation. No Map ID needed (markers are HTML overlays, not Advanced Markers).
+- **Loading.** `map/google-maps-loader.ts` is Google's inline bootstrap loader in TypeScript: one script per page, added lazily on the first map screen, never during build/SSR.
+- **Privacy.** Every map view tells Google which area is being viewed; vehicle positions are drawn locally and are not sent.
 
 ## Phase 3 — Operations added to the spec on 2026-10-29
 

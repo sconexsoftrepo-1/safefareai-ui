@@ -1,25 +1,28 @@
 "use client";
 
-import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReducedMotion } from "motion/react";
-import { Locate, Map as MapIcon, Minus, Plus } from "lucide-react";
-import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
+import { Locate, Map as MapIcon, MapPinOff, RotateCw } from "lucide-react";
 import type { LatLon } from "@/features/drive-vision/types";
 import { cn } from "@/lib/utils";
-import { attributionBottom, baseMapSource, loadMapLibre } from "./base-map-config";
-import { FleetMap, MapButton, type MapMarker, type MapPin, type MapRoute } from "./fleet-map";
+import { DEFAULT_MAP_TYPE, googleMapsConfig, MAP_TYPES, type MapTypeId } from "./google-maps-config";
+import { googleMapsAuthFailed, loadGoogleMaps, onGoogleMapsAuthFailure } from "./google-maps-loader";
+import type { CoreLibrary, GoogleMap, LatLngLiteral, MapsEventListener, MapsLibrary, OverlayViewBase, Polyline, PolylineOptions } from "./google-maps-types";
+import type { MapMarker, MapPin, MapRoute } from "./map-types";
 import { VehicleMarkerGlyph } from "./vehicle-marker";
-import type { GeoBounds } from "./projection";
 
 /**
- * Real geographic map for API coordinates: MapLibre GL with a MapTiler (or custom) style.
- * Same marker/route/pin props as FleetMap's coordinate mode, which it falls back to when no
- * key is configured, WebGL2 is missing, or the provider rejects the style or tiles.
+ * Geographic map for API coordinates, rendered with the Google Maps JavaScript API.
+ *
+ * Google Maps loads only when NEXT_PUBLIC_GOOGLE_MAPS_ENABLED is "true" and NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is set
+ * (see google-maps-config.ts). Otherwise a placeholder is shown and no map request is made; children (e.g. Live
+ * Monitoring's vehicle panel) still render, so the rest of the screen keeps working.
+ *
+ * The map is created once per mount. Roadmap / Satellite / Hybrid switch with setMapTypeId, which keeps the centre,
+ * zoom, markers, polylines and selection. Markers are HTML overlays (no Map ID needed) moved in place as new
+ * positions arrive; routes are Polylines updated in place.
  */
-
-type Runtime = Awaited<ReturnType<typeof loadMapLibre>>;
 
 export interface GeoMapProps {
   markers?: MapMarker[];
@@ -40,8 +43,6 @@ export interface GeoMapProps {
   legend?: { label: string; color: string }[];
   controlsPosition?: "left" | "right";
   focusPadRight?: number;
-  /** Extent for the coordinate-grid fallback. */
-  bounds: GeoBounds | null;
   /** Caption describing the plotted data, e.g. "Positions from API coordinates". */
   dataNote: string;
 }
@@ -51,24 +52,41 @@ const FIT_MAX_ZOOM = 16;
 const FOCUS_ZOOM = 14;
 const CLUSTER_BELOW_ZOOM = 12;
 const CLUSTER_PX = 30;
+const INITIAL_VIEW = { center: { lat: 20.6, lng: 78.9 }, zoom: 4 };
 
-const source = baseMapSource();
+const CONTAINER = "relative isolate h-full min-h-[320px] w-full overflow-hidden rounded-[18px] bg-[var(--dv-map-land)]";
+
+export const MAP_DISABLED_TITLE = "Google Maps is currently disabled.";
+export const MAP_DISABLED_TEXT = "Enable Google Maps configuration to view the interactive map.";
 
 export function GeoMap(props: GeoMapProps) {
-  const [failure, setFailure] = useState<string | null>(source.kind === "none" ? "Base map off — no map key configured" : null);
-
-  if (source.kind === "none" || failure) {
-    const { dataNote, bounds, ...rest } = props;
-    return <FleetMap {...rest} bounds={bounds} maxZoom={60} mapNote={`${failure ?? "Base map unavailable"} · coordinate grid · ${dataNote}`} />;
-  }
-  return <GeoCanvas {...props} styleUrl={source.styleUrl} provider={source.kind} onFail={setFailure} />;
+  // Read once per mount: the values are inlined at build time.
+  const [config] = useState(googleMapsConfig);
+  if (!config.enabled) return <MapPlaceholder {...props} />;
+  return <GoogleCanvas {...props} apiKey={config.apiKey} />;
 }
 
-function failureMessage(status: number | undefined, loaded: boolean) {
-  if (status === 401 || status === 403) return "Base map unavailable — the provider rejected the map key (check the key and its allowed origins)";
-  if (status === 429) return "Base map unavailable — map quota exceeded";
-  return loaded ? "Base map unavailable — map tiles failed to load" : "Base map unavailable — the map style could not be loaded";
+/** Shown instead of the map when Google Maps is disabled or has no key. Makes no network request. */
+function MapPlaceholder({ className, ariaLabel, children, dataNote }: GeoMapProps) {
+  return (
+    <div className={cn(CONTAINER, "bg-[#F4F7FB]", className)} role="region" aria-label={ariaLabel} data-map-state="disabled">
+      <div className="absolute inset-0 grid place-items-center p-6 text-center">
+        <div className="max-w-[300px]">
+          <span className="mx-auto mb-2.5 grid size-11 place-items-center rounded-full bg-white text-[#243451] shadow-card">
+            <MapPinOff className="size-5" aria-hidden />
+          </span>
+          <p className="text-[13.5px] font-semibold text-[#243451]">{MAP_DISABLED_TITLE}</p>
+          <p className="mt-1 text-[12px] text-ink-muted">{MAP_DISABLED_TEXT}</p>
+          <p className="mt-2 text-[11px] text-ink-subtle">{dataNote}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
 }
+
+type Runtime = { map: GoogleMap; maps: MapsLibrary; core: CoreLibrary; probe: OverlayViewBase };
+type Status = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message: string; retry: boolean };
 
 function cssColor(el: HTMLElement | null, value: string) {
   const m = /^var\((--[\w-]+)\)$/.exec(value.trim());
@@ -76,7 +94,9 @@ function cssColor(el: HTMLElement | null, value: string) {
   return getComputedStyle(el).getPropertyValue(m[1]).trim() || "#334155";
 }
 
-function GeoCanvas({
+const toLatLng = (p: LatLon): LatLngLiteral => ({ lat: p.lat, lng: p.lon });
+
+function GoogleCanvas({
   markers = [],
   selectedId,
   onMarkerClick,
@@ -96,114 +116,140 @@ function GeoCanvas({
   controlsPosition = "right",
   focusPadRight = 0,
   dataNote,
-  styleUrl,
-  provider,
-  onFail,
-}: GeoMapProps & { styleUrl: string; provider: "maptiler" | "custom"; onFail: (reason: string) => void }) {
+  apiKey,
+}: GeoMapProps & { apiKey: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const captionRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
-  const [map, setMap] = useState<{ map: MapLibreMap; ml: Runtime } | null>(null);
+  const [rt, setRt] = useState<Runtime | null>(null);
+  const [status, setStatus] = useState<Status>({ kind: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const [mapType, setMapType] = useState<MapTypeId>(DEFAULT_MAP_TYPE);
   const [viewTick, setViewTick] = useState(0);
-  const onFailRef = useRef(onFail);
+  // Google-positioned control hosts; React renders into them through portals.
+  const [hosts] = useState(() => ({ top: document.createElement("div"), side: document.createElement("div"), caption: document.createElement("div") }));
+  const mapTypeRef = useRef(mapType);
+  const sideRef = useRef(controlsPosition);
   useEffect(() => {
-    onFailRef.current = onFail;
+    mapTypeRef.current = mapType;
+    sideRef.current = controlsPosition;
   });
 
-  // Create the map once; MapLibre owns the canvas from here on.
+  // Create the map once per mount (and again only on an explicit retry).
   useEffect(() => {
     let cancelled = false;
-    let instance: MapLibreMap | null = null;
-    let loaded = false;
-    const fail = (reason: string) => {
+    let created: Runtime | null = null;
+    const canvas = canvasRef.current;
+    const listeners: MapsEventListener[] = [];
+    const fail = (message: string, retry = true) => {
       if (cancelled) return;
       cancelled = true;
-      instance?.remove();
-      onFailRef.current(reason);
+      setRt(null);
+      setStatus({ kind: "error", message, retry });
     };
-    const timer = setTimeout(() => !loaded && fail("Base map unavailable — the map took too long to load"), LOAD_TIMEOUT_MS);
+    const timer = setTimeout(() => fail("Google Maps took too long to load."), LOAD_TIMEOUT_MS);
+    const authMessage = "Google Maps rejected the API key. Check the key, its allowed referrers and billing.";
+    const unsubscribe = onGoogleMapsAuthFailure(() => fail(authMessage, false));
 
-    loadMapLibre()
-      .then((ml) => {
-        if (cancelled || !canvasRef.current) return;
+    loadGoogleMaps(apiKey)
+      .then(({ maps, core }) => {
+        if (cancelled || !canvas) return;
+        clearTimeout(timer);
+        if (googleMapsAuthFailed()) return fail(authMessage, false);
+        const P = core.ControlPosition;
+        const left = sideRef.current === "left";
+        let map: GoogleMap;
         try {
-          instance = new ml.Map({
-            container: canvasRef.current,
-            style: styleUrl,
-            center: [78.9, 20.6],
-            zoom: 3,
-            maxZoom: 19,
-            // Full attribution, always: compact mode collapses it to an "i" button on the first drag.
-            attributionControl: { compact: false },
-            dragRotate: false,
-            pitchWithRotate: false,
-            touchPitch: false,
+          map = new maps.Map(canvas, {
+            ...INITIAL_VIEW,
+            mapTypeId: mapTypeRef.current,
+            maxZoom: 20,
+            disableDefaultUI: true,
+            zoomControl: true,
+            zoomControlOptions: { position: left ? P.LEFT_TOP : P.RIGHT_TOP },
+            fullscreenControl: true,
+            fullscreenControlOptions: { position: left ? P.TOP_LEFT : P.TOP_RIGHT },
+            mapTypeControl: false, // replaced by the Roadmap / Satellite / Hybrid selector below
+            streetViewControl: false,
+            rotateControl: false,
+            cameraControl: false,
+            clickableIcons: false,
+            gestureHandling: "greedy",
+            tilt: 0,
+            headingInteractionEnabled: false,
+            tiltInteractionEnabled: false,
+            backgroundColor: "#F4F7FB",
           });
-        } catch (err) {
-          fail(err instanceof Error && err.name === "GPUInitializationError" ? "Base map unavailable — this browser has no WebGL2" : "Base map unavailable — the map could not start");
-          return;
+        } catch {
+          return fail("Google Maps could not start in this browser.");
         }
-        const m = instance;
-        // Keep the provider attribution clear of the caption/legend row at the bottom (one-line default until
-        // the row is measured; see the caption effect below).
-        const attribution = m.getContainer().querySelector<HTMLElement>(".maplibregl-ctrl-bottom-right");
-        if (attribution) attribution.style.bottom = `${attributionBottom(22)}px`;
-        m.touchZoomRotate.disableRotation();
-        m.keyboard.disableRotation();
-        // Errors carry request URLs (with the key) — never log them.
-        m.on("error", (e) => {
-          const status = (e.error as { status?: number } | undefined)?.status;
-          if (!loaded || status === 401 || status === 403 || status === 429) fail(failureMessage(status, loaded));
-        });
-        m.on("load", () => {
-          loaded = true;
-          clearTimeout(timer);
-          if (process.env.NODE_ENV !== "production") (canvasRef.current as unknown as { __dvMap?: MapLibreMap } | null)!.__dvMap = m;
-          setMap({ map: m, ml });
-        });
-        m.on("moveend", () => setViewTick((t) => t + 1));
+        map.controls[left ? P.TOP_LEFT : P.TOP_RIGHT].push(hosts.top);
+        map.controls[left ? P.LEFT_TOP : P.RIGHT_TOP].push(hosts.side);
+        // Next to the Google logo, never on top of it.
+        map.controls[P.BOTTOM_LEFT].push(hosts.caption);
+        // A bare overlay that gives access to the map projection (clustering).
+        const Probe = class extends maps.OverlayView {
+          draw() {}
+        };
+        const probe = new Probe();
+        probe.setMap(map);
+        listeners.push(core.event.addListener(map, "idle", () => setViewTick((t) => t + 1)));
+        created = { map, maps, core, probe };
+        setRt(created);
+        setStatus({ kind: "ready" });
       })
-      .catch(() => fail("Base map unavailable — the map library failed to load"));
+      .catch(() => fail("Google Maps could not be loaded. Check the connection and try again."));
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      instance?.remove();
+      unsubscribe();
+      listeners.forEach((l) => l.remove());
+      if (created) {
+        created.probe.setMap(null);
+        for (const arr of created.map.controls) {
+          if (!arr) continue;
+          for (let i = arr.getArray().length - 1; i >= 0; i--) if (Object.values(hosts).includes(arr.getArray()[i] as HTMLDivElement)) arr.removeAt(i);
+        }
+      }
+      canvas?.replaceChildren();
     };
-  }, [styleUrl]);
+  }, [apiKey, attempt, hosts]);
 
-  const padding = useCallback(
-    (extraRight: number) => {
-      const w = containerRef.current?.clientWidth ?? 800;
-      const base = Math.min(70, w / 6);
-      return { top: base, bottom: base, left: base, right: base + (w > 640 ? extraRight : 0) };
-    },
-    []
-  );
+  // Switching view never recreates the map: overlays, centre and zoom are kept by Google.
+  useEffect(() => {
+    if (rt && rt.map.getMapTypeId() !== mapType) rt.map.setMapTypeId(mapType);
+  }, [rt, mapType]);
+
+  const padding = useCallback((extraRight: number) => {
+    const w = containerRef.current?.clientWidth ?? 800;
+    const base = Math.min(70, w / 6);
+    return { top: base, bottom: base, left: base, right: base + (w > 640 ? extraRight : 0) };
+  }, []);
 
   const fit = useCallback(() => {
-    if (!map) return;
+    if (!rt) return;
     const pts = fitPoints ?? [];
     if (pts.length === 0) return;
-    const lons = pts.map((p) => p.lon);
-    const lats = pts.map((p) => p.lat);
-    map.map.fitBounds(
-      [
-        [Math.min(...lons), Math.min(...lats)],
-        [Math.max(...lons), Math.max(...lats)],
-      ],
-      { padding: padding(focus ? focusPadRight : 0), maxZoom: FIT_MAX_ZOOM, duration: reduceMotion ? 0 : 450 }
-    );
-  }, [map, fitPoints, padding, focus, focusPadRight, reduceMotion]);
+    const bounds = new rt.core.LatLngBounds();
+    for (const p of pts) bounds.extend(toLatLng(p));
+    rt.map.fitBounds(bounds, padding(focus ? focusPadRight : 0));
+    rt.core.event.addListenerOnce(rt.map, "idle", () => {
+      if ((rt.map.getZoom() ?? 0) > FIT_MAX_ZOOM) rt.map.setZoom(FIT_MAX_ZOOM);
+    });
+  }, [rt, fitPoints, padding, focus, focusPadRight]);
 
   // Re-fit when the caller's fit key changes (and once when the map is ready). An active focus wins.
-  const fitSignature = map ? `${fitKey ?? ""}` : null;
+  const fitSignature = rt ? `${fitKey ?? ""}` : null;
   const lastFit = useRef<string | null>(null);
   const focusSignature = focus ? `${focus.lat.toFixed(5)},${focus.lon.toFixed(5)},${focus.zoom ?? ""}` : null;
   const lastFocus = useRef<string | null>(null);
   useEffect(() => {
-    if (!map) return;
+    if (!rt) {
+      lastFit.current = null;
+      lastFocus.current = null;
+      return;
+    }
     if (fitSignature !== lastFit.current) {
       lastFit.current = fitSignature;
       if (!focus) fit();
@@ -211,76 +257,64 @@ function GeoCanvas({
     if (focusSignature !== lastFocus.current) {
       lastFocus.current = focusSignature;
       if (focus) {
-        map.map.easeTo({
-          center: [focus.lon, focus.lat],
-          zoom: focus.zoom ?? Math.max(map.map.getZoom(), FOCUS_ZOOM),
-          padding: padding(focusPadRight),
-          duration: reduceMotion ? 0 : 450,
-        });
+        const center = toLatLng(focus);
+        const zoom = focus.zoom ?? Math.max(rt.map.getZoom() ?? 0, FOCUS_ZOOM);
+        if (reduceMotion || zoom !== rt.map.getZoom()) rt.map.moveCamera({ center, zoom });
+        else rt.map.panTo(center);
+        // Keep the vehicle clear of a side panel: centre it in the unobstructed part of the map.
+        const pad = padding(focusPadRight);
+        const dx = (pad.right - pad.left) / 2;
+        if (dx) rt.core.event.addListenerOnce(rt.map, "idle", () => rt.map.panBy(dx, 0));
       }
     }
-  }, [map, fitSignature, focusSignature, focus, fit, padding, focusPadRight, reduceMotion]);
+  }, [rt, fitSignature, focusSignature, focus, fit, padding, focusPadRight, reduceMotion]);
 
-  // Keep the attribution above the caption row at its real height: on narrow maps the row wraps to two
-  // lines, and a fixed offset let the MapTiler logo cover the OpenStreetMap credit.
+  // Routes as Polylines: a white casing, the full path, and the played part on top. Updated in place.
+  const lines = useRef(new Map<string, Polyline>());
   useEffect(() => {
-    const caption = captionRef.current;
-    const attribution = map?.map.getContainer().querySelector<HTMLElement>(".maplibregl-ctrl-bottom-right");
-    if (!caption || !attribution) return;
-    const place = () => {
-      attribution.style.bottom = `${attributionBottom(caption.offsetHeight)}px`;
-    };
-    place();
-    const observer = new ResizeObserver(place);
-    observer.observe(caption);
-    return () => observer.disconnect();
-  }, [map]);
-
-  // Routes as GeoJSON line layers: a white casing, the full path, and the played part on top.
-  useEffect(() => {
-    if (!map) return;
+    if (!rt) return;
     const el = containerRef.current;
-    const features = routes.flatMap((r) => {
+    const want = new Map<string, PolylineOptions>();
+    for (const r of routes) {
       const color = cssColor(el, r.color ?? "var(--dv-ink)");
-      const coords = r.points.map((p) => [p.lon, p.lat]);
-      const cut = r.progress !== undefined ? Math.max(1, Math.round(r.progress * (r.points.length - 1))) : r.points.length - 1;
-      const base = { type: "Feature" as const, properties: { color, dim: r.dim ? 1 : 0 } };
-      const out = [{ ...base, properties: { ...base.properties, part: r.progress !== undefined ? "rest" : "full" }, geometry: { type: "LineString" as const, coordinates: coords } }];
-      if (r.progress !== undefined) out.push({ ...base, properties: { ...base.properties, part: "played" }, geometry: { type: "LineString" as const, coordinates: coords.slice(0, cut + 1) } });
-      return out;
-    });
-    const data = { type: "FeatureCollection" as const, features };
-    const m = map.map;
-    const existing = m.getSource("dv-routes") as GeoJSONSource | undefined;
-    if (existing) {
-      existing.setData(data);
-      return;
+      const path = r.points.map(toLatLng);
+      const dim = r.dim ? 0.35 : 1;
+      const played = r.progress !== undefined;
+      want.set(`${r.id}:casing`, { path, strokeColor: "#ffffff", strokeWeight: 7, strokeOpacity: dim, zIndex: 1 });
+      want.set(`${r.id}:line`, { path, strokeColor: color, strokeWeight: 3.5, strokeOpacity: (played ? 0.3 : 0.9) * dim, zIndex: 2 });
+      if (played) {
+        const cut = Math.max(1, Math.round(r.progress! * (r.points.length - 1)));
+        want.set(`${r.id}:played`, { path: path.slice(0, cut + 1), strokeColor: color, strokeWeight: 3.5, strokeOpacity: dim, zIndex: 3 });
+      }
     }
-    m.addSource("dv-routes", { type: "geojson", data });
-    m.addLayer({
-      id: "dv-routes-casing",
-      type: "line",
-      source: "dv-routes",
-      filter: ["!=", ["get", "part"], "played"],
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#ffffff", "line-width": 7, "line-opacity": ["case", ["==", ["get", "dim"], 1], 0.35, 1] },
-    });
-    m.addLayer({
-      id: "dv-routes-line",
-      type: "line",
-      source: "dv-routes",
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": ["get", "color"], "line-width": 3.5, "line-opacity": ["*", ["match", ["get", "part"], "rest", 0.3, "full", 0.9, 1], ["case", ["==", ["get", "dim"], 1], 0.35, 1]] },
-    });
-  }, [map, routes]);
+    for (const [key, line] of lines.current) {
+      if (!want.has(key)) {
+        line.setMap(null);
+        lines.current.delete(key);
+      }
+    }
+    for (const [key, opts] of want) {
+      const existing = lines.current.get(key);
+      if (existing) existing.setOptions(opts);
+      else lines.current.set(key, new rt.maps.Polyline({ ...opts, clickable: false, map: rt.map }));
+    }
+  }, [rt, routes]);
+  useEffect(() => {
+    const current = lines.current;
+    return () => {
+      current.forEach((l) => l.setMap(null));
+      current.clear();
+    };
+  }, [rt]);
 
   // Screen-space clustering, recomputed after each move (workbook: "Map clustering — client side").
   const groups = useMemo(() => {
     void viewTick;
-    if (!cluster || !map || map.map.getZoom() >= CLUSTER_BELOW_ZOOM) return markers.map((m) => ({ id: m.id, members: [m] }));
+    const projection = rt?.probe.getProjection();
+    if (!cluster || !rt || !projection || (rt.map.getZoom() ?? 0) >= CLUSTER_BELOW_ZOOM) return markers.map((m) => ({ id: m.id, members: [m] }));
     const out: { id: string; members: MapMarker[]; x: number; y: number }[] = [];
     for (const m of markers) {
-      const p = map.map.project([m.lon, m.lat]);
+      const p = projection.fromLatLngToDivPixel(toLatLng(m)) ?? { x: 0, y: 0 };
       if (m.id === selectedId) {
         out.push({ id: m.id, members: [m], x: p.x, y: p.y });
         continue;
@@ -290,108 +324,197 @@ function GeoCanvas({
       else out.push({ id: m.id, members: [m], x: p.x, y: p.y });
     }
     return out;
-  }, [cluster, map, markers, selectedId, viewTick]);
+  }, [cluster, rt, markers, selectedId, viewTick]);
+
+  const heading = rt?.map.getHeading() ?? 0;
 
   return (
-    <div ref={containerRef} className={cn("relative isolate h-full min-h-[320px] w-full overflow-hidden rounded-[18px] bg-[var(--dv-map-land)]", className)} role="region" aria-label={ariaLabel}>
-      {/* Inline style: maplibre-gl.css sets `.maplibregl-map { position: relative }`, which (unlayered) beats Tailwind's layered `absolute inset-0` and collapses the map to 0 px height. */}
+    <div ref={containerRef} className={cn(CONTAINER, className)} role="region" aria-label={ariaLabel} data-map-state={status.kind} data-map-type={mapType}>
       <div ref={canvasRef} style={{ position: "absolute", inset: 0 }} />
 
-      {map
+      {rt
         ? pins.map((p) => (
-            <HtmlMarker key={p.id} rt={map} lat={p.lat} lon={p.lon} z={p.id === activePinId ? 2 : 1}>
+            <HtmlMarker key={p.id} rt={rt} lat={p.lat} lon={p.lon} z={p.id === activePinId ? 2 : 1}>
               <PinGlyph pin={p} active={p.id === activePinId} onClick={onPinClick} />
             </HtmlMarker>
           ))
         : null}
-      {map
+      {rt
         ? groups.map((g) =>
             g.members.length > 1 ? (
-              <HtmlMarker key={`cluster-${g.id}`} rt={map} lat={avg(g.members, "lat")} lon={avg(g.members, "lon")} z={3}>
+              <HtmlMarker key={`cluster-${g.id}`} rt={rt} lat={avg(g.members, "lat")} lon={avg(g.members, "lon")} z={3}>
                 <button
                   type="button"
                   aria-label={`${g.members.length} vehicles — zoom in`}
                   className="grid place-items-center rounded-full border-[2.5px] bg-[var(--dv-ink)] text-[12px] font-bold text-white shadow-[0_0_0_4px_rgb(15_23_42/0.12)]"
                   style={{ width: 28 + Math.min(10, g.members.length) * 2, height: 28 + Math.min(10, g.members.length) * 2, borderColor: g.members.some((m) => m.alarm) ? "var(--dv-danger)" : "white" }}
-                  onClick={() => map.map.easeTo({ center: [avg(g.members, "lon"), avg(g.members, "lat")], zoom: Math.max(map.map.getZoom() + 2, CLUSTER_BELOW_ZOOM), duration: reduceMotion ? 0 : 450 })}
+                  onClick={() => {
+                    rt.map.setZoom(Math.max((rt.map.getZoom() ?? 0) + 2, CLUSTER_BELOW_ZOOM));
+                    rt.map.panTo({ lat: avg(g.members, "lat"), lng: avg(g.members, "lon") });
+                  }}
                 >
                   {g.members.length}
                 </button>
               </HtmlMarker>
             ) : (
-              <HtmlMarker key={g.id} rt={map} lat={g.members[0].lat} lon={g.members[0].lon} z={g.members[0].id === selectedId ? 5 : 4}>
-                <VehicleMarkerGlyph marker={g.members[0]} selected={g.members[0].id === selectedId} onClick={onMarkerClick} mapBearing={map.map.getBearing()} />
+              <HtmlMarker key={g.id} rt={rt} lat={g.members[0].lat} lon={g.members[0].lon} z={g.members[0].id === selectedId ? 5 : 4}>
+                <VehicleMarkerGlyph marker={g.members[0]} selected={g.members[0].id === selectedId} onClick={onMarkerClick} mapBearing={heading} />
               </HtmlMarker>
             )
           )
         : null}
 
-      {/* Controls */}
-      <div className={cn("absolute top-3 z-10 flex flex-col gap-1.5", controlsPosition === "left" ? "left-3" : "right-3")}>
-        <div className="flex flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-card">
-          <MapButton label="Zoom in" onClick={() => map?.map.zoomIn({ duration: reduceMotion ? 0 : 250 })}>
-            <Plus className="size-4" />
-          </MapButton>
-          <span className="h-px bg-line" />
-          <MapButton label="Zoom out" onClick={() => map?.map.zoomOut({ duration: reduceMotion ? 0 : 250 })}>
-            <Minus className="size-4" />
-          </MapButton>
+      {/* Controls placed by Google alongside its native zoom and fullscreen controls. */}
+      {createPortal(<MapTypeSelector value={mapType} onChange={setMapType} />, hosts.top)}
+      {createPortal(
+        <button type="button" onClick={fit} aria-label="Fit to results" title="Fit to results" className="m-2.5 mt-0 grid size-10 place-items-center rounded-lg bg-white text-[#243451] shadow-[0_1px_4px_rgb(0_0_0/0.3)] hover:bg-[#F4F7FB] focus-visible:ring-2 focus-visible:ring-[#243451] focus-visible:outline-none">
+          <Locate className="size-[18px]" />
+        </button>,
+        hosts.side
+      )}
+      {createPortal(
+        <div className="pointer-events-none mb-1.5 flex max-w-[calc(100vw-120px)] flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface/95 px-2 py-1 text-[10.5px] font-medium text-ink-muted shadow-card">
+            <MapIcon className="size-3" aria-hidden /> {dataNote}
+          </span>
+          {showLegend && legend && markers.length > 0 ? (
+            <span className="hidden items-center gap-2.5 rounded-full border border-line bg-surface/95 px-2.5 py-1 text-[10.5px] text-ink-muted shadow-card sm:inline-flex">
+              {legend.map((l) => (
+                <span key={l.label} className="inline-flex items-center gap-1">
+                  <span className="size-2 rounded-full" style={{ background: l.color }} aria-hidden />
+                  {l.label}
+                </span>
+              ))}
+            </span>
+          ) : null}
+        </div>,
+        hosts.caption
+      )}
+
+      {status.kind === "loading" ? (
+        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#F4F7FB]/70">
+          <span className="rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink-muted shadow-card" role="status">
+            Loading Google Maps…
+          </span>
         </div>
-        <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-card">
-          <MapButton label="Fit to results" onClick={fit}>
-            <Locate className="size-4" />
-          </MapButton>
+      ) : null}
+      {status.kind === "error" ? (
+        <div className="absolute inset-0 z-10 grid place-items-center bg-[#F4F7FB] p-6 text-center" role="alert">
+          <div className="max-w-[320px]">
+            <p className="text-[13.5px] font-semibold text-[#243451]">Map unavailable</p>
+            <p className="mt-1 text-[12px] text-ink-muted">{status.message}</p>
+            {status.retry ? (
+              <button type="button" onClick={() => {
+                  setStatus({ kind: "loading" });
+                  setAttempt((a) => a + 1);
+                }} className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#F56645] px-3.5 py-1.5 text-[12px] font-semibold text-white hover:brightness-95 focus-visible:ring-2 focus-visible:ring-[#243451] focus-visible:outline-none">
+                <RotateCw className="size-3.5" aria-hidden /> Retry
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {children}
+    </div>
+  );
+}
 
-      <div ref={captionRef} className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-1.5">
-        {provider === "maptiler" ? (
-          <a href="https://www.maptiler.com/" target="_blank" rel="noopener noreferrer" className="pointer-events-auto rounded-full border border-line bg-surface/95 px-2 py-1 text-[10.5px] font-semibold text-ink shadow-card">
-            MapTiler
-          </a>
-        ) : null}
-        <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface/95 px-2 py-1 text-[10.5px] font-medium text-ink-muted shadow-card">
-          <MapIcon className="size-3" aria-hidden /> {map ? dataNote : "Loading base map…"}
-        </span>
-        {showLegend && legend && markers.length > 0 ? (
-          <span className="hidden items-center gap-2.5 rounded-full border border-line bg-surface/95 px-2.5 py-1 text-[10.5px] text-ink-muted shadow-card sm:inline-flex">
-            {legend.map((l) => (
-              <span key={l.label} className="inline-flex items-center gap-1">
-                <span className="size-2 rounded-full" style={{ background: l.color }} aria-hidden />
-                {l.label}
-              </span>
-            ))}
-          </span>
-        ) : null}
-      </div>
+/** Roadmap / Satellite / Hybrid. A radio group so the active view is announced. */
+export function MapTypeSelector({ value, onChange }: { value: MapTypeId; onChange: (id: MapTypeId) => void }) {
+  return (
+    <div role="radiogroup" aria-label="Map view" className="m-2.5 flex rounded-lg bg-white p-0.5 shadow-[0_1px_4px_rgb(0_0_0/0.3)]">
+      {MAP_TYPES.map((t) => {
+        const active = t.id === value;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            data-map-type={t.id}
+            onClick={() => onChange(t.id)}
+            className={cn(
+              "h-9 rounded-md px-2.5 text-[12px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#F56645] focus-visible:outline-none sm:px-3",
+              active ? "bg-[#243451] text-white" : "text-[#243451] hover:bg-[#F4F7FB]"
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 const avg = (ms: MapMarker[], k: "lat" | "lon") => ms.reduce((s, m) => s + m[k], 0) / ms.length;
 
-/** Renders React content into a MapLibre HTML marker anchored at its centre. */
-function HtmlMarker({ rt, lat, lon, z, children }: { rt: { map: MapLibreMap; ml: Runtime }; lat: number; lon: number; z: number; children: React.ReactNode }) {
-  const [el] = useState(() => document.createElement("div"));
-  const marker = useRef<MapLibreMarker | null>(null);
-  useEffect(() => {
-    const m = new rt.ml.Marker({ element: el, anchor: "center" }).setLngLat([lon, lat]).addTo(rt.map);
-    marker.current = m;
-    return () => {
-      m.remove();
-      marker.current = null;
+interface HtmlOverlay extends OverlayViewBase {
+  setPosition(p: LatLngLiteral): void;
+  setZIndex(z: number): void;
+}
+
+const overlayClasses = new WeakMap<MapsLibrary, new (el: HTMLElement, p: LatLngLiteral) => HtmlOverlay>();
+
+/** An OverlayView that keeps a DOM element centred on a coordinate (no Map ID needed, unlike AdvancedMarkerElement). */
+function htmlOverlayClass(maps: MapsLibrary) {
+  let Cls = overlayClasses.get(maps);
+  if (!Cls) {
+    Cls = class extends maps.OverlayView implements HtmlOverlay {
+      constructor(
+        private readonly el: HTMLElement,
+        private position: LatLngLiteral
+      ) {
+        super();
+        el.style.position = "absolute";
+        el.style.transform = "translate(-50%, -50%)";
+      }
+      onAdd() {
+        this.getPanes()?.overlayMouseTarget.appendChild(this.el);
+      }
+      draw() {
+        const p = this.getProjection()?.fromLatLngToDivPixel(this.position);
+        if (!p) return;
+        this.el.style.left = `${p.x}px`;
+        this.el.style.top = `${p.y}px`;
+      }
+      onRemove() {
+        this.el.remove();
+      }
+      setPosition(p: LatLngLiteral) {
+        this.position = p;
+        this.draw();
+      }
+      setZIndex(z: number) {
+        this.el.style.zIndex = String(z);
+      }
     };
-    // Position updates are handled below; the marker is created once per map.
+    overlayClasses.set(maps, Cls);
+  }
+  return Cls;
+}
+
+/** Renders React content into a Google Maps HTML overlay anchored at its centre; moves it in place. */
+function HtmlMarker({ rt, lat, lon, z, children }: { rt: Runtime; lat: number; lon: number; z: number; children: React.ReactNode }) {
+  const [el] = useState(() => document.createElement("div"));
+  const overlay = useRef<HtmlOverlay | null>(null);
+  useEffect(() => {
+    const Overlay = htmlOverlayClass(rt.maps);
+    const o = new Overlay(el, { lat, lng: lon });
+    o.setMap(rt.map);
+    overlay.current = o;
+    return () => {
+      o.setMap(null);
+      overlay.current = null;
+    };
+    // Position updates are handled below; the overlay is created once per map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rt, el]);
   useEffect(() => {
-    marker.current?.setLngLat([lon, lat]);
+    overlay.current?.setPosition({ lat, lng: lon });
   }, [lat, lon]);
   useEffect(() => {
-    const node = marker.current?.getElement();
-    if (node) node.style.zIndex = String(z);
+    overlay.current?.setZIndex(z);
   }, [z, rt]);
   return createPortal(children, el);
 }
@@ -406,6 +529,7 @@ function PinGlyph({ pin: p, active, onClick }: { pin: MapPin; active: boolean; o
       {...(onClick ? { type: "button" as const, onClick: () => onClick(p.id) } : {})}
       aria-label={p.title}
       title={p.title}
+      data-pin-id={p.id}
       className="block outline-none focus-visible:rounded-full focus-visible:ring-2 focus-visible:ring-[var(--dv-ink)]"
       style={{ width: size, height: size, cursor: onClick ? "pointer" : undefined }}
     >

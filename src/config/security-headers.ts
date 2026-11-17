@@ -7,7 +7,7 @@
  *   the app (clickjacking on confirm dialogs). Same-origin frames stay allowed: they're used for
  *   width-constrained responsive checks, and session hand-over already supports them.
  * - `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` (the
- *   browser default, made explicit; MapTiler's allowed-origin check still receives the origin),
+ *   browser default, made explicit; Google Maps' HTTP-referrer key restriction still receives the origin),
  *   and a Permissions-Policy denying camera / microphone / geolocation / payment / USB, which the
  *   app never uses.
  * - CSP `object-src 'none'; base-uri 'self'`.
@@ -25,8 +25,8 @@ export const GPS_VIDEO_FRAME_ORIGIN = "https://y.gpstracktech.com";
 export interface SecurityHeaderEnv {
   NODE_ENV?: string;
   NEXT_PUBLIC_API_BASE_URL?: string;
-  NEXT_PUBLIC_MAPTILER_KEY?: string;
-  NEXT_PUBLIC_MAP_STYLE_URL?: string;
+  NEXT_PUBLIC_GOOGLE_MAPS_ENABLED?: string;
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?: string;
   /** Comma-separated extra hosts allowed to serve alert evidence (e.g. a storage host the backend starts using). */
   NEXT_PUBLIC_EVIDENCE_MEDIA_HOSTS?: string;
 }
@@ -64,18 +64,30 @@ export function originOf(url: string | undefined): string | null {
   }
 }
 
-const MAPTILER_ORIGIN = "https://api.maptiler.com";
-
-/** Origins the browser fetches from: the BFF and the base-map provider (style, tiles, glyphs, sprites). */
+/** Origins the browser fetches data from: the BFF. */
 export function connectOrigins(env: SecurityHeaderEnv): string[] {
-  const origins = new Set<string>();
   const api = originOf(env.NEXT_PUBLIC_API_BASE_URL);
-  if (api) origins.add(api);
-  const customStyle = originOf(env.NEXT_PUBLIC_MAP_STYLE_URL);
-  if (customStyle) origins.add(customStyle);
-  // MapTiler is used only when no custom style is set (see map/base-map-config.ts).
-  else if (env.NEXT_PUBLIC_MAPTILER_KEY?.trim()) origins.add(MAPTILER_ORIGIN);
-  return [...origins];
+  return api ? [api] : [];
+}
+
+/** Same rule as map/google-maps-config.ts: enabled only with the switch on and a key present. */
+export function googleMapsEnabled(env: SecurityHeaderEnv): boolean {
+  return (env.NEXT_PUBLIC_GOOGLE_MAPS_ENABLED ?? "").trim() === "true" && !!env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
+}
+
+/**
+ * Sources the Maps JavaScript API needs (Google's CSP guide for the Maps JavaScript API), added only when
+ * Google Maps is enabled. Nothing Google-related is allowed while maps are disabled.
+ */
+export function googleMapsSources(env: SecurityHeaderEnv): { script: string[]; img: string[]; connect: string[]; style: string[]; font: string[] } {
+  if (!googleMapsEnabled(env)) return { script: [], img: [], connect: [], style: [], font: [] };
+  return {
+    script: ["https://*.googleapis.com", "https://*.gstatic.com", "*.google.com", "https://*.ggpht.com", "*.googleusercontent.com"],
+    img: ["https://*.googleapis.com", "https://*.gstatic.com", "*.google.com", "*.googleusercontent.com"],
+    connect: ["https://*.googleapis.com", "*.google.com", "https://*.gstatic.com"],
+    style: ["https://fonts.googleapis.com"],
+    font: ["https://fonts.gstatic.com"],
+  };
 }
 
 const join = (directives: [string, ...string[]][]) => directives.map((d) => d.join(" ")).join("; ");
@@ -92,20 +104,21 @@ export function enforcedCsp(): string {
 /**
  * Full allow-list, report-only. Without per-request nonces (pages are statically rendered), Next's
  * inline bootstrap scripts need 'unsafe-inline'; development also needs 'unsafe-eval' (React debug)
- * and ws: for hot reload. MapLibre runs its worker from /_next/static and may use blob: workers.
+ * and ws: for hot reload. Google Maps sources are added only when Google Maps is enabled.
  */
 export function reportOnlyCsp(env: SecurityHeaderEnv): string {
   const dev = env.NODE_ENV === "development";
   const connect = connectOrigins(env);
   const media = evidenceSources(env);
+  const gm = googleMapsSources(env);
   return join([
     ["default-src", "'self'"],
-    ["script-src", "'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],
-    ["style-src", "'self'", "'unsafe-inline'"],
-    ["img-src", "'self'", "data:", "blob:", ...connect, ...media],
+    ["script-src", "'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : []), ...gm.script],
+    ["style-src", "'self'", "'unsafe-inline'", ...gm.style],
+    ["img-src", "'self'", "data:", "blob:", ...connect, ...media, ...gm.img],
     ["media-src", "'self'", "blob:", ...connect, ...media],
-    ["font-src", "'self'", "data:"],
-    ["connect-src", "'self'", ...connect, ...media, ...(dev ? ["ws:", "wss:"] : [])],
+    ["font-src", "'self'", "data:", ...gm.font],
+    ["connect-src", "'self'", ...connect, ...media, ...gm.connect, ...(dev ? ["ws:", "wss:"] : [])],
     ["worker-src", "'self'", "blob:"],
     ["child-src", "'self'", "blob:"],
     // Live Monitoring's camera popup embeds the GPS vendor's player (components/drive-vision/monitoring/gps-video.ts).

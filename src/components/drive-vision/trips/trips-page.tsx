@@ -19,9 +19,8 @@ import { Panel } from "../shared/panel";
 import { SegmentedControl, FilterSelect } from "../shared/filter-bar";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
 import { ApiErrorState, DataSourceBadge } from "../shared/api-states";
-import type { MapPin as TrackPin } from "../map/fleet-map";
+import type { MapPin as TrackPin } from "../map/map-types";
 import { GeoMap } from "../map/geo-map";
-import { snappedBounds } from "../map/projection";
 import { useFleetReference } from "../vehicles/use-fleet-reference";
 import { TripHistory } from "./trip-history";
 import { checkPosition } from "../monitoring/live-fleet-model";
@@ -123,16 +122,6 @@ function TrackPlayback() {
 
   const current: TrackPoint | undefined = prepared.points[Math.min(cursor, last)];
   const played = prepared.plotted.filter((p) => current && p.time <= current.time);
-
-  const boundsKey = useMemo(() => {
-    const b = snappedBounds(prepared.plotted.map((p) => p.pos!));
-    return b ? `${b.minLat}|${b.maxLat}|${b.minLon}|${b.maxLon}` : "";
-  }, [prepared]);
-  const bounds = useMemo(() => {
-    if (!boundsKey) return null;
-    const [minLat, maxLat, minLon, maxLon] = boundsKey.split("|").map(Number);
-    return { minLat, maxLat, minLon, maxLon };
-  }, [boundsKey]);
 
   const pins: TrackPin[] = [];
   const first = prepared.plotted[0];
@@ -305,7 +294,6 @@ function TrackPlayback() {
                       <GeoMap
                         ariaLabel="Recorded track"
                         className="min-h-0"
-                        bounds={bounds}
                         routes={prepared.plotted.length > 1 ? [{ id: "track", points: prepared.plotted.map((p) => p.pos!), color: "var(--dv-series-2)", progress: played.length > 0 ? (played.length - 1) / Math.max(1, prepared.plotted.length - 1) : 0 }] : []}
                         pins={pins}
                         activePinId={current ? `p${current.index}` : null}

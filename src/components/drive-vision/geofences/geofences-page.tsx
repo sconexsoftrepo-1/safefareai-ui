@@ -19,7 +19,6 @@ import { DetailRow } from "../shared/slide-over-panel";
 import { ConfirmDialog } from "../shared/confirm-dialog";
 import { toast } from "../shared/toast-provider";
 import { GeoMap } from "../map/geo-map";
-import { snappedBounds } from "../map/projection";
 import { FenceVoices, GeofenceEvents } from "./geofence-events";
 import { bindingSummary, fenceColor, fenceGeometry, fencePath } from "./geofence-model";
 
@@ -45,7 +44,6 @@ export function GeofencesPage() {
   const routes = drawable.map(({ f, g }) => ({ id: String(f.id), points: fencePath(f, g), color: fenceColor(f), dim: selectedId !== null && f.id !== selectedId }));
   const allPoints = useMemo(() => drawable.flatMap((x) => x.g.points), [drawable]);
   const fitPoints = selected && !selected.g.issue ? selected.g.points : allPoints;
-  const bounds = useMemo(() => snappedBounds(allPoints), [allPoints]);
 
   const nameOf = (f: GeofenceDto, id: number) =>
     f.bindType === "GROUP" ? (groupsQ.data?.items.find((x) => x.id === id)?.name ?? `Group ${id}`) : (devicesQ.data?.items.find((x) => x.id === id)?.name ?? `Device ${id}`);
@@ -133,7 +131,7 @@ export function GeofencesPage() {
 
         <div className="flex min-h-0 flex-col gap-4">
           <Panel className="h-[52vh] min-h-[320px] overflow-hidden p-2 lg:h-[60vh]">
-            <GeoMap ariaLabel="Geofence map" className="h-full" bounds={bounds} dataNote="Geofence points from the API" routes={routes} fitPoints={fitPoints} fitKey={selectedId ?? `all:${shape}`} />
+            <GeoMap ariaLabel="Geofence map" className="h-full" dataNote="Geofence points from the API" routes={routes} fitPoints={fitPoints} fitKey={selectedId ?? `all:${shape}`} />
           </Panel>
           {selected ? (
             <Panel>

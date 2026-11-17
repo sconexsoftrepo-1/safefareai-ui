@@ -234,16 +234,23 @@ test("GA-04: enforced headers — framing limited to this origin, nosniff, refer
   assert.equal(header(hs, "Content-Security-Policy"), "frame-ancestors 'self'; object-src 'none'; base-uri 'self'");
 });
 
-test("GA-04: report-only CSP allows the configured BFF, base map and evidence hosts, and nothing else external", () => {
-  const env = { NODE_ENV: "production", NEXT_PUBLIC_API_BASE_URL: "https://bff.example.test/", NEXT_PUBLIC_MAPTILER_KEY: "k" };
+test("GA-04: report-only CSP allows the configured BFF and evidence hosts; Google Maps sources only when maps are enabled", () => {
+  const env = { NODE_ENV: "production", NEXT_PUBLIC_API_BASE_URL: "https://bff.example.test/" };
   const csp = header(sec.securityHeaders(env), "Content-Security-Policy-Report-Only");
-  assert.match(csp, /connect-src 'self' https:\/\/bff\.example\.test https:\/\/api\.maptiler\.com https:\/\/gpstracktech\.com https:\/\/\*\.gpstracktech\.com;/, "alert evidence hosts are the one addition");
+  assert.match(csp, /connect-src 'self' https:\/\/bff\.example\.test https:\/\/gpstracktech\.com https:\/\/\*\.gpstracktech\.com;/, "alert evidence hosts are the one addition");
+  assert.doesNotMatch(csp, /google|maptiler/i, "maps disabled → no map provider allowed");
   assert.match(csp, /worker-src 'self' blob:/);
   assert.match(csp, /frame-ancestors 'self'/);
   assert.doesNotMatch(csp, /unsafe-eval|ws:/, "no dev-only sources in production");
-  // Custom style replaces MapTiler; no key → no MapTiler origin.
-  same(sec.connectOrigins({ NEXT_PUBLIC_MAP_STYLE_URL: "https://tiles.example.test/style.json", NEXT_PUBLIC_MAPTILER_KEY: "k" }), ["https://tiles.example.test"]);
-  same(sec.connectOrigins({ NEXT_PUBLIC_API_BASE_URL: "not a url", NEXT_PUBLIC_MAPTILER_KEY: " " }), []);
+  // Google Maps sources need both the switch and a key (placeholder value, not a real key).
+  const on = header(sec.securityHeaders({ ...env, NEXT_PUBLIC_GOOGLE_MAPS_ENABLED: "true", NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "placeholder" }), "Content-Security-Policy-Report-Only");
+  assert.match(on, /script-src [^;]*https:\/\/\*\.googleapis\.com/);
+  assert.match(on, /img-src [^;]*https:\/\/\*\.gstatic\.com/);
+  assert.match(on, /connect-src [^;]*https:\/\/\*\.googleapis\.com/);
+  for (const off of [{ NEXT_PUBLIC_GOOGLE_MAPS_ENABLED: "true" }, { NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "placeholder" }, { NEXT_PUBLIC_GOOGLE_MAPS_ENABLED: "false", NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "placeholder" }]) {
+    assert.doesNotMatch(header(sec.securityHeaders({ ...env, ...off }), "Content-Security-Policy-Report-Only"), /google/i);
+  }
+  same(sec.connectOrigins({ NEXT_PUBLIC_API_BASE_URL: "not a url" }), []);
   same(sec.connectOrigins({ NEXT_PUBLIC_API_BASE_URL: "javascript:alert(1)" }), []);
   // Development adds what next dev needs.
   assert.match(sec.reportOnlyCsp({ NODE_ENV: "development" }), /'unsafe-eval'.*ws: wss:/s);
@@ -263,19 +270,9 @@ test("GA-07 R1: below sm the Vehicles search gets its own row and the selects sh
   assert.equal(page.match(/className="max-sm:flex-1"/g)?.length, 2, "both selects share the second row");
 });
 
-test("GA-07 R2: attribution sits above the caption row at its measured height", () => {
-  const cfg = realm.require("components/drive-vision/map/base-map-config");
-  assert.equal(cfg.attributionBottom(22), 40, "one-line caption keeps the previous 40 px offset");
-  assert.equal(cfg.attributionBottom(52), 70, "a wrapped two-line caption lifts the attribution above it");
-  assert.equal(cfg.attributionBottom(0), 18);
-  assert.equal(cfg.attributionBottom(Number.NaN), 18);
-  assert.equal(cfg.attributionBottom(-5), 18);
-});
-
-test("GA-07 R2: the full attribution is always shown and re-placed whenever the caption row resizes", () => {
+test("GA-07 R2: the caption row is a Google Maps control beside the Google logo, so it never covers the logo or attribution", () => {
   const map = read("components/drive-vision/map/geo-map.tsx");
-  assert.ok(map.includes("attributionControl: { compact: false }"), "compact mode collapses the credit on drag");
+  assert.ok(map.includes("map.controls[P.BOTTOM_LEFT].push(hosts.caption)"), "Google lays the caption out next to its logo");
   assert.ok(!map.includes('style.bottom = "40px"'), "no fixed offset");
-  assert.ok(map.includes("new ResizeObserver(place)") && map.includes("observer.observe(caption)"));
-  assert.ok(map.includes("<div ref={captionRef}"));
+  assert.ok(map.includes("hosts.caption"));
 });

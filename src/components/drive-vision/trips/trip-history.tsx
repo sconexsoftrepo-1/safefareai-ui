@@ -20,9 +20,8 @@ import { ApiErrorState, DataSourceBadge } from "../shared/api-states";
 import { DataTable, type DataTableColumn } from "../shared/data-table";
 import { StatusBadge } from "../shared/status-badge";
 import { DetailRow } from "../shared/slide-over-panel";
-import type { MapPin } from "../map/fleet-map";
+import type { MapPin } from "../map/map-types";
 import { GeoMap } from "../map/geo-map";
-import { snappedBounds } from "../map/projection";
 import { routeGeometry } from "./trip-model";
 
 const PAGE_SIZE = 20;
@@ -158,7 +157,6 @@ function TripDetailPanel({ id }: { id: number | null }) {
   const detailQ = useApiQuery(id !== null ? `trips:detail:${id}` : null, () => insightService.tripDetail(id!));
   const routeQ = useApiQuery(id !== null ? `trips:route:${id}` : null, () => insightService.tripRoute(id!));
   const geo = useMemo(() => routeGeometry(routeQ.data?.data), [routeQ.data]);
-  const bounds = useMemo(() => snappedBounds(geo.line), [geo]);
   const trip = detailQ.data?.data.trip ?? routeQ.data?.data.trip;
   const stops = detailQ.data?.data.stops ?? routeQ.data?.data.stops ?? [];
 
@@ -198,7 +196,6 @@ function TripDetailPanel({ id }: { id: number | null }) {
             <GeoMap
               ariaLabel="Trip route"
               className="h-full"
-              bounds={bounds}
               routes={[{ id: "route", points: geo.line, color: "var(--dv-series-2)" }]}
               pins={pins}
               fitPoints={geo.line}

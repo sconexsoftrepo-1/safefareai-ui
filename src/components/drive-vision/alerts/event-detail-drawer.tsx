@@ -12,7 +12,6 @@ import { StatusBadge } from "../shared/status-badge";
 import { EmptyState } from "../shared/feedback";
 import { UnavailableState } from "../shared/api-states";
 import { GeoMap } from "../map/geo-map";
-import { snappedBounds } from "../map/projection";
 import { alarmLabel, alarmPosition, deviceLabel, severityLabel, type AlarmKind } from "./alerts-model";
 import { EvidenceViewer } from "./evidence-viewer";
 import { evidenceFromAlarm, type EvidenceItem } from "./evidence-model";
@@ -67,7 +66,6 @@ export function EventDetailDrawer({
 
 function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<number | undefined, AlarmTypeDto> }) {
   const pos = useMemo(() => alarmPosition(alarm), [alarm]);
-  const bounds = useMemo(() => (pos ? snappedBounds([pos]) : null), [pos]);
   const media = [evidenceFromAlarm(alarm, "image"), evidenceFromAlarm(alarm, "video")].filter((m): m is EvidenceItem => m !== null);
   const [viewing, setViewing] = useState<EvidenceItem | null>(null);
   const type = typeById.get(alarm.alarmTypeId);
@@ -140,7 +138,6 @@ function EventDetailBody({ alarm, typeById }: { alarm: AlarmDto; typeById: Map<n
               <GeoMap
                 ariaLabel="Alarm location"
                 className="min-h-0"
-                bounds={bounds}
                 pins={[{ id: `alarm-${alarm.id}`, kind: "alarm", ...pos, title: alarmLabel(alarm, typeById) }]}
                 focus={{ ...pos, zoom: 15 }}
                 showLegend={false}

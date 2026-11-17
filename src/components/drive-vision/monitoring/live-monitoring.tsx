@@ -11,9 +11,8 @@ import type { DeviceStateDto } from "@/features/drive-vision/api/types";
 import { useApiQuery } from "@/features/drive-vision/hooks/use-api-query";
 import { formatRelative, formatTime } from "@/features/drive-vision/utils/format";
 import { cn } from "@/lib/utils";
-import type { MapMarker } from "../map/fleet-map";
+import type { MapMarker } from "../map/map-types";
 import { GeoMap } from "../map/geo-map";
-import { snappedBounds } from "../map/projection";
 import { PageHeader } from "../shared/page-header";
 import { FilterSelect, SearchInput, SegmentedControl } from "../shared/filter-bar";
 import { EmptyState, LoadingSkeleton } from "../shared/feedback";
@@ -109,16 +108,6 @@ export function LiveMonitoring() {
     });
   }, [visible, selected, now]);
 
-  // Bounds snap to a 0.25° grid so polling doesn't shift the view unless a device leaves the area.
-  const boundsKey = useMemo(() => {
-    const b = snappedBounds(markers);
-    return b ? `${b.minLat}|${b.maxLat}|${b.minLon}|${b.maxLon}` : "";
-  }, [markers]);
-  const bounds = useMemo(() => {
-    if (!boundsKey) return null;
-    const [minLat, maxLat, minLon, maxLon] = boundsKey.split("|").map(Number);
-    return { minLat, maxLat, minLon, maxLon };
-  }, [boundsKey]);
   const fitPoints = useMemo(() => markers.map((m) => ({ lat: m.lat, lon: m.lon })), [markers]);
   const selectedPos = selected ? checkPosition(selected) : null;
   const focus = selectedPos?.ok ? { lat: selectedPos.lat, lon: selectedPos.lon } : null;
@@ -223,7 +212,6 @@ export function LiveMonitoring() {
               selectedId={selectedId === null ? null : String(selectedId)}
               onMarkerClick={(id) => toggleDevice(Number(id))}
               cluster
-              bounds={bounds}
               fitPoints={fitPoints}
               fitKey={`${age}|${groupId}|${alarmsOnly}|${search}`}
               focus={focus}

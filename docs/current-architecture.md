@@ -4,7 +4,7 @@ This describes the code **as it is**, not the target. Target changes are in [`im
 
 ## Stack
 
-Next.js **16.4.2** (App Router, `reactStrictMode`), React 19.3, TypeScript 5.9, Tailwind 4, Radix UI (shadcn-style wrappers in `src/components/ui/`), `motion`, `recharts`, `maplibre-gl` 6.14 (MapTiler or self-hosted style; coordinate-grid fallback), `sonner` toasts. No state library, no data-fetching library. Tests: `node --test` over `tests/*.test.cjs` with a custom TS loader (`tests/helpers/load-ts.cjs`) and browser fakes.
+Next.js **16.4.2** (App Router, `reactStrictMode`), React 19.3, TypeScript 5.9, Tailwind 4, Radix UI (shadcn-style wrappers in `src/components/ui/`), `motion`, `recharts`, Google Maps JavaScript API (loaded on demand, no npm package), `sonner` toasts. No state library, no data-fetching library. Tests: `node --test` over `tests/*.test.cjs` with a custom TS loader (`tests/helpers/load-ts.cjs`) and browser fakes.
 
 > AGENTS.md: this Next version has breaking changes vs. older releases — read `node_modules/next/dist/docs/` before writing framework-level code (routing, `proxy`/middleware, metadata, caching).
 
@@ -191,7 +191,7 @@ Query keys are separate (`overview:*` / `platform:*`), and every key is also pre
 
 ## Configuration (`.env.example`; all `NEXT_PUBLIC_*`, inlined, public by design)
 
-`API_BASE_URL`, `API_TIMEOUT_MS` (15 s), `API_DEBUG`, `DEFAULT_TENANT_CODE` (login prefill), `MAPTILER_KEY`, `MAPTILER_MAP`, `MAP_STYLE_URL`. `.env.local` additionally has a commented `PYTHON_API_BASE_URL`. No server-only variables exist.
+`API_BASE_URL`, `API_TIMEOUT_MS` (15 s), `API_DEBUG`, `DEFAULT_TENANT_CODE` (login prefill), `GOOGLE_MAPS_ENABLED`, `GOOGLE_MAPS_API_KEY` (Google Maps loads only when both are set; see `map/google-maps-config.ts`). `.env.local` additionally has a commented `PYTHON_API_BASE_URL`. No server-only variables exist.
 
 ## Tests (429, all passing)
 

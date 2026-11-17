@@ -1,17 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import type { MapMarker } from "./fleet-map";
+import type { MapMarker } from "./map-types";
 
 /**
- * The vehicle marker of the MapLibre map (GeoMap renders it inside a MapLibre HTML marker anchored at its centre, so
+ * The vehicle marker of the map (GeoMap renders it inside a Google Maps HTML overlay anchored at its centre, so
  * the car's centre sits exactly on the reported coordinate). A top-down car on a round backing in the marker's colour
  * (Live Monitoring: the report-age colour — green ≤ 5 min, amber ≤ 1 h, grey stale), with a white border and a soft
  * shadow so it reads on light and dark tiles. The whole 44 px box is the click target, larger than the drawn car.
  *
  * Direction: the car turns to `heading` (compass degrees, 0 = north) only when the caller marks it reliable
  * (`showHeading`, which Live Monitoring sets for a fresh report of a moving vehicle). Otherwise it points up; no
- * direction is derived from earlier positions. GeoMap locks the map bearing at 0 (rotation is disabled), so a compass
+ * direction is derived from earlier positions. GeoMap keeps the map heading at 0 (rotation and tilt are disabled), so a compass
  * heading is also the on-screen angle; `mapBearing` is subtracted for safety should rotation ever be enabled.
  */
 

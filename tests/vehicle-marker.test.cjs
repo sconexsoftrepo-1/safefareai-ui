@@ -1,5 +1,5 @@
-// Live Monitoring vehicle marker on the MapLibre map: a top-down car on a freshness-coloured backing.
-// The glyph is rendered for real in jsdom; GeoMap itself needs WebGL, so its wiring is checked in source.
+// Live Monitoring vehicle marker on the Google map: a top-down car on a freshness-coloured backing.
+// The glyph is rendered for real in jsdom; GeoMap's behaviour with a mocked Google Maps is in google-maps.test.cjs.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
@@ -71,7 +71,7 @@ test("VM heading: rotates only for a reliable heading (showHeading); otherwise p
   const { carRotation } = vm();
   same([carRotation({ heading: 90, showHeading: true }), carRotation({ heading: -90, showHeading: true }), carRotation({ heading: 450, showHeading: true })], [90, 270, 90]);
   same([carRotation({ heading: 90, showHeading: false }), carRotation({ heading: undefined, showHeading: true }), carRotation({ heading: NaN, showHeading: true }), carRotation({})], [0, 0, 0, 0], "missing or unreliable → default orientation");
-  assert.equal(carRotation({ heading: 90, showHeading: true }, 30), 60, "the map bearing is subtracted (GeoMap keeps it at 0)");
+  assert.equal(carRotation({ heading: 90, showHeading: true }, 30), 60, "the map heading is subtracted (GeoMap keeps it at 0)");
   let host = await render({ marker: marker({ heading: 135, showHeading: true }), selected: false });
   assert.match(host.querySelector("[data-car]").parentElement.getAttribute("transform"), /^rotate\(135\)/);
   host = await render({ marker: marker({ id: "parked", heading: 135, showHeading: false }), selected: false });
@@ -97,13 +97,15 @@ test("VM selection and click: selected car is highlighted (colour halo + ring, s
   assert.equal(host.querySelector("[data-marker-id='3']").tagName, "DIV", "no onClick → not a button (as before)");
 });
 
-test("VM wiring: GeoMap still uses its HTML markers (anchored at the centre, one per vehicle, positions updated in place); only the glyph changed", () => {
+test("VM wiring: GeoMap uses HTML overlays (anchored at the centre, one per vehicle, positions updated in place) with the same glyph", () => {
   const geo = read("components/drive-vision/map/geo-map.tsx");
-  assert.match(geo, /<VehicleMarkerGlyph marker=\{g\.members\[0\]\} selected=\{g\.members\[0\]\.id === selectedId\} onClick=\{onMarkerClick\} mapBearing=\{map\.map\.getBearing\(\)\} \/>/);
-  assert.match(geo, /<HtmlMarker key=\{g\.id\} rt=\{map\} lat=\{g\.members\[0\]\.lat\} lon=\{g\.members\[0\]\.lon\}/, "same coordinates as before");
-  assert.match(geo, /new rt\.ml\.Marker\(\{ element: el, anchor: "center" \}\)\.setLngLat\(\[lon, lat\]\)/, "centre anchor, lon/lat order unchanged");
-  assert.match(geo, /marker\.current\?\.setLngLat\(\[lon, lat\]\)/, "auto-refresh moves the existing marker");
-  assert.match(geo, /dragRotate: false/, "bearing stays 0, so the heading is the on-screen angle");
+  assert.match(geo, /<VehicleMarkerGlyph marker=\{g\.members\[0\]\} selected=\{g\.members\[0\]\.id === selectedId\} onClick=\{onMarkerClick\} mapBearing=\{heading\} \/>/);
+  assert.match(geo, /<HtmlMarker key=\{g\.id\} rt=\{rt\} lat=\{g\.members\[0\]\.lat\} lon=\{g\.members\[0\]\.lon\}/, "same coordinates as before");
+  assert.match(geo, /el\.style\.transform = "translate\(-50%, -50%\)"/, "centre anchor");
+  assert.match(geo, /new Overlay\(el, \{ lat, lng: lon \}\)/, "lat/lon passed through unchanged");
+  assert.match(geo, /overlay\.current\?\.setPosition\(\{ lat, lng: lon \}\)/, "auto-refresh moves the existing marker");
+  assert.match(geo, /headingInteractionEnabled: false/, "heading stays 0, so the vehicle heading is the on-screen angle");
+  assert.match(geo, /tilt: 0/);
   assert.doesNotMatch(geo, /function MarkerGlyph/, "the old dot glyph is gone");
   assert.doesNotMatch(read("components/drive-vision/map/vehicle-marker.tsx"), /<img|https?:\/\/|\.png|\.svg"/, "inline SVG, no image downloads");
 });
